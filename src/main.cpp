@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <RadioLib.h>
 #include <TM1637Display.h>
+#include <Bounce2.h>
+
 
 #if 0
 Random Notes
@@ -73,6 +75,8 @@ public:
 Board* board;
 TM1637Display display(PIN_CLK, PIN_DIO);
 
+Bounce b = Bounce(); // Instantiate a Bounce object
+
 void setup() {
     pinMode(PIN_DIP_0, INPUT);
     pinMode(PIN_DIP_1, INPUT);
@@ -83,7 +87,8 @@ void setup() {
     // pinMode(PIN_CLK, OUTPUT);
     display.setBrightness(0x0f);
 
-    pinMode(PIN_BUTTON_0, INPUT);
+    b.attach(PIN_BUTTON_0, INPUT);
+    b.interval(1);
 
     auto mode = digitalRead(PIN_DIP_0) << 0 |
                 digitalRead(PIN_DIP_1) << 1 |
@@ -95,19 +100,16 @@ void setup() {
     pinMode(PIN_TURN_LED, OUTPUT);
 }
 
-template<typename T>
-class TD;
+
 
 void loop() {
-    display.showNumberDec(1234, false);
-
-    auto press = digitalRead(PIN_BUTTON_0);
-    if (press == LOW) {
+    b.update();
+    if (b.fell()) {
         digitalWrite(PIN_TURN_LED, HIGH);
-    } else {
+    }
+    if (b.rose()) {
         digitalWrite(PIN_TURN_LED, LOW);
     }
-    
 
     // digitalWrite(PIN_TURN_LED, HIGH);
     // delay(1000);
