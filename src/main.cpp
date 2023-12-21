@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <RadioLib.h>
+#include <TM1637Display.h>
 
 #if 0
 Random Notes
@@ -14,10 +15,10 @@ Random Notes
 #endif
 
 // <RF Module>
-  // Chip Enable
-  #define PIN_CE      9
-  // Chip Select Not
-  #define PIN_CSN     10
+    // Chip Enable
+    #define PIN_CE      9
+    // Chip Select Not
+    #define PIN_CSN     10
 // </RF Module>
 
 // <TM1637>
@@ -48,16 +49,70 @@ Random Notes
     #define PIN_DIP_3   17
 // </DIP Switches>
 
+class Board {
+public:
+    virtual void setup() = 0;
+    virtual ~Board() = default;
+};
+class Scoreboard : public Board {
+public:
+    void setup() override {
+    }
+    ~Scoreboard() override {
+    }
+};
+
+class Blinkboard : public Board {
+public:
+    void setup() override {
+    }
+    ~Blinkboard() override {
+    }
+};
+
+Board* board;
+TM1637Display display(PIN_CLK, PIN_DIO);
 
 void setup() {
-    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(PIN_DIP_0, INPUT);
+    pinMode(PIN_DIP_1, INPUT);
+    pinMode(PIN_DIP_2, INPUT);
+    pinMode(PIN_DIP_3, INPUT);
+
+    // pinMode(PIN_CLK, OUTPUT);
+    // pinMode(PIN_CLK, OUTPUT);
+    display.setBrightness(0x0f);
+
+    pinMode(PIN_BUTTON_0, INPUT);
+
+    auto mode = digitalRead(PIN_DIP_0) << 0 |
+                digitalRead(PIN_DIP_1) << 1 |
+                digitalRead(PIN_DIP_2) << 2 |
+                digitalRead(PIN_DIP_3) << 3;
+
+    board = new Scoreboard();
+
+    pinMode(PIN_TURN_LED, OUTPUT);
 }
 
+template<typename T>
+class TD;
+
 void loop() {
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(1000);
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(1000);
-    // TODO: this isn't working :(
-    Serial.println("Completed Iteration");
+    display.showNumberDec(1234, false);
+
+    auto press = digitalRead(PIN_BUTTON_0);
+    if (press == LOW) {
+        digitalWrite(PIN_TURN_LED, HIGH);
+    } else {
+        digitalWrite(PIN_TURN_LED, LOW);
+    }
+    
+
+    // digitalWrite(PIN_TURN_LED, HIGH);
+    // delay(1000);
+    // digitalWrite(PIN_TURN_LED, LOW);
+    // delay(1000);
+    // // TODO: this isn't working :(
+    // Serial.println("Completed Iteration");
 }
