@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <RadioLib.h>
 #include <TM1637Display.h>
 #include <Bounce2.h>
 
@@ -60,22 +59,20 @@ class Scoreboard : public Board {
 public:
     void setup() override {
     }
-    ~Scoreboard() override {
-    }
+    ~Scoreboard() override = default;
 };
 
 class Blinkboard : public Board {
 public:
     void setup() override {
     }
-    ~Blinkboard() override {
-    }
+    ~Blinkboard() override = default;
 };
 
-Board* board;
-TM1637Display display(PIN_CLK, PIN_DIO);
+static Board* board;
+static TM1637Display display(PIN_CLK, PIN_DIO);
 
-Bounce b = Bounce(); // Instantiate a Bounce object
+static Bounce b = Bounce(); // Instantiate a Bounce object
 
 void setup() {
     pinMode(PIN_DIP_0, INPUT);
@@ -110,11 +107,4 @@ void loop() {
     if (b.rose()) {
         digitalWrite(PIN_TURN_LED, LOW);
     }
-
-    // digitalWrite(PIN_TURN_LED, HIGH);
-    // delay(1000);
-    // digitalWrite(PIN_TURN_LED, LOW);
-    // delay(1000);
-    // // TODO: this isn't working :(
-    // Serial.println("Completed Iteration");
 }
