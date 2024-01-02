@@ -80,6 +80,8 @@ void setup() {
     pinMode(PIN_DIP_2, INPUT);
     pinMode(PIN_DIP_3, INPUT);
 
+    pinMode(LED_BUILTIN, OUTPUT);
+
     // pinMode(PIN_CLK, OUTPUT);
     // pinMode(PIN_CLK, OUTPUT);
     display.setBrightness(0x0f);
@@ -95,6 +97,13 @@ void setup() {
     board = new Scoreboard();
 
     pinMode(PIN_TURN_LED, OUTPUT);
+
+    for(int i=0; i<3; ++i) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(300);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(300);
+    }
 }
 
 
@@ -102,9 +111,9 @@ void setup() {
 void loop() {
     b.update();
     if (b.fell()) {
-        digitalWrite(PIN_TURN_LED, HIGH);
+        digitalWrite(LED_BUILTIN, HIGH);
     }
     if (b.rose()) {
-        digitalWrite(PIN_TURN_LED, LOW);
+        digitalWrite(LED_BUILTIN, LOW);
     }
 }
