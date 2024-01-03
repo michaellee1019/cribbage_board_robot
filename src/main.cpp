@@ -39,7 +39,7 @@ Random Notes
     // Minus 1
     #define PIN_BUTTON_2  5
     // Commit
-    #define PIN_BUTTON_1  6
+    #define PIN_BUTTON_3  6
 // </Buttons>
 
 
@@ -75,6 +75,16 @@ static TM1637Display display(PIN_CLK, PIN_DIO);
 static Bounce b = Bounce(); // Instantiate a Bounce object
 
 void setup() {
+    pinMode(PIN_BUTTON_0, INPUT);
+    pinMode(PIN_BUTTON_1, INPUT);
+    pinMode(PIN_BUTTON_2, INPUT);
+    pinMode(PIN_BUTTON_3, INPUT);
+
+    digitalWrite(PIN_BUTTON_0, HIGH);
+    digitalWrite(PIN_BUTTON_1, HIGH);
+    digitalWrite(PIN_BUTTON_2, HIGH);
+    digitalWrite(PIN_BUTTON_3, HIGH);
+
     pinMode(PIN_DIP_0, INPUT);
     pinMode(PIN_DIP_1, INPUT);
     pinMode(PIN_DIP_2, INPUT);
@@ -86,8 +96,8 @@ void setup() {
     // pinMode(PIN_CLK, OUTPUT);
     display.setBrightness(0x0f);
 
-    b.attach(PIN_BUTTON_0, INPUT);
-    b.interval(1);
+//    b.attach(PIN_BUTTON_0, INPUT);
+//    b.interval(1);
 
     auto mode = digitalRead(PIN_DIP_0) << 0 |
                 digitalRead(PIN_DIP_1) << 1 |
@@ -106,14 +116,58 @@ void setup() {
     }
 }
 
+byte prevFive = HIGH;
+byte prevOne = HIGH;
+byte prevNeg1 = HIGH;
+byte prevOk = HIGH;
+int score=0;
+
+void updateDisplayScoreLoop(){
+    // 5pt
+    byte fiveState = digitalRead(PIN_BUTTON_0);
+    if (fiveState == LOW && fiveState != prevFive) {
+        score+=5;
+    }
+    prevFive = fiveState;
+
+    // 1pt
+    byte oneState = digitalRead(PIN_BUTTON_1);
+    if (oneState == LOW && oneState != prevOne) {
+        score++;
+    }
+    prevOne = oneState;
+
+    // -1pt
+    byte neg1State = digitalRead(PIN_BUTTON_2);
+    if (neg1State == LOW && neg1State != prevNeg1) {
+        score-=1;
+    }
+    prevNeg1 = neg1State;
+
+    // commit
+    if (digitalRead(PIN_BUTTON_3) == LOW)
+    {
+        for (byte i = 0 ; i<2;i++){
+            delay(250);
+            display.clear();
+            delay(250);
+            display.showNumberDec(score, false);
+        }
+        score = 0;
+    }
+
+    display.showNumberDec(score, false);
+    delay(100);
+}
 
 
 void loop() {
-    b.update();
-    if (b.fell()) {
-        digitalWrite(LED_BUILTIN, HIGH);
-    }
-    if (b.rose()) {
-        digitalWrite(LED_BUILTIN, LOW);
-    }
+//    b.update();
+//    if (b.fell()) {
+//        digitalWrite(LED_BUILTIN, HIGH);
+//    }
+//    if (b.rose()) {
+//        digitalWrite(LED_BUILTIN, LOW);
+//    }
+    updateDisplayScoreLoop();
 }
