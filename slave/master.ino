@@ -1,12 +1,12 @@
 #include <Wire.h>
-#include "TM1637Display.h"
+#include "../master/TM1637Display.h"
 #define CLK 9
 #define DIO 10
 TM1637Display display(CLK, DIO);
 
-#include <Adafruit_GFX.h>
-#include <Adafruit_NeoMatrix.h>
-#include <Adafruit_NeoPixel.h>
+#include "Adafruit_GFX.h"
+#include "Adafruit_NeoMatrix.h"
+#include "Adafruit_NeoPixel.h"
 
 Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(8, 8, 6,
   NEO_MATRIX_TOP     + NEO_MATRIX_RIGHT +

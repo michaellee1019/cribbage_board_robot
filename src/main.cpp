@@ -1,6 +1,25 @@
 #include <Arduino.h>
 #include <TM1637Display.h>
-#include <Bounce2.h>
+#include "RF24.h"
+
+
+//================
+
+// Scoreboard
+//#define BOARD_ID    (-1)
+// Player 0
+#define BOARD_ID  0
+
+#define IS_SCORE_BOARD (BOARD_ID == -1)
+// -1: Scoreboard
+// 0: Player 1
+// 1: Player 2
+/*
+ *     auto mode = digitalRead(PIN_DIP_0) << 0 |
+                digitalRead(PIN_DIP_1) << 1 |
+                digitalRead(PIN_DIP_2) << 2 |
+                digitalRead(PIN_DIP_3) << 3;
+ */
 
 
 #if 0
@@ -21,6 +40,15 @@ Random Notes
     // Chip Select Not
     #define PIN_CSN     10
 // </RF Module>
+
+const byte numSlaves = 1;
+const byte slaveAddresses[numSlaves][5] = {
+        // each slave needs a different address
+        {'R','x','A','A','A'},
+        //{'R','x','A','A','B'}
+};
+
+RF24 radio(PIN_CE, PIN_CSN);
 
 // <TM1637>
     #define PIN_CLK   8
@@ -50,31 +78,11 @@ Random Notes
     #define PIN_DIP_3   17
 // </DIP Switches>
 
-class Board {
-public:
-    virtual void setup() = 0;
-    virtual ~Board() = default;
-};
-class Scoreboard : public Board {
-public:
-    void setup() override {
-    }
-    ~Scoreboard() override = default;
-};
-
-class Blinkboard : public Board {
-public:
-    void setup() override {
-    }
-    ~Blinkboard() override = default;
-};
-
-static Board* board;
 static TM1637Display display(PIN_CLK, PIN_DIO);
 
-static Bounce b = Bounce(); // Instantiate a Bounce object
-
 void setup() {
+    Serial.begin(9600);
+
     pinMode(PIN_BUTTON_0, INPUT);
     pinMode(PIN_BUTTON_1, INPUT);
     pinMode(PIN_BUTTON_2, INPUT);
@@ -99,13 +107,6 @@ void setup() {
 //    b.attach(PIN_BUTTON_0, INPUT);
 //    b.interval(1);
 
-    auto mode = digitalRead(PIN_DIP_0) << 0 |
-                digitalRead(PIN_DIP_1) << 1 |
-                digitalRead(PIN_DIP_2) << 2 |
-                digitalRead(PIN_DIP_3) << 3;
-
-    board = new Scoreboard();
-
     pinMode(PIN_TURN_LED, OUTPUT);
 
     for(int i=0; i<3; ++i) {
@@ -114,15 +115,88 @@ void setup() {
         digitalWrite(LED_BUILTIN, LOW);
         delay(300);
     }
+
+    if (BOARD_ID == -1) {
+        // Scoreboard
+        // RF Sender Setup
+        radio.begin();
+        radio.setDataRate( RF24_250KBPS );
+
+        radio.enableAckPayload();
+
+        radio.setRetries(3,5); // delay, count
+    } else {
+        // Player Controller
+        // RF Receiver Setup
+        radio.begin();
+        radio.setDataRate( RF24_250KBPS );
+        radio.openReadingPipe(1, slaveAddresses[BOARD_ID]);
+
+        radio.enableAckPayload();
+
+        radio.startListening();
+    }
+
+
 }
 
 byte prevFive = HIGH;
 byte prevOne = HIGH;
 byte prevNeg1 = HIGH;
-byte prevOk = HIGH;
+//byte prevOk = HIGH;
 int score=0;
 
-void updateDisplayScoreLoop(){
+//RF Interval variables
+unsigned long currentMillis;
+unsigned long prevMillis;
+unsigned long txIntervalMillis = 10; // send once per second
+
+struct Message {
+    Message()
+    : senderScore{-1}, receiverScore{-1}, turnNumber{-1}
+    {}
+
+    explicit operator bool() const {
+        return turnNumber >= 0;
+    }
+
+    // senderScore is the current total score for the player that score board knows about
+    int senderScore;
+
+    // receiverScore is the new score that the player knows about
+    int receiverScore;
+    int turnNumber;
+
+    void log(const char* name) const {
+        if (!*this) {
+            Serial.print("<");
+            Serial.print(name);
+            Serial.print("/>");
+            Serial.print("\n");
+            return;
+        }
+        Serial.print("<");
+        Serial.print(name);
+        Serial.print(">");
+        this->sendToSerial();
+        Serial.print("</");
+        Serial.print(name);
+        Serial.print(">");
+        Serial.print("\n");
+    }
+    private:
+    void sendToSerial() const {
+        Serial.print("sender=");
+        Serial.print(this->senderScore);
+        Serial.print(" rcvr=");
+        Serial.print(this->receiverScore);
+        Serial.print(" turn=");
+        Serial.print(this->turnNumber);
+    }
+};
+Message message;
+
+void updatePlayerDisplayScoreLoop(){
     // 5pt
     byte fiveState = digitalRead(PIN_BUTTON_0);
     if (fiveState == LOW && fiveState != prevFive) {
@@ -154,14 +228,75 @@ void updateDisplayScoreLoop(){
             display.showNumberDec(score, false);
         }
         score = 0;
+        message.receiverScore = score;
+        message.turnNumber++;
     }
 
     display.showNumberDec(score, false);
-    delay(100);
 }
 
+//============
+
+Message receiverRF(Message toSend) {
+    Message out{};
+
+    if ( ! radio.available() ) {
+        return out;
+    }
+    radio.read( &out, sizeof(out) );
+
+    toSend.log("Sending");
+    radio.writeAckPayload(1, &toSend, sizeof(toSend));
+
+    out.log("Received");
+    return out;
+}
+
+Message senderRF(Message toSend) {
+    radio.stopListening();
+    radio.openWritingPipe(slaveAddresses[0]);
+
+    Message out{};
+    bool rslt;
+
+    toSend.log("ToSlave");
+    rslt = radio.write( &toSend, sizeof(toSend) );
+    // Always use sizeof() as it gives the size as the number of bytes.
+    // For example if dataToSend was an int sizeof() would correctly return 2
+
+    if (rslt) {
+        if ( radio.isAckPayloadAvailable() ) {
+            radio.read(&out, sizeof(out));
+        }
+    }
+
+    prevMillis = millis();
+    return out;
+}
 
 void loop() {
+    auto mode = BOARD_ID;
+    if (mode == -1) {
+        // Scoreboard
+        currentMillis = millis();
+        if (currentMillis - prevMillis >= txIntervalMillis) {
+            Message playerMessage = senderRF(message);
+            playerMessage.log("PlayerMessage");
+            if(playerMessage) {
+                if(playerMessage.turnNumber>message.turnNumber) {
+                    message.senderScore+=playerMessage.receiverScore;
+                    message.turnNumber=playerMessage.turnNumber;
+                }
+                display.showNumberDec(message.senderScore);
+            }
+            playerMessage.log("PlayerMessage");
+        }
+    } else {
+        // Console
+        updatePlayerDisplayScoreLoop();
+        Message scoreboardMessage = receiverRF(message);
+        //message = scoreboardMessage;
+    }
 //    b.update();
 //    if (b.fell()) {
 //        digitalWrite(LED_BUILTIN, HIGH);
@@ -169,5 +304,5 @@ void loop() {
 //    if (b.rose()) {
 //        digitalWrite(LED_BUILTIN, LOW);
 //    }
-    updateDisplayScoreLoop();
 }
+
