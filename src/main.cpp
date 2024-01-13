@@ -80,18 +80,12 @@ RF24 radio(PIN_CE, PIN_CSN);
 static TM1637Display display(PIN_CLK, PIN_DIO);
 
 void setup() {
-    Serial.begin(9600);
-    std::cout << "hello!";
-
-    pinMode(PIN_BUTTON_0, INPUT);
-    pinMode(PIN_BUTTON_1, INPUT);
-    pinMode(PIN_BUTTON_2, INPUT);
-    pinMode(PIN_BUTTON_3, INPUT);
-
-    digitalWrite(PIN_BUTTON_0, HIGH);
-    digitalWrite(PIN_BUTTON_1, HIGH);
-    digitalWrite(PIN_BUTTON_2, HIGH);
-    digitalWrite(PIN_BUTTON_3, HIGH);
+    scorebotSetup({
+       PIN_BUTTON_0,
+       PIN_BUTTON_1,
+       PIN_BUTTON_2,
+       PIN_BUTTON_3
+    });
 
     pinMode(PIN_DIP_0, INPUT);
     pinMode(PIN_DIP_1, INPUT);
