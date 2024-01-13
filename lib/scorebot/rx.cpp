@@ -1,8 +1,8 @@
 // SimpleRxAckPayload- the slave or the receiver
 
 #include <SPI.h>
-#include <nRF24L01.h>
-#include <RF24.h>
+#include "nRF24L01.h"
+#include "RF24.h"
 
 #define CE_PIN   9
 #define CSN_PIN 10
@@ -34,6 +34,10 @@ void setup() {
 }
 
 //==========
+
+void getData();
+void showData();
+void updateReplyData();
 
 void loop() {
     getData();

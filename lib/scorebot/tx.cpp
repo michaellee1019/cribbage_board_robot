@@ -1,8 +1,8 @@
 // SimpleTxAckPayload - the master or the transmitter
 
 #include <SPI.h>
-#include <nRF24L01.h>
-#include <RF24.h>
+#include "nRF24L01.h"
+#include "RF24.h"
 
 
 #define CE_PIN   9
@@ -40,6 +40,10 @@ void setup() {
 }
 
 //=============
+
+void send();
+void showData();
+void updateMessage();
 
 void loop() {
 
