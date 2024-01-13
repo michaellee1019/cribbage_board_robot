@@ -6,9 +6,9 @@
 //================
 
 // Scoreboard
-//#define BOARD_ID    (-1)
+#define BOARD_ID    (-1)
 // Player 0
-#define BOARD_ID  0
+//#define BOARD_ID  0
 
 #define IS_SCORE_BOARD (BOARD_ID == -1)
 // -1: Scoreboard
@@ -169,11 +169,12 @@ struct Message {
 
     void log(const char* name) const {
         if (!*this) {
-            Serial.print("<");
-            Serial.print(name);
-            Serial.print("/>");
-            Serial.print("\n");
             return;
+//            Serial.print("<");
+//            Serial.print(name);
+//            Serial.print("/>");
+//            Serial.print("\n");
+//            return;
         }
         Serial.print("<");
         Serial.print(name);
@@ -265,9 +266,10 @@ Message senderRF(Message toSend) {
     // For example if dataToSend was an int sizeof() would correctly return 2
 
     if (rslt) {
-        if ( radio.isAckPayloadAvailable() ) {
+        if (radio.isAckPayloadAvailable()) {
             radio.read(&out, sizeof(out));
         }
+        out.log("ReceivedFromSenderRf");
     }
 
     prevMillis = millis();
