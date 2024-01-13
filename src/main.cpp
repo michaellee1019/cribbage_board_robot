@@ -5,10 +5,6 @@
 
 //================
 
-// Scoreboard
-#define BOARD_ID    (-1)
-// Player 0
-//#define BOARD_ID  0
 
 #define IS_SCORE_BOARD (BOARD_ID == -1)
 // -1: Scoreboard
