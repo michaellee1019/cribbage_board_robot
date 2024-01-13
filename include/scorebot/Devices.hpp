@@ -1,6 +1,8 @@
 #ifndef DEVICES_HPP
 #define DEVICES_HPP
 
+#include <ArduinoSTL.h>
+
 class IODevice {
 public:
     virtual ~IODevice() = default;

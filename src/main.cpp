@@ -81,6 +81,7 @@ static TM1637Display display(PIN_CLK, PIN_DIO);
 
 void setup() {
     Serial.begin(9600);
+    std::cout << "hello!";
 
     pinMode(PIN_BUTTON_0, INPUT);
     pinMode(PIN_BUTTON_1, INPUT);
