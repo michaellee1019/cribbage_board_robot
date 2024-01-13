@@ -3,7 +3,7 @@
 //TM1637Display displayP1(8, 7);
 TM1637Display displayP2(6, 5);
 TM1637Display displayP3(4, 3);
-TM1637Display displayP4(21, 2);
+TM1637Display displayP4(2, 21);
 
 void setup() {
   // note that begin() has no parameter.
