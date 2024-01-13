@@ -2,6 +2,9 @@
 #include <TM1637Display.h>
 #include "RF24.h"
 
+#include <scorebot/Devices.hpp>
+#include <scorebot/PlayerBoard.hpp>
+#include <scorebot/ScoreBoard.hpp>
 
 //================
 

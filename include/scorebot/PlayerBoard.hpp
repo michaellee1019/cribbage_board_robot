@@ -5,12 +5,10 @@
 
 class PlayerBoard : public IODevice {
 public:
-    ~PlayerBoard() override {
-    }
-    void setup() override {
-    }
-    void loop() override {
-    }
+    ~PlayerBoard() override;
+    void setup() override;
+    void loop() override;
 };
+
 
 #endif // PLAYERBOARD_HPP

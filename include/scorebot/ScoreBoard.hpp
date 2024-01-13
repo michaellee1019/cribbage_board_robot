@@ -5,13 +5,11 @@
 
 class ScoreBoard : public IODevice {
 public:
-    ~ScoreBoard() override {
-    }
-    void setup() override {
-    }
-    void loop() override {
-    }
+    ~ScoreBoard() override;
+    void setup() override;
+    void loop() override;
 };
+
 
 #endif // SCOREBOARD_HPP
 
