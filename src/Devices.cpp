@@ -147,36 +147,7 @@ struct TxState {
 // </Cruft>
 
 
-IODevice::IODevice() = default;
-
-
-
-// PlayerBoard
-
-PlayerBoard::~PlayerBoard() = default;
-void PlayerBoard::setup() {
-    rxState.setup();
-}
-
-void PlayerBoard::loop() {
-    rxState.loop();
-}
-
-
-
-// ScoreBoard
-
-ScoreBoard::~ScoreBoard() = default;
-void ScoreBoard::setup() {
-    txState.setup();
-}
-
-void ScoreBoard::loop() {
-    txState.loop();
-}
-
-
-void scorebotSetup(IOConfig config) {
+void scorebotSetup(const IOConfig& config) {
     Serial.begin(9600);
     std::cout << "hello!" << std::endl;
 
@@ -198,3 +169,35 @@ void scorebotSetup(IOConfig config) {
     pinMode(config.pinLedBuiltin, OUTPUT);
     pinMode(config.pinTurnLed, OUTPUT);
 }
+
+
+IODevice::IODevice() = default;
+
+
+
+// PlayerBoard
+
+PlayerBoard::~PlayerBoard() = default;
+void PlayerBoard::setup(const IOConfig& config) {
+    scorebotSetup(config);
+    rxState.setup();
+}
+
+void PlayerBoard::loop() {
+    rxState.loop();
+}
+
+
+
+// ScoreBoard
+
+ScoreBoard::~ScoreBoard() = default;
+void ScoreBoard::setup(const IOConfig& config) {
+    scorebotSetup(config);
+    txState.setup();
+}
+
+void ScoreBoard::loop() {
+    txState.loop();
+}
+

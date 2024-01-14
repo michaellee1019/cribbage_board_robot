@@ -6,7 +6,7 @@
 class ScoreBoard : public IODevice {
 public:
     ~ScoreBoard() override;
-    void setup() override;
+    void setup(const IOConfig& config) override;
     void loop() override;
 };
 

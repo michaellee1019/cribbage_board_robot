@@ -6,7 +6,7 @@
 class PlayerBoard : public IODevice {
 public:
     ~PlayerBoard() override;
-    void setup() override;
+    void setup(const IOConfig& config) override;
     void loop() override;
 };
 

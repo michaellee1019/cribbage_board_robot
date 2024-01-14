@@ -23,20 +23,19 @@ void setup() {
     } else {
         self = new PlayerBoard();
     }
-    self->setup();
-
-    scorebotSetup({
-       PIN_BUTTON_0,
-       PIN_BUTTON_1,
-       PIN_BUTTON_2,
-       PIN_BUTTON_3,
-       PIN_DIP_0,
-       PIN_DIP_1,
-       PIN_DIP_2,
-       PIN_DIP_3,
-       LED_BUILTIN,
-       PIN_TURN_LED,
+    self->setup({
+        PIN_BUTTON_0,
+        PIN_BUTTON_1,
+        PIN_BUTTON_2,
+        PIN_BUTTON_3,
+        PIN_DIP_0,
+        PIN_DIP_1,
+        PIN_DIP_2,
+        PIN_DIP_3,
+        LED_BUILTIN,
+        PIN_TURN_LED,
     });
+
     blink();
 }
 
