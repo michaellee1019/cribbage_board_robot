@@ -8,6 +8,8 @@
 #define CE_PIN   9
 #define CSN_PIN 10
 
+namespace tx {
+
 const byte slaveAddress[5] = {'R','x','A','A','A'};
 
 RF24 radio(CE_PIN, CSN_PIN); // Create a Radio
@@ -106,3 +108,6 @@ void updateMessage() {
     }
     dataToSend[8] = txNum;
 }
+
+} // namespace tx
+

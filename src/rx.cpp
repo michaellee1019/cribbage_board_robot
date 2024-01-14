@@ -4,6 +4,8 @@
 #include "nRF24L01.h"
 #include "RF24.h"
 
+namespace rx {
+
 #define CE_PIN   9
 #define CSN_PIN 10
 
@@ -27,7 +29,7 @@ void setup() {
     radio.openReadingPipe(1, thisSlaveAddress);
 
     radio.enableAckPayload();
-    
+
     radio.startListening();
 
     radio.writeAckPayload(1, &ackData, sizeof(ackData)); // pre-load data
@@ -81,3 +83,5 @@ void updateReplyData() {
     }
     radio.writeAckPayload(1, &ackData, sizeof(ackData)); // load the payload for the next time
 }
+
+} // namespace rx
