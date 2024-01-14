@@ -16,6 +16,7 @@ struct Ack {
         Serial.print(" b=");
         Serial.print(this->b);
         Serial.print(">");
+        Serial.print("\n");
     }
 };
 
@@ -26,9 +27,13 @@ class Message {
 
 public:
     Message()
-    : senderScore{-1},
-      receiverScore{-1},
-      turnNumber{-1}
+    : Message{-1, -1, -1}
+    {}
+
+    Message(int senderScore, int receiverScore, int turnNumber)
+    : senderScore{senderScore},
+      receiverScore{receiverScore},
+      turnNumber{turnNumber}
     {}
 
     explicit operator bool() const {
