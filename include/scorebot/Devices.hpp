@@ -18,13 +18,15 @@ struct IOConfig {
     int pinTurnLed;
 };
 
-class IODevice {
+class TabletopBoard {
 public:
-    virtual ~IODevice() = default;
+    virtual ~TabletopBoard() = default;
     virtual void setup(const IOConfig& config) = 0;
     virtual void loop() = 0;
-    explicit IODevice();
+    explicit TabletopBoard();
 };
+
+void blink();
 
 
 #endif //DEVICES_HPP

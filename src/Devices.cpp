@@ -1,11 +1,10 @@
-#include "scorebot/Devices.hpp"
-#include "scorebot/PlayerBoard.hpp"
-#include "scorebot/ScoreBoard.hpp"
 #include "RF24.h"
 
+#include <scorebot/Devices.hpp>
+#include <scorebot/PlayerBoard.hpp>
+#include <scorebot/ScoreBoard.hpp>
 
 // Cruft
-
 #define CE_PIN   9
 #define CSN_PIN 10
 
@@ -173,7 +172,7 @@ void scorebotSetup(const IOConfig& config) {
 }
 
 
-IODevice::IODevice() = default;
+TabletopBoard::TabletopBoard() = default;
 
 
 
@@ -203,3 +202,11 @@ void ScoreBoard::loop() {
     txState.loop();
 }
 
+void blink() {
+    for(int i=0; i<3; ++i) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(300);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(300);
+    }
+}

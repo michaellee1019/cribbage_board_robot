@@ -3,7 +3,7 @@
 
 #include <scorebot/Devices.hpp>
 
-class PlayerBoard : public IODevice {
+class PlayerBoard : public TabletopBoard {
 public:
     ~PlayerBoard() override;
     void setup(const IOConfig& config) override;
