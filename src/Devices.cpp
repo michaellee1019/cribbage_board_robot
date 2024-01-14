@@ -21,7 +21,7 @@ struct RxState {
     const byte thisSlaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN};
     Message received;
-    int ackData[2] = {109, -4000}; // the two values to be sent to the master
+    Ack ack;
     bool newData = false;
 
     void setup() {
@@ -33,7 +33,7 @@ struct RxState {
 
         radio.startListening();
 
-        radio.writeAckPayload(1, &ackData, sizeof(ackData)); // pre-load data
+        radio.writeAckPayload(1, &ack, sizeof(ack)); // pre-load data
 
         radio.printPrettyDetails();
     }
@@ -47,15 +47,15 @@ struct RxState {
     }
 
     void updateReplyData() {
-        ackData[0] -= 1;
-        ackData[1] -= 1;
-        if (ackData[0] < 100) {
-            ackData[0] = 109;
+        ack.a -= 1;
+        ack.b -= 1;
+        if (ack.a < 100) {
+            ack.a = 109;
         }
-        if (ackData[1] < -4009) {
-            ackData[1] = -4000;
+        if (ack.b < -4009) {
+            ack.b = -4000;
         }
-        radio.writeAckPayload(1, &ackData, sizeof(ackData)); // load the payload for the next time
+        radio.writeAckPayload(1, &ack, sizeof(ack)); // load the payload for the next time
     }
 
     void showData() {
@@ -64,9 +64,9 @@ struct RxState {
         }
         received.log("Received");
         Serial.print(" ackPayload sent ");
-        Serial.print(ackData[0]);
+        Serial.print(ack.a);
         Serial.print(", ");
-        Serial.println(ackData[1]);
+        Serial.println(ack.b);
         newData = false;
     }
 
@@ -83,7 +83,7 @@ struct TxState {
 
     Message toSend;
     int txNum = 1;
-    int ackData[2] = {-1, -1}; // to hold the two values coming from the slave
+    Ack ack;
     bool newData = false;
 
     unsigned long currentMillis{};
@@ -116,9 +116,9 @@ struct TxState {
             return;
         }
         Serial.print("  Acknowledge data ");
-        Serial.print(this->ackData[0]);
+        Serial.print(this->ack.a);
         Serial.print(", ");
-        Serial.println(this->ackData[1]);
+        Serial.println(this->ack.b);
         Serial.println();
         this->newData = false;
     }
@@ -132,7 +132,7 @@ struct TxState {
         this->toSend.log("ToSend");
         if (rslt) {
             if ( radio.isAckPayloadAvailable() ) {
-                radio.read(&ackData, sizeof(ackData));
+                radio.read(&ack, sizeof(ack));
                 newData = true;
             }
             else {
