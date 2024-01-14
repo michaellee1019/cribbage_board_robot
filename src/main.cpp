@@ -5,14 +5,6 @@
 #include <scorebot/PlayerBoard.hpp>
 #include <scorebot/ScoreBoard.hpp>
 
-// <RF Module>
-    // Chip Enable
-    #define PIN_CE      9
-    // Chip Select Not
-    #define PIN_CSN     10
-// </RF Module>
-
-
 // <TM1637>
     #define PIN_CLK   8
     #define PIN_DIO   7
