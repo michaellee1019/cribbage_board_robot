@@ -1,4 +1,5 @@
 #include "RF24.h"
+#include "printf.h"
 
 #include <scorebot/Message.hpp>
 #include <scorebot/Devices.hpp>
@@ -33,6 +34,8 @@ struct RxState {
         radio.startListening();
 
         radio.writeAckPayload(1, &ackData, sizeof(ackData)); // pre-load data
+
+        radio.printPrettyDetails();
     }
 
     void getData() {
@@ -96,6 +99,8 @@ struct TxState {
         radio.setRetries(5,5); // delay, count
         // 5 gives a 1500 µsec delay which is needed for a 32 byte ackPayload
         radio.openWritingPipe(slaveAddress);
+
+        radio.printPrettyDetails();
     }
 
     void loop() {
@@ -156,6 +161,7 @@ struct TxState {
 
 void scorebotSetup(const IOConfig& config) {
     Serial.begin(9600);
+    printf_begin();
     std::cout << "hello!" << std::endl;
 
     pinMode(config.pinButton0, INPUT);
