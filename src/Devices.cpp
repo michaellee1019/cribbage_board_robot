@@ -20,7 +20,6 @@
 struct RxState {
     const byte thisSlaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN};
-    Message received;
     Ack ack;
     bool newData = false;
 
@@ -38,9 +37,9 @@ struct RxState {
         radio.printPrettyDetails();
     }
 
-    void getData() {
+    void getData(Message* received) {
         if ( radio.available() ) {
-            radio.read( &received, sizeof(received) );
+            radio.read( received, sizeof(Message) );
             updateReplyData();
             newData = true;
         }
@@ -58,7 +57,7 @@ struct RxState {
         radio.writeAckPayload(1, &ack, sizeof(ack)); // load the payload for the next time
     }
 
-    void showData() {
+    void showData(const Message& received) {
         if (!newData) {
             return;
         }
@@ -71,8 +70,9 @@ struct RxState {
     }
 
     void loop() {
-        this->getData();
-        this->showData();
+        Message received;
+        this->getData(&received);
+        this->showData(received);
     }
 } rxState;
 
@@ -81,8 +81,6 @@ struct TxState {
     const byte slaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN}; // Create a Radio
 
-    Message toSend;
-    int txNum = 1;
     Ack ack;
     bool newData = false;
 
@@ -106,7 +104,9 @@ struct TxState {
     void loop() {
         this->currentMillis = millis();
         if (this->currentMillis - this->prevMillis >= this->txIntervalMillis) {
-            send();
+            Message toSend;
+            send(&toSend);
+            toSend.log("Sent");
         }
         showData();
     }
@@ -123,13 +123,11 @@ struct TxState {
         this->newData = false;
     }
 
-    void send() {
+    void send(Message* toSend) {
         bool rslt;
-        rslt = this->radio.write( &this->toSend, sizeof(this->toSend) );
-        // Always use sizeof() as it gives the size as the number of bytes.
-        // For example if dataToSend was an int sizeof() would correctly return 2
+        rslt = this->radio.write( toSend, sizeof(Message) );
 
-        this->toSend.log("ToSend");
+        toSend->log("ToSend");
         if (rslt) {
             if ( radio.isAckPayloadAvailable() ) {
                 radio.read(&ack, sizeof(ack));
@@ -138,7 +136,7 @@ struct TxState {
             else {
                 Serial.println("  Acknowledge but no data ");
             }
-            toSend.nextTurn();
+            toSend->nextTurn();
         }
         else {
             Serial.println("  Tx failed");
