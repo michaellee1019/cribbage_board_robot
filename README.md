@@ -5,12 +5,19 @@ Setup:
 brew install platformio
 ```
 
-```sh
+
+# Test Script
+
+Terminal 1:
+
+```
 pio run -t upload -t monitor -e scoreboard
-
-pio run -t upload -t monitor -e player0
-
-# https://docs.platformio.org/en/latest/projectconf/sections/platformio/options/directory/cache_dir.html
-# To reset a cache, please run pio update command.
+# look for 7,8,9
 ```
 
+Terminal 2:
+
+```
+pio run -t upload -t monitor -e player0
+# look for 0,1,2
+```
