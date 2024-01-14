@@ -1,7 +1,6 @@
 #include <Arduino.h>
 
 #include <scorebot/Pins.hpp>
-#include <scorebot/Message.hpp>
 
 #include <scorebot/Devices.hpp>
 #include <scorebot/PlayerBoard.hpp>
@@ -30,18 +29,14 @@ void setup() {
        PIN_BUTTON_0,
        PIN_BUTTON_1,
        PIN_BUTTON_2,
-       PIN_BUTTON_3
+       PIN_BUTTON_3,
+       PIN_DIP_0,
+       PIN_DIP_1,
+       PIN_DIP_2,
+       PIN_DIP_3,
+       LED_BUILTIN,
+       PIN_TURN_LED,
     });
-
-    pinMode(PIN_DIP_0, INPUT);
-    pinMode(PIN_DIP_1, INPUT);
-    pinMode(PIN_DIP_2, INPUT);
-    pinMode(PIN_DIP_3, INPUT);
-
-    pinMode(LED_BUILTIN, OUTPUT);
-
-    pinMode(PIN_TURN_LED, OUTPUT);
-
     blink();
 }
 

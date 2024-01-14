@@ -16,6 +16,14 @@ struct IOConfig {
     int pinButton1;
     int pinButton2;
     int pinButton3;
+
+    int pinDip0;
+    int pinDip1;
+    int pinDip2;
+    int pinDip3;
+
+    int pinLedBuiltin;
+    int pinTurnLed;
 };
 
 void scorebotSetup(IOConfig config);

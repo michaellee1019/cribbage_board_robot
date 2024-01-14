@@ -189,4 +189,12 @@ void scorebotSetup(IOConfig config) {
     digitalWrite(config.pinButton1, HIGH);
     digitalWrite(config.pinButton2, HIGH);
     digitalWrite(config.pinButton3, HIGH);
+
+    pinMode(config.pinDip0, INPUT);
+    pinMode(config.pinDip1, INPUT);
+    pinMode(config.pinDip2, INPUT);
+    pinMode(config.pinDip3, INPUT);
+
+    pinMode(config.pinLedBuiltin, OUTPUT);
+    pinMode(config.pinTurnLed, OUTPUT);
 }
