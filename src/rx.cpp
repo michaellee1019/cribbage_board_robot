@@ -18,6 +18,18 @@ struct RxState {
     char dataReceived[10]; // this must match dataToSend in the TX
     int ackData[2] = {109, -4000}; // the two values to be sent to the master
     bool newData = false;
+
+    void setup() {
+        radio.begin();
+        radio.setDataRate( RF24_250KBPS );
+        radio.openReadingPipe(1, thisSlaveAddress);
+
+        radio.enableAckPayload();
+
+        radio.startListening();
+
+        radio.writeAckPayload(1, &ackData, sizeof(ackData)); // pre-load data
+    }
 } rxState;
 
 
@@ -25,19 +37,9 @@ struct RxState {
 //==============
 
 void setup() {
-
     Serial.begin(9600);
-
     Serial.println("SimpleRxAckPayload Starting");
-    rxState.radio.begin();
-    rxState.radio.setDataRate( RF24_250KBPS );
-    rxState.radio.openReadingPipe(1, rxState.thisSlaveAddress);
-
-    rxState.radio.enableAckPayload();
-
-    rxState.radio.startListening();
-
-    rxState.radio.writeAckPayload(1, &rxState.ackData, sizeof(rxState.ackData)); // pre-load data
+    rxState.setup();
 }
 
 //==========

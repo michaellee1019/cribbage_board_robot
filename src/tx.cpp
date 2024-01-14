@@ -37,6 +37,7 @@ void setup() {
     Serial.println("SimpleTxAckPayload Starting");
 
     txState.radio.begin();
+//    txState.radio.setPALevel(RF24_PA_MAX);
     txState.radio.setDataRate( RF24_250KBPS );
 
     txState.radio.enableAckPayload();
