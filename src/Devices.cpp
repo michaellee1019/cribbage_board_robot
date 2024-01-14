@@ -12,7 +12,7 @@
 struct RxState {
     const byte thisSlaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN};
-    char dataReceived[10]; // this must match dataToSend in the TX
+    char dataReceived[10] {}; // this must match dataToSend in the TX
     int ackData[2] = {109, -4000}; // the two values to be sent to the master
     bool newData = false;
 
@@ -49,15 +49,16 @@ struct RxState {
     }
 
     void showData() {
-        if (newData == true) {
-            Serial.print("Data received ");
-            Serial.println(dataReceived);
-            Serial.print(" ackPayload sent ");
-            Serial.print(ackData[0]);
-            Serial.print(", ");
-            Serial.println(ackData[1]);
-            newData = false;
+        if (!newData) {
+            return;
         }
+        Serial.print("Data received ");
+        Serial.println(dataReceived);
+        Serial.print(" ackPayload sent ");
+        Serial.print(ackData[0]);
+        Serial.print(", ");
+        Serial.println(ackData[1]);
+        newData = false;
     }
 
     void loop() {
@@ -76,8 +77,8 @@ struct TxState {
     int ackData[2] = {-1, -1}; // to hold the two values coming from the slave
     bool newData = false;
 
-    unsigned long currentMillis;
-    unsigned long prevMillis;
+    unsigned long currentMillis{};
+    unsigned long prevMillis{};
     unsigned long txIntervalMillis = 1000; // send once per second
 
     void setup() {
@@ -100,14 +101,15 @@ struct TxState {
     }
 
     void showData() {
-        if (this->newData == true) {
-            Serial.print("  Acknowledge data ");
-            Serial.print(this->ackData[0]);
-            Serial.print(", ");
-            Serial.println(this->ackData[1]);
-            Serial.println();
-            this->newData = false;
+        if (!this->newData) {
+            return;
         }
+        Serial.print("  Acknowledge data ");
+        Serial.print(this->ackData[0]);
+        Serial.print(", ");
+        Serial.println(this->ackData[1]);
+        Serial.println();
+        this->newData = false;
     }
 
     void send() {
