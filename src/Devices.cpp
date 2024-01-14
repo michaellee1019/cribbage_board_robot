@@ -1,5 +1,6 @@
 #include "RF24.h"
 
+#include <scorebot/Message.hpp>
 #include <scorebot/Devices.hpp>
 #include <scorebot/PlayerBoard.hpp>
 #include <scorebot/ScoreBoard.hpp>
@@ -8,10 +9,17 @@
 #define CE_PIN   9
 #define CSN_PIN 10
 
+//struct MyRadio {
+//    RF24 _radio;
+//    explicit MyRadio(int cePin, int csnPin)
+//    : _radio{cePin, csnPin} {}
+//};
+
+
 struct RxState {
     const byte thisSlaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN};
-    char dataReceived[10] {}; // this must match dataToSend in the TX
+    Message received;
     int ackData[2] = {109, -4000}; // the two values to be sent to the master
     bool newData = false;
 
@@ -29,7 +37,7 @@ struct RxState {
 
     void getData() {
         if ( radio.available() ) {
-            radio.read( &dataReceived, sizeof(dataReceived) );
+            radio.read( &received, sizeof(received) );
             updateReplyData();
             newData = true;
         }
@@ -51,8 +59,7 @@ struct RxState {
         if (!newData) {
             return;
         }
-        Serial.print("Data received ");
-        Serial.println(dataReceived);
+        received.log("Received");
         Serial.print(" ackPayload sent ");
         Serial.print(ackData[0]);
         Serial.print(", ");
@@ -71,8 +78,8 @@ struct TxState {
     const byte slaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN}; // Create a Radio
 
-    char dataToSend[10] = "Message 0";
-    char txNum = '1';
+    Message toSend;
+    int txNum = 1;
     int ackData[2] = {-1, -1}; // to hold the two values coming from the slave
     bool newData = false;
 
@@ -113,12 +120,11 @@ struct TxState {
 
     void send() {
         bool rslt;
-        rslt = this->radio.write( &this->dataToSend, sizeof(this->dataToSend) );
+        rslt = this->radio.write( &this->toSend, sizeof(this->toSend) );
         // Always use sizeof() as it gives the size as the number of bytes.
         // For example if dataToSend was an int sizeof() would correctly return 2
 
-        Serial.print("Data Sent ");
-        Serial.print(this->dataToSend);
+        this->toSend.log("ToSend");
         if (rslt) {
             if ( this->radio.isAckPayloadAvailable() ) {
                 this->radio.read(&this->ackData, sizeof(this->ackData));
@@ -139,10 +145,10 @@ struct TxState {
     void updateMessage() {
         // so you can see that new data is being sent
         this->txNum += 1;
-        if (this->txNum > '9') {
-            this->txNum = '0';
+        if (this->txNum > 9) {
+            this->txNum = 0;
         }
-        this->dataToSend[8] = this->txNum;
+        this->toSend.turnNumber = this->txNum;
     }
 } txState;
 // </Cruft>
