@@ -30,11 +30,44 @@ struct RxState {
 
         radio.writeAckPayload(1, &ackData, sizeof(ackData)); // pre-load data
     }
+
+    void getData() {
+        if ( radio.available() ) {
+            radio.read( &dataReceived, sizeof(dataReceived) );
+            updateReplyData();
+            newData = true;
+        }
+    }
+
+    void updateReplyData() {
+        ackData[0] -= 1;
+        ackData[1] -= 1;
+        if (ackData[0] < 100) {
+            ackData[0] = 109;
+        }
+        if (ackData[1] < -4009) {
+            ackData[1] = -4000;
+        }
+        radio.writeAckPayload(1, &ackData, sizeof(ackData)); // load the payload for the next time
+    }
+
+    void showData() {
+        if (newData == true) {
+            Serial.print("Data received ");
+            Serial.println(dataReceived);
+            Serial.print(" ackPayload sent ");
+            Serial.print(ackData[0]);
+            Serial.print(", ");
+            Serial.println(ackData[1]);
+            newData = false;
+        }
+    }
+
+    void loop() {
+        this->getData();
+        this->showData();
+    }
 } rxState;
-
-
-
-//==============
 
 void setup() {
     Serial.begin(9600);
@@ -42,53 +75,8 @@ void setup() {
     rxState.setup();
 }
 
-//==========
-
-void getData();
-void showData();
-void updateReplyData();
-
 void loop() {
-    getData();
-    showData();
-}
-
-//============
-
-void getData() {
-    if ( rxState.radio.available() ) {
-        rxState.radio.read( &rxState.dataReceived, sizeof(rxState.dataReceived) );
-        updateReplyData();
-        rxState.newData = true;
-    }
-}
-
-//================
-
-void showData() {
-    if (rxState.newData == true) {
-        Serial.print("Data received ");
-        Serial.println(rxState.dataReceived);
-        Serial.print(" ackPayload sent ");
-        Serial.print(rxState.ackData[0]);
-        Serial.print(", ");
-        Serial.println(rxState.ackData[1]);
-        rxState.newData = false;
-    }
-}
-
-//================
-
-void updateReplyData() {
-    rxState.ackData[0] -= 1;
-    rxState.ackData[1] -= 1;
-    if (rxState.ackData[0] < 100) {
-        rxState.ackData[0] = 109;
-    }
-    if (rxState.ackData[1] < -4009) {
-        rxState.ackData[1] = -4000;
-    }
-    rxState.radio.writeAckPayload(1, &rxState.ackData, sizeof(rxState.ackData)); // load the payload for the next time
+    rxState.loop();
 }
 
 } // namespace rx
