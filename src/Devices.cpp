@@ -2,6 +2,19 @@
 #include "scorebot/PlayerBoard.hpp"
 #include "scorebot/ScoreBoard.hpp"
 
+
+// Cruft
+namespace rx {
+    void setup();
+    void loop();
+}
+namespace tx {
+    void setup();
+    void loop();
+}
+// </Cruft>
+
+
 IODevice::IODevice() = default;
 
 
@@ -10,9 +23,11 @@ IODevice::IODevice() = default;
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {
+    rx::setup();
 }
 
 void PlayerBoard::loop() {
+    rx::loop();
 }
 
 
@@ -21,9 +36,11 @@ void PlayerBoard::loop() {
 
 ScoreBoard::~ScoreBoard() = default;
 void ScoreBoard::setup() {
+    tx::setup();
 }
 
 void ScoreBoard::loop() {
+    tx::loop();
 }
 
 

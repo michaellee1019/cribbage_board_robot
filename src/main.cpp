@@ -80,21 +80,15 @@ RF24 radio(PIN_CE, PIN_CSN);
 
 static TM1637Display display(PIN_CLK, PIN_DIO);
 
-namespace rx {
-    void setup();
-    void loop();
-}
-namespace tx {
-    void setup();
-    void loop();
-}
 
+IODevice* self;
 void setup() {
     if (BOARD_ID == -1) {
-        tx::setup();
+        self = new ScoreBoard();
     } else {
-        rx::setup();
+        self = new PlayerBoard();
     }
+    self->setup();
 
     scorebotSetup({
        PIN_BUTTON_0,
@@ -264,10 +258,6 @@ Message senderRF(Message toSend) {
 }
 
 void loop() {
-    if (BOARD_ID == -1) {
-        tx::loop();
-    } else {
-        rx::loop();
-    }
+    self->loop();
 }
 
