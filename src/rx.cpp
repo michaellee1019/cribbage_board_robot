@@ -1,4 +1,6 @@
 // SimpleRxAckPayload- the slave or the receiver
+#ifndef RX_CPP
+#define RX_CPP
 
 #include <SPI.h>
 #include "nRF24L01.h"
@@ -85,3 +87,5 @@ void updateReplyData() {
 }
 
 } // namespace rx
+
+#endif

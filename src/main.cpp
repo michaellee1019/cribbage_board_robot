@@ -80,7 +80,22 @@ RF24 radio(PIN_CE, PIN_CSN);
 
 static TM1637Display display(PIN_CLK, PIN_DIO);
 
+namespace rx {
+    void setup();
+    void loop();
+}
+namespace tx {
+    void setup();
+    void loop();
+}
+
 void setup() {
+    if (BOARD_ID == -1) {
+        tx::setup();
+    } else {
+        rx::setup();
+    }
+
     scorebotSetup({
        PIN_BUTTON_0,
        PIN_BUTTON_1,
@@ -110,29 +125,6 @@ void setup() {
         digitalWrite(LED_BUILTIN, LOW);
         delay(300);
     }
-
-    if (BOARD_ID == -1) {
-        // Scoreboard
-        // RF Sender Setup
-        radio.begin();
-        radio.setDataRate( RF24_250KBPS );
-
-        radio.enableAckPayload();
-
-        radio.setRetries(3,5); // delay, count
-    } else {
-        // Player Controller
-        // RF Receiver Setup
-        radio.begin();
-        radio.setDataRate( RF24_250KBPS );
-        radio.openReadingPipe(1, slaveAddresses[BOARD_ID]);
-
-        radio.enableAckPayload();
-
-        radio.startListening();
-    }
-
-
 }
 
 byte prevFive = HIGH;
@@ -272,34 +264,10 @@ Message senderRF(Message toSend) {
 }
 
 void loop() {
-    auto mode = BOARD_ID;
-    if (mode == -1) {
-        // Scoreboard
-        currentMillis = millis();
-        if (currentMillis - prevMillis >= txIntervalMillis) {
-            Message playerMessage = senderRF(message);
-            playerMessage.log("PlayerMessage");
-            if(playerMessage) {
-                if(playerMessage.turnNumber>message.turnNumber) {
-                    message.senderScore+=playerMessage.receiverScore;
-                    message.turnNumber=playerMessage.turnNumber;
-                }
-                display.showNumberDec(message.senderScore);
-            }
-            playerMessage.log("PlayerMessage");
-        }
+    if (BOARD_ID == -1) {
+        tx::loop();
     } else {
-        // Console
-        updatePlayerDisplayScoreLoop();
-        Message scoreboardMessage = receiverRF(message);
-        //message = scoreboardMessage;
+        rx::loop();
     }
-//    b.update();
-//    if (b.fell()) {
-//        digitalWrite(LED_BUILTIN, HIGH);
-//    }
-//    if (b.rose()) {
-//        digitalWrite(LED_BUILTIN, LOW);
-//    }
 }
 

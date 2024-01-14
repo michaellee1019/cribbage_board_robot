@@ -1,4 +1,6 @@
 // SimpleTxAckPayload - the master or the transmitter
+#ifndef TX_CPP
+#define TX_CPP
 
 #include <SPI.h>
 #include "nRF24L01.h"
@@ -110,4 +112,6 @@ void updateMessage() {
 }
 
 } // namespace tx
+
+#endif
 
