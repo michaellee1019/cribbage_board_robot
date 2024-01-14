@@ -4,23 +4,27 @@
 #include <Arduino.h>
 
 
-struct Message {
+class Message {
+    int senderScore;
+    int receiverScore;
+    int turnNumber;
+
+public:
     Message()
-            : senderScore{-1}, receiverScore{-1}, turnNumber{-1}
+    : senderScore{-1},
+      receiverScore{-1},
+      turnNumber{-1}
     {}
 
     explicit operator bool() const {
         return turnNumber >= 0;
     }
 
-    // senderScore is the current total score for the player that score board knows about
-    int senderScore;
+    void nextTurn() {
+        this->turnNumber = (this->turnNumber % 200) + 1;
+    }
 
-    // receiverScore is the new score that the player knows about
-    int receiverScore;
-    int turnNumber;
-
-    void log(const char* name) const {
+    void log(const char *name) const {
         if (!*this) {
             return;
         }
@@ -33,6 +37,7 @@ struct Message {
         Serial.print(">");
         Serial.print("\n");
     }
+
 private:
     void sendToSerial() const {
         Serial.print("sender=");
@@ -43,6 +48,5 @@ private:
         Serial.print(this->turnNumber);
     }
 };
-Message message;
 
 #endif

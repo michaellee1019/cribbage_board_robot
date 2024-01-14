@@ -131,14 +131,14 @@ struct TxState {
 
         this->toSend.log("ToSend");
         if (rslt) {
-            if ( this->radio.isAckPayloadAvailable() ) {
-                this->radio.read(&this->ackData, sizeof(this->ackData));
-                this->newData = true;
+            if ( radio.isAckPayloadAvailable() ) {
+                radio.read(&ackData, sizeof(ackData));
+                newData = true;
             }
             else {
                 Serial.println("  Acknowledge but no data ");
             }
-            updateMessage();
+            toSend.nextTurn();
         }
         else {
             Serial.println("  Tx failed");
@@ -147,14 +147,6 @@ struct TxState {
         this->prevMillis = millis();
     }
 
-    void updateMessage() {
-        // so you can see that new data is being sent
-        this->txNum += 1;
-        if (this->txNum > 9) {
-            this->txNum = 0;
-        }
-        this->toSend.turnNumber = this->txNum;
-    }
 } txState;
 // </Cruft>
 
