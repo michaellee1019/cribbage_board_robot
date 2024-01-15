@@ -3,69 +3,69 @@
 
 #include <Arduino.h>
 
-struct WhatScoreboardSends {
-    int a {-1};
-    int b {-1};
+using PlayerNumberT = int;
+using ScoreT = int;
+using TurnNumberT = int;
+using TimestampT = decltype(millis());
 
+template<typename T>
+void print(const T& t) {
+    Serial.print(t);
+}
+
+struct WhatScoreboardSends {
+    TimestampT timestamp;
+    PlayerNumberT toPlayer;
+    ScoreT yourScore;
+    PlayerNumberT whosTurn;
+    TurnNumberT turnNumber;
 
     void log(const char* name) const {
-        Serial.print("<WhatScoreboardSends");
-        Serial.print(name);
-        Serial.print(" a=");
-        Serial.print(this->a);
-        Serial.print(" b=");
-        Serial.print(this->b);
-        Serial.print(">");
-        Serial.print("\n");
+        print(timestamp);
+        print("  Sends");
+        print(name);
+        print(">  ");
+
+        print(" -");    print(toPlayer);
+        print(" #");    print(yourScore);
+        print(" ?");    print(whosTurn);
+        print(" @");    print(turnNumber);
+
+        print("\n");
     }
 };
 
 class WhatPlayerBoardSends {
-    int senderScore;
-    int receiverScore;
-    int turnNumber;
+    TimestampT timestamp{-1};
+    PlayerNumberT myPlayerNumber{-1};
+    TurnNumberT iThinkItsNowTurnNumber{-1};
+    ScoreT myScore{-1};
 
 public:
-    WhatPlayerBoardSends()
-    : WhatPlayerBoardSends{-1, -1, -1}
-    {}
-
-    WhatPlayerBoardSends(int senderScore, int receiverScore, int turnNumber)
-    : senderScore{senderScore},
-      receiverScore{receiverScore},
-      turnNumber{turnNumber}
-    {}
-
     explicit operator bool() const {
-        return turnNumber >= 0;
+        return iThinkItsNowTurnNumber >= 0;
     }
 
-    void nextTurn() {
-        this->turnNumber = (this->turnNumber % 200) + 1;
+    void advanceForTesting() {
+        myScore += 10;
+        iThinkItsNowTurnNumber++;
     }
 
     void log(const char *name) const {
         if (!*this) {
             return;
         }
-        Serial.print("<");
-        Serial.print(name);
-        Serial.print(">");
-        this->sendToSerial();
-        Serial.print("</");
-        Serial.print(name);
-        Serial.print(">");
-        Serial.print("\n");
-    }
+        print(timestamp);
 
-private:
-    void sendToSerial() const {
-        Serial.print("sender=");
-        Serial.print(this->senderScore);
-        Serial.print(" rcvr=");
-        Serial.print(this->receiverScore);
-        Serial.print(" turn=");
-        Serial.print(this->turnNumber);
+        print("  PlayerSends");
+        print(name);
+        print(">  ");
+
+        print(" N"); print(myPlayerNumber);
+        print(" T"); print(iThinkItsNowTurnNumber);
+        print(" S"); print(myScore);
+
+        print("\n");
     }
 };
 

@@ -24,7 +24,7 @@ struct ScoreboardState {
 
         radio.startListening();
 
-        WhatScoreboardSends ack;
+        WhatScoreboardSends ack{};
         radio.writeAckPayload(1, &ack, sizeof(ack)); // pre-load data
 
         radio.printPrettyDetails();
@@ -40,8 +40,8 @@ struct ScoreboardState {
         radio.writeAckPayload(1, ack, sizeof(WhatScoreboardSends)); // load the payload for the next time
     }
     void loop() {
-        WhatPlayerBoardSends received;
-        WhatScoreboardSends ack;
+        WhatPlayerBoardSends received{};
+        WhatScoreboardSends ack{};
         this->checkForMessages(&received, &ack);
         received.log("Received");
     }
@@ -64,13 +64,13 @@ struct PlayerBoardState {
     }
 
     unsigned long lastSent = 0;
-    WhatPlayerBoardSends state;
+    WhatPlayerBoardSends state{};
 
     void loop() {
         auto time = millis();
         if (time - lastSent >= 1000) {
-            state.nextTurn();
-            WhatScoreboardSends ack;
+            state.advanceForTesting();
+            WhatScoreboardSends ack{};
             this->send(&state, &ack);
             state.log("Sent");
             lastSent = time;
