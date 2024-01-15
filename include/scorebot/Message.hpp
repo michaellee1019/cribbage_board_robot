@@ -35,6 +35,9 @@ struct WhatScoreboardSends {
     }
 };
 
+// I think this is a requirement of the NRF stack.
+static_assert(sizeof(WhatScoreboardSends) <= 32);
+
 class WhatPlayerBoardSends {
     TimestampT timestamp{-1};
     PlayerNumberT myPlayerNumber{-1};
