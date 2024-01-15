@@ -10,14 +10,8 @@
 #define CE_PIN   9
 #define CSN_PIN 10
 
-//struct MyRadio {
-//    RF24 _radio;
-//    explicit MyRadio(int cePin, int csnPin)
-//    : _radio{cePin, csnPin} {}
-//};
 
-
-struct RxState {
+struct ScoreboardState {
     const byte thisSlaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN};
 
@@ -30,28 +24,31 @@ struct RxState {
 
         radio.startListening();
 
-        Ack ack;
+        WhatScoreboardSends ack;
         radio.writeAckPayload(1, &ack, sizeof(ack)); // pre-load data
 
         radio.printPrettyDetails();
     }
 
-    void getData(Message* received, Ack* ack) {
-        if ( radio.available() ) {
-            radio.read( received, sizeof(Message) );
-            radio.writeAckPayload(1, ack, sizeof(Ack)); // load the payload for the next time
+    void checkForMessages(WhatPlayerBoardSends* received, WhatScoreboardSends* ack) {
+        if ( ! radio.available() ) {
+            return;
         }
+        radio.read( received, sizeof(WhatPlayerBoardSends) );
+        // TODO: The comment below makes no sense after all these refactorings.
+        //       Did I do this right? What is "the next time"? It sounds ominous.
+        radio.writeAckPayload(1, ack, sizeof(WhatScoreboardSends)); // load the payload for the next time
     }
     void loop() {
-        Message received;
-        Ack ack;
-        this->getData(&received, &ack);
+        WhatPlayerBoardSends received;
+        WhatScoreboardSends ack;
+        this->checkForMessages(&received, &ack);
         received.log("Received");
     }
 } rxState;
 
 
-struct TxState {
+struct PlayerBoardState {
     const byte slaveAddress[5] = {'R','x','A','A','A'};
     RF24 radio{CE_PIN, CSN_PIN}; // Create a Radio
 
@@ -67,24 +64,24 @@ struct TxState {
     }
 
     unsigned long lastSent = 0;
-    Message state;
+    WhatPlayerBoardSends state;
 
     void loop() {
         auto time = millis();
         if (time - lastSent >= 1000) {
             state.nextTurn();
-            Ack ack;
+            WhatScoreboardSends ack;
             this->send(&state, &ack);
             state.log("Sent");
             lastSent = time;
         }
     }
 
-    void send(Message* toSend, Ack* ack) {
-        bool rslt = this->radio.write( toSend, sizeof(Message) );
+    void send(WhatPlayerBoardSends* toSend, WhatScoreboardSends* ack) {
+        bool rslt = this->radio.write( toSend, sizeof(WhatPlayerBoardSends) );
         if (rslt) {
             if ( radio.isAckPayloadAvailable() ) {
-                radio.read(ack, sizeof(Ack));
+                radio.read(ack, sizeof(WhatScoreboardSends));
             }
         }
     }

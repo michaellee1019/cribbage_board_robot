@@ -3,13 +3,13 @@
 
 #include <Arduino.h>
 
-struct Ack {
+struct WhatScoreboardSends {
     int a {-1};
     int b {-1};
 
 
     void log(const char* name) const {
-        Serial.print("<Ack");
+        Serial.print("<WhatScoreboardSends");
         Serial.print(name);
         Serial.print(" a=");
         Serial.print(this->a);
@@ -20,17 +20,17 @@ struct Ack {
     }
 };
 
-class Message {
+class WhatPlayerBoardSends {
     int senderScore;
     int receiverScore;
     int turnNumber;
 
 public:
-    Message()
-    : Message{-1, -1, -1}
+    WhatPlayerBoardSends()
+    : WhatPlayerBoardSends{-1, -1, -1}
     {}
 
-    Message(int senderScore, int receiverScore, int turnNumber)
+    WhatPlayerBoardSends(int senderScore, int receiverScore, int turnNumber)
     : senderScore{senderScore},
       receiverScore{receiverScore},
       turnNumber{turnNumber}
