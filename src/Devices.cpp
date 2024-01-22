@@ -92,7 +92,7 @@ struct PlayerBoardState {
 void scorebotSetup(const IOConfig& config) {
     Serial.begin(9600);
     printf_begin();
-    std::cout << "hello!" << std::endl;
+    std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
 
     pinMode(config.pinButton0, INPUT);
     pinMode(config.pinButton1, INPUT);
