@@ -5,9 +5,12 @@
 
 class PlayerBoard : public TabletopBoard {
 public:
+    explicit PlayerBoard();
     ~PlayerBoard() override;
     void setup(const IOConfig& config) override;
     void loop() override;
+    struct Impl;
+    Impl* impl;
 };
 
 

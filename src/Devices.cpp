@@ -1,5 +1,6 @@
 #include "RF24.h"
 #include "printf.h"
+#include "TM1637Display.h"
 
 #include <scorebot/Message.hpp>
 #include <scorebot/Devices.hpp>
@@ -120,14 +121,50 @@ TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
+struct PlayerBoard::Impl {
+    TM1637Display displayP2;
+    TM1637Display displayP3;
+    TM1637Display displayP4;
+
+    Impl()
+            : displayP2(6, 5),
+              displayP3(4, 3),
+              displayP4(21, 2)
+    {}
+
+    void setup() {
+        displayP2.setBrightness(0x0f);
+        displayP2.showNumberDec(2);
+        displayP3.setBrightness(0x0f);
+        displayP3.showNumberDec(3);
+        displayP4.setBrightness(0x0f);
+        displayP4.showNumberDec(4);
+    }
+
+    void loop() {
+        displayP2.setBrightness(0x0f);
+        displayP2.showNumberDec(2);
+        displayP3.setBrightness(0x0f);
+        displayP3.showNumberDec(3);
+        displayP4.setBrightness(0x0f);
+        displayP4.showNumberDec(4);
+    }
+};
+
+PlayerBoard::PlayerBoard()
+: impl{new Impl()}
+{}
+
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup(const IOConfig& config) {
     scorebotSetup(config);
     rxState.setup();
+    impl->setup();
 }
 
 void PlayerBoard::loop() {
     rxState.loop();
+    impl->loop();
 }
 
 
