@@ -8,8 +8,8 @@
 #include <scorebot/ScoreBoard.hpp>
 
 // Cruft
-#define CE_PIN   9
-#define CSN_PIN 10
+#define CE_PIN   10
+#define CSN_PIN 9
 
 
 struct ScoreboardState {

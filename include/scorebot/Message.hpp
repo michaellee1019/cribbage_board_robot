@@ -39,7 +39,6 @@ struct WhatScoreboardSends {
 static_assert(sizeof(WhatScoreboardSends) <= 32);
 
 class WhatPlayerBoardSends {
-    TimestampT timestamp{-1};
     PlayerNumberT myPlayerNumber{-1};
     TurnNumberT iThinkItsNowTurnNumber{-1};
     ScoreT myScore{-1};
@@ -58,7 +57,6 @@ public:
         if (!*this) {
             return;
         }
-        print(timestamp);
 
         print("  PlayerSends");
         print(name);
