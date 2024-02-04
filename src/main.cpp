@@ -7,12 +7,7 @@
 TabletopBoard* self;
 
 void setup() {
-    if (BOARD_ID == -1) {
-        self = new ScoreBoard();
-    } else {
-        self = new PlayerBoard();
-    }
-    self->setup({
+    IOConfig config {
         .pinButton0    = 3,
         .pinButton1    = 4,
         .pinButton2    = 5,
@@ -23,7 +18,13 @@ void setup() {
         .pinDip3       = 17,
         .pinLedBuiltin = LED_BUILTIN,
         .pinTurnLed    = 2
-    });
+    };
+    if (BOARD_ID == -1) {
+        self = new ScoreBoard();
+    } else {
+        self = new PlayerBoard(config);
+    }
+    self->setup(config);
 
     blink();
 }
