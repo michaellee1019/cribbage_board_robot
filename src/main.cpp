@@ -20,7 +20,7 @@ void setup() {
         .pinTurnLed    = 2
     };
     if (BOARD_ID == -1) {
-        self = new ScoreBoard();
+        self = new ScoreBoard(config);
     } else {
         self = new PlayerBoard(config);
     }

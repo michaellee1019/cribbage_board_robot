@@ -1,6 +1,7 @@
 #include "RF24.h"
 #include "printf.h"
 #include "TM1637Display.h"
+#include <string>
 
 #include <scorebot/Message.hpp>
 #include <scorebot/Devices.hpp>
@@ -11,13 +12,38 @@
 #define CE_PIN 10
 #define CSN_PIN 9
 
-struct ScoreboardState
+struct ScoreBoard::Impl
 {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};
+    IOConfig config;
+
+    Impl(IOConfig config)
+        : config{config}
+    {
+    }
+
+    TM1637Display displays[4]{
+        TM1637Display(8,7),
+        TM1637Display(6,5),
+        TM1637Display(4,3),
+        TM1637Display(2,21)
+    };
+
 
     void setup()
     {
+        Serial.println("setup started");
+        uint8_t fullDisplay[] = { 0xff, 0xff, 0xff, 0xff };
+        for (size_t i=0; i<4; i++) {
+            Serial.println("init display");
+            displays[i].setBrightness(0x0f);
+            displays[i].setSegments(fullDisplay);
+            delay(100);
+            displays[i].showNumberDec(i+1);
+            delay(100);
+        }
+        
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
         radio.openReadingPipe(1, thisSlaveAddress);
@@ -50,7 +76,7 @@ struct ScoreboardState
         this->checkForMessages(&received, &ack);
         received.log("Received");
     }
-} rxState;
+};
 
 struct PlayerBoardState
 {
@@ -96,7 +122,7 @@ struct PlayerBoardState
             }
         }
     }
-} txState;
+} rxState;
 // </Cruft>
 
 void scorebotSetup(const IOConfig &config)
@@ -185,9 +211,6 @@ struct PlayerBoard::Impl
         digitalWrite(2, HIGH);
         delay(500);
         digitalWrite(2, LOW);
-
-        display.setBrightness(0x0f);
-        display.showNumberDec(2);
     }
 
     void loop()
@@ -228,6 +251,8 @@ struct PlayerBoard::Impl
             }
             score = 0;
         }
+
+        display.showNumberDec(score, false);
     }
 };
 
@@ -253,15 +278,20 @@ void PlayerBoard::loop()
 // ScoreBoard
 
 ScoreBoard::~ScoreBoard() = default;
+
+ScoreBoard::ScoreBoard(IOConfig config)
+    : impl{new Impl(config)}
+{
+}
 void ScoreBoard::setup(const IOConfig &config)
 {
     scorebotSetup(config);
-    txState.setup();
+    impl->setup();
 }
 
 void ScoreBoard::loop()
 {
-    txState.loop();
+    impl->loop();
 }
 
 void blink()

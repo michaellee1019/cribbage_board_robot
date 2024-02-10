@@ -5,9 +5,12 @@
 
 class ScoreBoard : public TabletopBoard {
 public:
+    explicit ScoreBoard(IOConfig config);
     ~ScoreBoard() override;
     void setup(const IOConfig& config) override;
     void loop() override;
+    struct Impl;
+    Impl* impl;
 };
 
 
