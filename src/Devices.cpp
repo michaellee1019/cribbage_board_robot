@@ -48,22 +48,26 @@ struct LeaderBoard::Impl {
         radio.printPrettyDetails();
     }
 
-    void checkForMessages(WhatPlayerBoardSends* received, WhatLeaderBoardSendsEverySecond* ack) {
-        if (!radio.available()) {
-            return;
+    unsigned long lastSent = 0;
+
+    void send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
+        bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
+        if (rslt) {
+            if (radio.isAckPayloadAvailable()) {
+                radio.read(ack, sizeof(WhatLeaderBoardSendsEverySecond));
+            }
         }
-        radio.read(received, sizeof(WhatPlayerBoardSends));
-        displays[2].showNumberDec(received->iThinkItsNowTurnNumber);
-        // TODO: The comment below makes no sense after all these refactorings.
-        //       Did I do this right? What is "the next time"? It sounds ominous.
-        radio.writeAckPayload(
-            1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
     }
+
     void loop() {
-        WhatPlayerBoardSends received{};
-        WhatLeaderBoardSendsEverySecond ack{};
-        this->checkForMessages(&received, &ack);
-        received.log("Received");
+        auto time = millis();
+        if (time - lastSent >= 1000) {
+            WhatPlayerBoardSends state{};
+            WhatLeaderBoardSendsEverySecond ack{};
+            this->send(&state, &ack);
+            state.log("Sent");
+            lastSent = time;
+        }
     }
 };
 
@@ -74,8 +78,6 @@ TabletopBoard::TabletopBoard() = default;
 struct PlayerBoard::Impl {
     const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};  // Create a Radio
-    unsigned long lastSent = 0;
-    WhatPlayerBoardSends state{};
 
     TM1637Display display;
     IOConfig config;
@@ -88,10 +90,10 @@ struct PlayerBoard::Impl {
     explicit Impl(IOConfig config) : display(8, 7), config{config} {}
 
     void setup() {
-        pinMode(config.pinButton0, INPUT);
-        pinMode(config.pinButton1, INPUT);
-        pinMode(config.pinButton2, INPUT);
-        pinMode(config.pinButton3, INPUT);
+        pinMode(config.pinButton0, INPUT_PULLUP);
+        pinMode(config.pinButton1, INPUT_PULLUP);
+        pinMode(config.pinButton2, INPUT_PULLUP);
+        pinMode(config.pinButton3, INPUT_PULLUP);
 
         // pull up resistor
         digitalWrite(config.pinButton0, HIGH);
@@ -107,10 +109,10 @@ struct PlayerBoard::Impl {
         delay(500);
 
         // dipSwitch
-        pinMode(14, INPUT);
-        pinMode(15, INPUT);
-        pinMode(16, INPUT);
-        pinMode(17, INPUT);
+        pinMode(14, INPUT_PULLUP);
+        pinMode(15, INPUT_PULLUP);
+        pinMode(16, INPUT_PULLUP);
+        pinMode(17, INPUT_PULLUP);
 
         // pull up resistor
         digitalWrite(14, HIGH);
@@ -152,7 +154,27 @@ struct PlayerBoard::Impl {
         radio.printPrettyDetails();
     }
 
+    void checkForMessages(WhatPlayerBoardSends* received, WhatLeaderBoardSendsEverySecond* ack) {
+        if (!radio.available()) {
+            return;
+        }
+        radio.read(received, sizeof(WhatPlayerBoardSends));
+        display.showNumberDec(received->iThinkItsNowTurnNumber);
+        // TODO: The comment below makes no sense after all these refactorings.
+        //       Did I do this right? What is "the next time"? It sounds ominous.
+        radio.writeAckPayload(
+                1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
+    }
+
+
     void loop() {
+        WhatPlayerBoardSends received{};
+        WhatLeaderBoardSendsEverySecond ack{};
+        this->checkForMessages(&received, &ack);
+        received.log("Received");
+
+        // TODO: populate ack with the result of the below logic
+
         // 5pt
         byte fiveState = digitalRead(config.pinButton0);
         if (fiveState == LOW && fiveState != prevFive) {
@@ -185,25 +207,7 @@ struct PlayerBoard::Impl {
             score = 0;
         }
 
-        auto time = millis();
-        if (time - lastSent >= 1000) {
-            state.advanceForTesting();
-            WhatLeaderBoardSendsEverySecond ack{};
-            this->send(&state, &ack);
-            state.log("Sent");
-            lastSent = time;
-        }
-
-        display.showNumberDec(state.iThinkItsNowTurnNumber + score, false);
-    }
-
-    void send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
-        bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
-        if (rslt) {
-            if (radio.isAckPayloadAvailable()) {
-                radio.read(ack, sizeof(WhatLeaderBoardSendsEverySecond));
-            }
-        }
+        display.showNumberDec(score, false);
     }
 };
 
