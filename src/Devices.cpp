@@ -11,6 +11,25 @@
 #define CE_PIN 10
 #define CSN_PIN 9
 
+// Send toSend and invoke callback if successfully sent.
+template <typename T, typename F>
+[[nodiscard]] bool doSend(RF24* radio, T* toSend, F&& callback) {
+    bool sent = radio->write(toSend, sizeof(T));
+    if (sent) {
+        callback();
+    }
+    return sent;
+}
+
+template <typename T>
+bool doRead(RF24* radio, T* out) {
+    if (radio->isAckPayloadAvailable()) {
+        radio->read(out, sizeof(T));
+        return true;
+    }
+    return false;
+}
+
 struct LeaderBoard::Impl {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};
@@ -48,17 +67,11 @@ struct LeaderBoard::Impl {
         radio.printPrettyDetails();
     }
 
-    unsigned long lastSent = 0;
-
-    void send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
-        bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
-        if (rslt) {
-            if (radio.isAckPayloadAvailable()) {
-                radio.read(ack, sizeof(WhatLeaderBoardSendsEverySecond));
-            }
-        }
+    bool send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
+        return doSend(&this->radio, toSend, [&]() { doRead(&this->radio, ack); });
     }
 
+    unsigned long lastSent = 0;
     void loop() {
         auto time = millis();
         if (time - lastSent >= 1000) {
@@ -158,14 +171,13 @@ struct PlayerBoard::Impl {
         if (!radio.available()) {
             return;
         }
-        radio.read(received, sizeof(WhatPlayerBoardSends));
+        doRead(&this->radio, received);
         display.showNumberDec(received->iThinkItsNowTurnNumber);
         // TODO: The comment below makes no sense after all these refactorings.
         //       Did I do this right? What is "the next time"? It sounds ominous.
         radio.writeAckPayload(
-                1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
+            1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
     }
-
 
     void loop() {
         WhatPlayerBoardSends received{};
