@@ -3,10 +3,10 @@
 
 #include <scorebot/Devices.hpp>
 
-class ScoreBoard : public TabletopBoard {
+class LeaderBoard : public TabletopBoard {
 public:
-    explicit ScoreBoard(IOConfig config);
-    ~ScoreBoard() override;
+    explicit LeaderBoard(IOConfig config);
+    ~LeaderBoard() override;
     void setup(const IOConfig& config) override;
     void loop() override;
     struct Impl;

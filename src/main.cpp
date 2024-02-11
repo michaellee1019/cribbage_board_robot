@@ -2,7 +2,7 @@
 
 #include <scorebot/Devices.hpp>
 #include <scorebot/PlayerBoard.hpp>
-#include <scorebot/ScoreBoard.hpp>
+#include <scorebot/LeaderBoard.hpp>
 
 TabletopBoard* self;
 
@@ -20,7 +20,7 @@ void setup() {
         .pinTurnLed    = 2
     };
     if (BOARD_ID == -1) {
-        self = new ScoreBoard(config);
+        self = new LeaderBoard(config);
     } else {
         self = new PlayerBoard(config);
     }

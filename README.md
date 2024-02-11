@@ -11,7 +11,7 @@ brew install platformio
 Terminal 1:
 
 ```
-pio run -t upload -t monitor -e scoreboard
+pio run -t upload -t monitor -e leaderboard
 # look for 7,8,9
 ```
 

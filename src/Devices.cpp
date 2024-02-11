@@ -6,13 +6,13 @@
 #include <scorebot/Message.hpp>
 #include <scorebot/Devices.hpp>
 #include <scorebot/PlayerBoard.hpp>
-#include <scorebot/ScoreBoard.hpp>
+#include <scorebot/LeaderBoard.hpp>
 
 // Cruft
 #define CE_PIN 10
 #define CSN_PIN 9
 
-struct ScoreBoard::Impl
+struct LeaderBoard::Impl
 {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};
@@ -265,21 +265,21 @@ void PlayerBoard::loop()
     impl->loop();
 }
 
-// ScoreBoard
+// LeaderBoard
 
-ScoreBoard::~ScoreBoard() = default;
+LeaderBoard::~LeaderBoard() = default;
 
-ScoreBoard::ScoreBoard(IOConfig config)
+LeaderBoard::LeaderBoard(IOConfig config)
     : impl{new Impl(config)}
 {
 }
-void ScoreBoard::setup(const IOConfig &config)
+void LeaderBoard::setup(const IOConfig &config)
 {
     scorebotSetup(config);
     impl->setup();
 }
 
-void ScoreBoard::loop()
+void LeaderBoard::loop()
 {
     impl->loop();
 }
