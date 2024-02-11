@@ -29,4 +29,4 @@ public:
 void blink();
 
 
-#endif //DEVICES_HPP
+#endif  // DEVICES_HPP

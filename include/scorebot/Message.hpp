@@ -8,7 +8,7 @@ using ScoreT = int;
 using TurnNumberT = int;
 using TimestampT = decltype(millis());
 
-template<typename T>
+template <typename T>
 void print(const T& t) {
     Serial.print(t);
 }
@@ -26,10 +26,14 @@ struct WhatScoreboardSends {
         print(name);
         print(">  ");
 
-        print(" -");    print(toPlayer);
-        print(" #");    print(yourScore);
-        print(" ?");    print(whosTurn);
-        print(" @");    print(turnNumber);
+        print(" -");
+        print(toPlayer);
+        print(" #");
+        print(yourScore);
+        print(" ?");
+        print(whosTurn);
+        print(" @");
+        print(turnNumber);
 
         print("\n");
     }
@@ -53,7 +57,7 @@ public:
         iThinkItsNowTurnNumber++;
     }
 
-    void log(const char *name) const {
+    void log(const char* name) const {
         if (!*this) {
             return;
         }
@@ -62,24 +66,26 @@ public:
         print(name);
         print(">  ");
 
-        print(" N"); print(myPlayerNumber);
-        print(" T"); print(iThinkItsNowTurnNumber);
-        print(" S"); print(myScore);
+        print(" N");
+        print(myPlayerNumber);
+        print(" T");
+        print(iThinkItsNowTurnNumber);
+        print(" S");
+        print(myScore);
 
         print("\n");
     }
 };
 
-enum class SendStatus {
-    Sent,
-    SentNoAck,
-    Failure
-};
+enum class SendStatus { Sent, SentNoAck, Failure };
 const char* toString(const SendStatus& status) {
-    switch(status) {
-        case SendStatus::Sent:      return "Sent";
-        case SendStatus::SentNoAck: return "SentNoAck";
-        case SendStatus::Failure:   return "Failure";
+    switch (status) {
+        case SendStatus::Sent:
+            return "Sent";
+        case SendStatus::SentNoAck:
+            return "SentNoAck";
+        case SendStatus::Failure:
+            return "Failure";
     }
     return "Unknown";
 }
@@ -89,10 +95,13 @@ enum class ReceiveStatus {
     Failure,
 };
 const char* toString(const ReceiveStatus& status) {
-    switch(status) {
-        case ReceiveStatus::ReceivedNoAckSent: return "ReceivedNoAckSent";
-        case ReceiveStatus::Received:          return "Received";
-        case ReceiveStatus::Failure:           return "Failure";
+    switch (status) {
+        case ReceiveStatus::ReceivedNoAckSent:
+            return "ReceivedNoAckSent";
+        case ReceiveStatus::Received:
+            return "Received";
+        case ReceiveStatus::Failure:
+            return "Failure";
     }
     return "Unknown";
 }

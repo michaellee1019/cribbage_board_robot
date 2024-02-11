@@ -14,5 +14,4 @@ public:
 };
 
 
-#endif // SCOREBOARD_HPP
-
+#endif  // SCOREBOARD_HPP

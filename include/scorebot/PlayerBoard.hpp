@@ -14,4 +14,4 @@ public:
 };
 
 
-#endif // PLAYERBOARD_HPP
+#endif  // PLAYERBOARD_HPP
