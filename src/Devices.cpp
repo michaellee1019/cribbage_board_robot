@@ -42,13 +42,13 @@ struct LeaderBoard::Impl {
 
         radio.startListening();
 
-        WhatScoreboardSends ack{};
+        WhatLeaderBoardSendsEverySecond ack{};
         radio.writeAckPayload(1, &ack, sizeof(ack));  // pre-load data
 
         radio.printPrettyDetails();
     }
 
-    void checkForMessages(WhatPlayerBoardSends* received, WhatScoreboardSends* ack) {
+    void checkForMessages(WhatPlayerBoardSends* received, WhatLeaderBoardSendsEverySecond* ack) {
         if (!radio.available()) {
             return;
         }
@@ -57,11 +57,11 @@ struct LeaderBoard::Impl {
         // TODO: The comment below makes no sense after all these refactorings.
         //       Did I do this right? What is "the next time"? It sounds ominous.
         radio.writeAckPayload(
-            1, ack, sizeof(WhatScoreboardSends));  // load the payload for the next time
+            1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
     }
     void loop() {
         WhatPlayerBoardSends received{};
-        WhatScoreboardSends ack{};
+        WhatLeaderBoardSendsEverySecond ack{};
         this->checkForMessages(&received, &ack);
         received.log("Received");
     }
@@ -188,7 +188,7 @@ struct PlayerBoard::Impl {
         auto time = millis();
         if (time - lastSent >= 1000) {
             state.advanceForTesting();
-            WhatScoreboardSends ack{};
+            WhatLeaderBoardSendsEverySecond ack{};
             this->send(&state, &ack);
             state.log("Sent");
             lastSent = time;
@@ -197,11 +197,11 @@ struct PlayerBoard::Impl {
         display.showNumberDec(state.iThinkItsNowTurnNumber + score, false);
     }
 
-    void send(WhatPlayerBoardSends* toSend, WhatScoreboardSends* ack) {
+    void send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
         bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
         if (rslt) {
             if (radio.isAckPayloadAvailable()) {
-                radio.read(ack, sizeof(WhatScoreboardSends));
+                radio.read(ack, sizeof(WhatLeaderBoardSendsEverySecond));
             }
         }
     }

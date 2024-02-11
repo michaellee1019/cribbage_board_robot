@@ -13,7 +13,7 @@ void print(const T& t) {
     Serial.print(t);
 }
 
-struct WhatScoreboardSends {
+struct WhatLeaderBoardSendsEverySecond {
     TimestampT timestamp;
     PlayerNumberT toPlayer;
     ScoreT yourScore;
@@ -40,7 +40,7 @@ struct WhatScoreboardSends {
 };
 
 // I think this is a requirement of the NRF stack.
-static_assert(sizeof(WhatScoreboardSends) <= 32, "WhatScoreboardSends max struct size");
+static_assert(sizeof(WhatLeaderBoardSendsEverySecond) <= 32, "WhatLeaderBoardSendsEverySecond max struct size");
 
 class WhatPlayerBoardSends {
 public:
