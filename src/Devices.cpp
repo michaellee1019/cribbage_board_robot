@@ -44,20 +44,16 @@ struct LeaderBoard::Impl {
 
     explicit Impl(IOConfig config) : config{config} {}
 
-    TM1637Display displays[4]{
+    static constexpr int N_DISPLAYS = 4;
+
+    TM1637Display displays[N_DISPLAYS]{
         TM1637Display(8, 7), TM1637Display(6, 5), TM1637Display(4, 3), TM1637Display(2, 21)};
 
 
     void setup() {
-        Serial.println("setup started");
-        uint8_t fullDisplay[] = {0xff, 0xff, 0xff, 0xff};
-        for (size_t i = 0; i < 4; i++) {
-            Serial.println("init display");
-            displays[i].setBrightness(0x0f);
-            displays[i].setSegments(fullDisplay);
-            delay(100);
+        for (size_t i = 0; i < N_DISPLAYS; i++) {
+            displays[i].setBrightness(0xff);
             displays[i].showNumberDec(int(i + 1));
-            delay(100);
         }
 
         radio.begin();
@@ -73,8 +69,9 @@ struct LeaderBoard::Impl {
     const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
 
 
-    bool send(WhatLeaderBoardSendsEverySecond* toSend, WhatPlayerBoardAcksInResponse* ackReceived) {
-        return doSend(&this->radio, toSend, [&]() { doRead(&this->radio, ackReceived); });
+    bool send(WhatLeaderBoardSendsEverySecond* toSendV,
+              WhatPlayerBoardAcksInResponse* ackReceived) {
+        return doSend(&this->radio, toSendV, [&]() { doRead(&this->radio, ackReceived); });
     }
 
     unsigned long lastSent = 0;
@@ -83,11 +80,17 @@ struct LeaderBoard::Impl {
         auto time = millis();
         if (time - lastSent >= 1000) {
             // TODO: Leaderboard sends an update to each playerboard every second.
-            toSend.turnNumber++;
             WhatPlayerBoardAcksInResponse ack{};
             this->send(&toSend, &ack);
             toSend.log("Sent");
-            ack.log("Received");
+            if (ack) {
+                this->displays[2].showNumberDec(ack.myScore);
+                if (ack.advance) {
+                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.turnNumber++;
+                }
+                this->displays[1].showNumberDec(toSend.turnNumber);
+            }
             lastSent = time;
         }
     }
@@ -118,54 +121,27 @@ struct PlayerBoard::Impl {
         pinMode(config.pinButton2, INPUT_PULLUP);
         pinMode(config.pinButton3, INPUT_PULLUP);
 
-        // pull up resistor
-        digitalWrite(config.pinButton0, HIGH);
-        digitalWrite(config.pinButton1, HIGH);
-        digitalWrite(config.pinButton2, HIGH);
-        digitalWrite(config.pinButton3, HIGH);
         display.setBrightness(0x0f);
 
-        uint8_t fullDisplay[] = {0xff, 0xff, 0xff, 0xff};
-        //        uint8_t blankDisplay[] = {0x00, 0x00, 0x00, 0x00};
+        // Dip Switches
+        pinMode(config.pinDip0, INPUT_PULLUP);
+        pinMode(config.pinDip1, INPUT_PULLUP);
+        pinMode(config.pinDip2, INPUT_PULLUP);
+        pinMode(config.pinDip3, INPUT_PULLUP);
 
-        display.setSegments(fullDisplay);
+        int dipValue = (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 1 |
+            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 2 |
+            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 3 |
+            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 4;
+        display.showNumberDec(dipValue);
         delay(500);
+        display.clear();
 
-        // dipSwitch
-        pinMode(14, INPUT_PULLUP);
-        pinMode(15, INPUT_PULLUP);
-        pinMode(16, INPUT_PULLUP);
-        pinMode(17, INPUT_PULLUP);
-
-        // pull up resistor
-        digitalWrite(14, HIGH);
-        digitalWrite(15, HIGH);
-        digitalWrite(16, HIGH);
-        digitalWrite(17, HIGH);
-
-        uint8_t zeroDigit = display.encodeDigit(0);
-        uint8_t oneDigit = display.encodeDigit(1);
-        uint8_t dipDisplayBits[] = {zeroDigit, zeroDigit, zeroDigit, zeroDigit};
-        if (digitalRead(14) == LOW) {
-            dipDisplayBits[0] = oneDigit;
-        }
-        if (digitalRead(15) == LOW) {
-            dipDisplayBits[1] = oneDigit;
-        }
-        if (digitalRead(16) == LOW) {
-            dipDisplayBits[2] = oneDigit;
-        }
-        if (digitalRead(17) == LOW) {
-            dipDisplayBits[3] = oneDigit;
-        }
-
-        display.setSegments(dipDisplayBits);
+        // Turn LED
+        pinMode(config.pinTurnLed, OUTPUT);
+        digitalWrite(config.pinTurnLed, HIGH);
         delay(500);
-
-        pinMode(2, OUTPUT);
-        digitalWrite(2, HIGH);
-        delay(500);
-        digitalWrite(2, LOW);
+        digitalWrite(config.pinTurnLed, LOW);
 
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
@@ -174,9 +150,6 @@ struct PlayerBoard::Impl {
 
         radio.openReadingPipe(1, thisSlaveAddress);
         radio.startListening();
-
-        WhatPlayerBoardAcksInResponse ack{};
-        doAck(&this->radio, 1, &ack);
 
         radio.printPrettyDetails();
     }
@@ -190,9 +163,8 @@ struct PlayerBoard::Impl {
         doAck(&this->radio, 1, ackToSendBack);
     }
 
+    bool commit = false;
     void loop() {
-        // TODO: populate received with the result of the below logic
-
         // 5pt
         byte fiveState = digitalRead(config.pinButton0);
         if (fiveState == LOW && fiveState != prevFive) {
@@ -216,24 +188,27 @@ struct PlayerBoard::Impl {
 
         // commit
         if (digitalRead(config.pinButton3) == LOW) {
-            for (byte i = 0; i < 2; i++) {
-                delay(100);
-                //                display.clear();
-                delay(100);
-                //                display.showNumberDec(score, false);
-            }
-            score = 0;
+            commit = true;
         }
 
+        display.showNumberDec(score);
+
         WhatPlayerBoardAcksInResponse ackResponse{};
-        ackResponse.myScore = score;
         ackResponse.myPlayerNumber = BOARD_ID;
+        if (commit) {
+            ackResponse.myScore = score;
+        }
 
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &ackResponse);
 
         if (received) {
-            display.showNumberDec(received.turnNumber, false);
+            if (received.whosTurn == BOARD_ID) {
+                digitalWrite(config.pinTurnLed, HIGH);
+            }
+            if (commit) {
+                commit = false;
+            }
         }
         delay(100);
     }

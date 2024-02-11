@@ -52,15 +52,16 @@ public:
     PlayerNumberT myPlayerNumber{-1};
     TurnNumberT iThinkItsNowTurnNumber{-1};
     ScoreT myScore{-1};
+    bool advance{false};
 
     explicit operator bool() const {
-        return iThinkItsNowTurnNumber >= 0;
+        return myPlayerNumber >= 0;
     }
 
-    void advanceForTesting() {
-        myScore += 10;
-        iThinkItsNowTurnNumber++;
-    }
+    //    void advanceForTesting() {
+    //        myScore += 10;
+    //        iThinkItsNowTurnNumber++;
+    //    }
 
     void log(const char* name) const {
         if (!*this) {
