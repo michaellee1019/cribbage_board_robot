@@ -65,6 +65,7 @@ struct ScoreBoard::Impl
             return;
         }
         radio.read(received, sizeof(WhatPlayerBoardSends));
+        displays[2].showNumberDec(received->iThinkItsNowTurnNumber);
         // TODO: The comment below makes no sense after all these refactorings.
         //       Did I do this right? What is "the next time"? It sounds ominous.
         radio.writeAckPayload(1, ack, sizeof(WhatScoreboardSends)); // load the payload for the next time
@@ -78,51 +79,6 @@ struct ScoreBoard::Impl
     }
 };
 
-struct PlayerBoardState
-{
-    const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
-    RF24 radio{CE_PIN, CSN_PIN}; // Create a Radio
-
-    void setup()
-    {
-        radio.begin();
-        radio.setDataRate(RF24_250KBPS);
-        radio.enableAckPayload();
-        radio.setRetries(5, 5); // delay, count
-        // TODO: 5 gives a 1500 µsec delay which is needed for a 32 byte ackPayload
-        radio.openWritingPipe(slaveAddress);
-
-        radio.printPrettyDetails();
-    }
-
-    unsigned long lastSent = 0;
-    WhatPlayerBoardSends state{};
-
-    void loop()
-    {
-        auto time = millis();
-        if (time - lastSent >= 1000)
-        {
-            state.advanceForTesting();
-            WhatScoreboardSends ack{};
-            this->send(&state, &ack);
-            state.log("Sent");
-            lastSent = time;
-        }
-    }
-
-    void send(WhatPlayerBoardSends *toSend, WhatScoreboardSends *ack)
-    {
-        bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
-        if (rslt)
-        {
-            if (radio.isAckPayloadAvailable())
-            {
-                radio.read(ack, sizeof(WhatScoreboardSends));
-            }
-        }
-    }
-} rxState;
 // </Cruft>
 
 void scorebotSetup(const IOConfig &config)
@@ -138,6 +94,11 @@ TabletopBoard::TabletopBoard() = default;
 
 struct PlayerBoard::Impl
 {
+    const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
+    RF24 radio{CE_PIN, CSN_PIN}; // Create a Radio
+    unsigned long lastSent = 0;
+    WhatPlayerBoardSends state{};
+
     TM1637Display display;
     IOConfig config;
     byte prevFive = HIGH;
@@ -211,6 +172,15 @@ struct PlayerBoard::Impl
         digitalWrite(2, HIGH);
         delay(500);
         digitalWrite(2, LOW);
+
+        radio.begin();
+        radio.setDataRate(RF24_250KBPS);
+        radio.enableAckPayload();
+        radio.setRetries(5, 5); // delay, count
+        // TODO: 5 gives a 1500 µsec delay which is needed for a 32 byte ackPayload
+        radio.openWritingPipe(slaveAddress);
+
+        radio.printPrettyDetails();
     }
 
     void loop()
@@ -252,7 +222,29 @@ struct PlayerBoard::Impl
             score = 0;
         }
 
-        display.showNumberDec(score, false);
+        auto time = millis();
+        if (time - lastSent >= 1000)
+        {
+            state.advanceForTesting();
+            WhatScoreboardSends ack{};
+            this->send(&state, &ack);
+            state.log("Sent");
+            lastSent = time;
+        }
+
+        display.showNumberDec(state.iThinkItsNowTurnNumber+score, false);
+    }
+
+    void send(WhatPlayerBoardSends *toSend, WhatScoreboardSends *ack)
+    {
+        bool rslt = this->radio.write(toSend, sizeof(WhatPlayerBoardSends));
+        if (rslt)
+        {
+            if (radio.isAckPayloadAvailable())
+            {
+                radio.read(ack, sizeof(WhatScoreboardSends));
+            }
+        }
     }
 };
 
@@ -265,13 +257,11 @@ PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup(const IOConfig &config)
 {
     scorebotSetup(config);
-    rxState.setup();
     impl->setup();
 }
 
 void PlayerBoard::loop()
 {
-    rxState.loop();
     impl->loop();
 }
 
