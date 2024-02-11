@@ -14,11 +14,9 @@ void print(const T& t) {
 }
 
 struct WhatLeaderBoardSendsEverySecond {
-    TimestampT timestamp;
-    PlayerNumberT toPlayer;
-    ScoreT yourScore;
-    PlayerNumberT whosTurn;
-    TurnNumberT turnNumber;
+    TimestampT timestamp{0};
+    PlayerNumberT whosTurn{0};
+    TurnNumberT turnNumber{0};
 
     explicit operator bool() const {
         return turnNumber > 0;
@@ -30,10 +28,6 @@ struct WhatLeaderBoardSendsEverySecond {
         print(name);
         print(">  ");
 
-        print(" -");
-        print(toPlayer);
-        print(" #");
-        print(yourScore);
         print(" ?");
         print(whosTurn);
         print(" @");

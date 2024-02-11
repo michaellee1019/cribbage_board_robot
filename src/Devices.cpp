@@ -87,6 +87,10 @@ struct LeaderBoard::Impl {
             displays[i].setBrightness(0xff);
             displays[i].showNumberDec(int(i + 1));
         }
+        delay(1000);
+        for (auto & display : displays) {
+            display.clear();
+        }
 
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
@@ -108,7 +112,7 @@ struct LeaderBoard::Impl {
 
     WhatLeaderBoardSendsEverySecond toSend{};
     ScoreT player0 = 0;
-    Periodically second{1000};
+    Periodically second{100};
     void loop() {  // Leaderboard
         second.run(millis(), [&]() {
             WhatPlayerBoardAcksInResponse ack{};
@@ -221,7 +225,6 @@ struct PlayerBoard::Impl {
         }
 
         display.showNumberDec(state.scoreDelta);
-        delay(100);
     }
 };
 
