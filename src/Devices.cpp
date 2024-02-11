@@ -38,6 +38,38 @@ void doAck(RF24* radio, uint8_t pipe, T* acked) {
 }
 }  // namespace
 
+
+struct Button {
+    int pin;
+    explicit Button(int pin) : pin{pin} {}
+    byte previous = HIGH;
+    void setup() const {
+        pinMode(pin, INPUT_PULLUP);
+    }
+    template <typename F>
+    void update(F&& onPress) {
+        byte state = digitalRead(pin);
+        if (state == LOW && state != previous) {
+            onPress();
+        }
+        previous = state;
+    }
+};
+
+struct Periodically {
+    const int period;
+    explicit Periodically(int period) : period{period} {}
+    unsigned long lastSent{0};
+    template <typename F>
+    void run(unsigned long now, F&& callback) {
+        if (now >= lastSent + period) {
+            callback();
+            lastSent = now;
+        }
+    }
+};
+
+
 struct LeaderBoard::Impl {
     RF24 radio{CE_PIN, CSN_PIN};
     IOConfig config;
@@ -74,25 +106,21 @@ struct LeaderBoard::Impl {
         return doSend(&this->radio, toSendV, [&]() { doRead(&this->radio, ackReceived); });
     }
 
-    unsigned long lastSent = 0;
     WhatLeaderBoardSendsEverySecond toSend{};
-    void loop() {
-        auto time = millis();
-        if (time - lastSent >= 1000) {
-            // TODO: Leaderboard sends an update to each playerboard every second.
+    ScoreT player0 = 0;
+    Periodically second{1000};
+    void loop() {  // Leaderboard
+        second.run(millis(), [&]() {
             WhatPlayerBoardAcksInResponse ack{};
             this->send(&toSend, &ack);
-            toSend.log("Sent");
-            if (ack) {
-                this->displays[2].showNumberDec(ack.myScore);
-                if (ack.advance) {
-                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
-                    toSend.turnNumber++;
-                }
-                this->displays[1].showNumberDec(toSend.turnNumber);
+            if (ack.commit) {
+                player0 += ack.scoreDelta;
+                this->displays[2].showNumberDec(player0);
+                toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                toSend.turnNumber++;
             }
-            lastSent = time;
-        }
+        });
+        this->displays[1].showNumberDec(toSend.turnNumber);
     }
 };
 
@@ -104,22 +132,29 @@ struct PlayerBoard::Impl {
     RF24 radio{CE_PIN, CSN_PIN};  // Create a Radio
     TM1637Display display;
     IOConfig config;
-    byte prevFive = HIGH;
-    byte prevOne = HIGH;
-    byte prevNeg1 = HIGH;
-    //    byte prevOk = HIGH;
-    short score = 0;
+    Button one;
+    Button five;
+    Button negOne;
+    Button commit;
+
+    WhatPlayerBoardAcksInResponse state{};
 
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
 
 
-    explicit Impl(IOConfig config) : display(8, 7), config{config} {}
+    explicit Impl(IOConfig config)
+        : display(8, 7),
+          config{config},
+          one{config.pinButton0},
+          five{config.pinButton1},
+          negOne{config.pinButton2},
+          commit{config.pinButton3} {}
 
     void setup() {
-        pinMode(config.pinButton0, INPUT_PULLUP);
-        pinMode(config.pinButton1, INPUT_PULLUP);
-        pinMode(config.pinButton2, INPUT_PULLUP);
-        pinMode(config.pinButton3, INPUT_PULLUP);
+        one.setup();
+        five.setup();
+        negOne.setup();
+        commit.setup();
 
         display.setBrightness(0x0f);
 
@@ -133,14 +168,14 @@ struct PlayerBoard::Impl {
             (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 2 |
             (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 3 |
             (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 4;
-        display.showNumberDec(dipValue);
+        display.showNumberHexEx(dipValue);
         delay(500);
         display.clear();
 
         // Turn LED
         pinMode(config.pinTurnLed, OUTPUT);
         digitalWrite(config.pinTurnLed, HIGH);
-        delay(500);
+        delay(250);
         digitalWrite(config.pinTurnLed, LOW);
 
         radio.begin();
@@ -163,53 +198,29 @@ struct PlayerBoard::Impl {
         doAck(&this->radio, 1, ackToSendBack);
     }
 
-    bool commit = false;
     void loop() {
-        // 5pt
-        byte fiveState = digitalRead(config.pinButton0);
-        if (fiveState == LOW && fiveState != prevFive) {
-            score += 5;
-        }
-        prevFive = fiveState;
+        five.update([&]() { state.scoreDelta += 5; });
+        one.update([&]() { state.scoreDelta++; });
+        negOne.update([&]() { state.scoreDelta--; });
 
-        // 1pt
-        byte oneState = digitalRead(config.pinButton1);
-        if (oneState == LOW && oneState != prevOne) {
-            score++;
-        }
-        prevOne = oneState;
-
-        // -1pt
-        byte neg1State = digitalRead(config.pinButton2);
-        if (neg1State == LOW && neg1State != prevNeg1) {
-            score -= 1;
-        }
-        prevNeg1 = neg1State;
-
-        // commit
-        if (digitalRead(config.pinButton3) == LOW) {
-            commit = true;
-        }
-
-        display.showNumberDec(score);
-
-        WhatPlayerBoardAcksInResponse ackResponse{};
-        ackResponse.myPlayerNumber = BOARD_ID;
-        if (commit) {
-            ackResponse.myScore = score;
-        }
+        commit.update([&]() { state.commit = true; });
 
         WhatLeaderBoardSendsEverySecond received{};
-        this->checkForMessages(&received, &ackResponse);
+        this->checkForMessages(&received, &state);
 
         if (received) {
             if (received.whosTurn == BOARD_ID) {
                 digitalWrite(config.pinTurnLed, HIGH);
+            } else {
+                digitalWrite(config.pinTurnLed, LOW);
             }
-            if (commit) {
-                commit = false;
+            if (state.commit) {
+                state.commit = false;
+                state.scoreDelta = 0;
             }
         }
+
+        display.showNumberDec(state.scoreDelta);
         delay(100);
     }
 };

@@ -51,15 +51,15 @@ class WhatPlayerBoardAcksInResponse {
 public:
     PlayerNumberT myPlayerNumber{-1};
     TurnNumberT iThinkItsNowTurnNumber{-1};
-    ScoreT myScore{-1};
-    bool advance{false};
+    ScoreT scoreDelta{0};
+    bool commit{false};
 
     explicit operator bool() const {
         return myPlayerNumber >= 0;
     }
 
     //    void advanceForTesting() {
-    //        myScore += 10;
+    //        scoreDelta += 10;
     //        iThinkItsNowTurnNumber++;
     //    }
 
@@ -77,7 +77,7 @@ public:
         print(" T");
         print(iThinkItsNowTurnNumber);
         print(" S");
-        print(myScore);
+        print(scoreDelta);
 
         print("\n");
     }
