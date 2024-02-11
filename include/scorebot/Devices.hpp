@@ -21,7 +21,7 @@ struct IOConfig {
 class TabletopBoard {
 public:
     virtual ~TabletopBoard() = default;
-    virtual void setup(const IOConfig& config) = 0;
+    virtual void setup() = 0;
     virtual void loop() = 0;
     explicit TabletopBoard();
 };

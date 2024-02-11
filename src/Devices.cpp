@@ -210,7 +210,7 @@ struct PlayerBoard::Impl {
 PlayerBoard::PlayerBoard(IOConfig config) : impl{new Impl(config)} {}
 
 PlayerBoard::~PlayerBoard() = default;
-void PlayerBoard::setup(const IOConfig& config) {
+void PlayerBoard::setup() {
     impl->setup();
 }
 
@@ -223,7 +223,7 @@ void PlayerBoard::loop() {
 LeaderBoard::~LeaderBoard() = default;
 
 LeaderBoard::LeaderBoard(IOConfig config) : impl{new Impl(config)} {}
-void LeaderBoard::setup(const IOConfig& config) {
+void LeaderBoard::setup() {
     impl->setup();
 }
 

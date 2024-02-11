@@ -37,7 +37,7 @@ void setup() {
         self = new PlayerBoard(config);
     }
 
-    self->setup(config);
+    self->setup();
     blink();
 }
 

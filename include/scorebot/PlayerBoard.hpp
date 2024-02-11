@@ -7,7 +7,7 @@ class PlayerBoard : public TabletopBoard {
 public:
     explicit PlayerBoard(IOConfig config);
     ~PlayerBoard() override;
-    void setup(const IOConfig& config) override;
+    void setup() override;
     void loop() override;
 
 private:

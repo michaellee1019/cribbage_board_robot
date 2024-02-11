@@ -7,7 +7,7 @@ class LeaderBoard : public TabletopBoard {
 public:
     explicit LeaderBoard(IOConfig config);
     ~LeaderBoard() override;
-    void setup(const IOConfig& config) override;
+    void setup() override;
     void loop() override;
 
 private:
