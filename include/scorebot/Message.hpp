@@ -43,7 +43,7 @@ struct WhatLeaderBoardSendsEverySecond {
 static_assert(sizeof(WhatLeaderBoardSendsEverySecond) <= 32,
               "WhatLeaderBoardSendsEverySecond max struct size");
 
-class WhatPlayerBoardSends {
+class WhatPlayerBoardAcksInResponse {
 public:
     PlayerNumberT myPlayerNumber{-1};
     TurnNumberT iThinkItsNowTurnNumber{-1};

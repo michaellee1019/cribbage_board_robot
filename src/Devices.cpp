@@ -30,6 +30,11 @@ bool doRead(RF24* radio, T* out) {
     return false;
 }
 
+template <typename T>
+void doAck(RF24* radio, uint8_t pipe, T* acked) {
+    radio->writeAckPayload(pipe, acked, sizeof(T));
+}
+
 struct LeaderBoard::Impl {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};
@@ -56,29 +61,29 @@ struct LeaderBoard::Impl {
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
         radio.openReadingPipe(1, thisSlaveAddress);
-
         radio.enableAckPayload();
-
         radio.startListening();
-
-        WhatLeaderBoardSendsEverySecond ack{};
-        radio.writeAckPayload(1, &ack, sizeof(ack));  // pre-load data
 
         radio.printPrettyDetails();
     }
 
-    bool send(WhatPlayerBoardSends* toSend, WhatLeaderBoardSendsEverySecond* ack) {
-        return doSend(&this->radio, toSend, [&]() { doRead(&this->radio, ack); });
+    bool send(WhatLeaderBoardSendsEverySecond* toSend,
+              WhatPlayerBoardAcksInResponse* ackReceived) {
+        return doSend(&this->radio, toSend, [&]() {
+            doRead(&this->radio, ackReceived);
+        });
     }
 
     unsigned long lastSent = 0;
     void loop() {
         auto time = millis();
         if (time - lastSent >= 1000) {
-            WhatPlayerBoardSends state{};
-            WhatLeaderBoardSendsEverySecond ack{};
-            this->send(&state, &ack);
-            state.log("Sent");
+            // TODO: Leaderboard sends an update to each playerboard every second.
+            WhatLeaderBoardSendsEverySecond toSend{};
+            WhatPlayerBoardAcksInResponse ack{};
+            this->send(&toSend, &ack);
+            toSend.log("Sent");
+            ack.log("Received");
             lastSent = time;
         }
     }
@@ -167,25 +172,23 @@ struct PlayerBoard::Impl {
         radio.printPrettyDetails();
     }
 
-    void checkForMessages(WhatPlayerBoardSends* received, WhatLeaderBoardSendsEverySecond* ack) {
+    void checkForMessages(WhatLeaderBoardSendsEverySecond* leaderboardSent,
+                          WhatPlayerBoardAcksInResponse* ackToSendBack) {
         if (!radio.available()) {
             return;
         }
-        doRead(&this->radio, received);
-        display.showNumberDec(received->iThinkItsNowTurnNumber);
-        // TODO: The comment below makes no sense after all these refactorings.
-        //       Did I do this right? What is "the next time"? It sounds ominous.
-        radio.writeAckPayload(
-            1, ack, sizeof(WhatLeaderBoardSendsEverySecond));  // load the payload for the next time
+        doRead(&this->radio, leaderboardSent);
+        display.showNumberDec(leaderboardSent->turnNumber);
+        doAck(&this->radio, 1, ackToSendBack);
     }
 
     void loop() {
-        WhatPlayerBoardSends received{};
-        WhatLeaderBoardSendsEverySecond ack{};
-        this->checkForMessages(&received, &ack);
-        received.log("Received");
+        WhatPlayerBoardAcksInResponse ackResponse{};
+        WhatLeaderBoardSendsEverySecond received{};
+        this->checkForMessages(&received, &ackResponse);
+        ackResponse.log("Received");
 
-        // TODO: populate ack with the result of the below logic
+        // TODO: populate received with the result of the below logic
 
         // 5pt
         byte fiveState = digitalRead(config.pinButton0);
