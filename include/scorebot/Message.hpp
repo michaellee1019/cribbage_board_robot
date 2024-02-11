@@ -20,6 +20,10 @@ struct WhatLeaderBoardSendsEverySecond {
     PlayerNumberT whosTurn;
     TurnNumberT turnNumber;
 
+    explicit operator bool() const {
+        return turnNumber > 0;
+    }
+
     void log(const char* name) const {
         print(timestamp);
         print("  Sends");

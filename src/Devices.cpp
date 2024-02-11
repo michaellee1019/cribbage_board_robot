@@ -39,7 +39,6 @@ void doAck(RF24* radio, uint8_t pipe, T* acked) {
 }  // namespace
 
 struct LeaderBoard::Impl {
-    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};
     IOConfig config;
 
@@ -63,23 +62,28 @@ struct LeaderBoard::Impl {
 
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
-        radio.openReadingPipe(1, thisSlaveAddress);
         radio.enableAckPayload();
-        radio.startListening();
+        radio.setRetries(5, 5);  // delay, count
+
+        radio.openWritingPipe(slaveAddress);
 
         radio.printPrettyDetails();
     }
+
+    const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
+
 
     bool send(WhatLeaderBoardSendsEverySecond* toSend, WhatPlayerBoardAcksInResponse* ackReceived) {
         return doSend(&this->radio, toSend, [&]() { doRead(&this->radio, ackReceived); });
     }
 
     unsigned long lastSent = 0;
+    WhatLeaderBoardSendsEverySecond toSend{};
     void loop() {
         auto time = millis();
         if (time - lastSent >= 1000) {
             // TODO: Leaderboard sends an update to each playerboard every second.
-            WhatLeaderBoardSendsEverySecond toSend{};
+            toSend.turnNumber++;
             WhatPlayerBoardAcksInResponse ack{};
             this->send(&toSend, &ack);
             toSend.log("Sent");
@@ -94,9 +98,7 @@ TabletopBoard::TabletopBoard() = default;
 // PlayerBoard
 
 struct PlayerBoard::Impl {
-    const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
     RF24 radio{CE_PIN, CSN_PIN};  // Create a Radio
-
     TM1637Display display;
     IOConfig config;
     byte prevFive = HIGH;
@@ -104,6 +106,9 @@ struct PlayerBoard::Impl {
     byte prevNeg1 = HIGH;
     //    byte prevOk = HIGH;
     short score = 0;
+
+    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
+
 
     explicit Impl(IOConfig config) : display(8, 7), config{config} {}
 
@@ -166,8 +171,12 @@ struct PlayerBoard::Impl {
         radio.setDataRate(RF24_250KBPS);
         radio.enableAckPayload();
         radio.setRetries(5, 5);  // delay, count
-        // TODO: 5 gives a 1500 µsec delay which is needed for a 32 byte ackPayload
-        radio.openWritingPipe(slaveAddress);
+
+        radio.openReadingPipe(1, thisSlaveAddress);
+        radio.startListening();
+
+        WhatPlayerBoardAcksInResponse ack{};
+        doAck(&this->radio, 1, &ack);
 
         radio.printPrettyDetails();
     }
@@ -178,7 +187,6 @@ struct PlayerBoard::Impl {
             return;
         }
         doRead(&this->radio, leaderboardSent);
-        display.showNumberDec(leaderboardSent->turnNumber);
         doAck(&this->radio, 1, ackToSendBack);
     }
 
@@ -210,9 +218,9 @@ struct PlayerBoard::Impl {
         if (digitalRead(config.pinButton3) == LOW) {
             for (byte i = 0; i < 2; i++) {
                 delay(100);
-                display.clear();
+                //                display.clear();
                 delay(100);
-                display.showNumberDec(score, false);
+                //                display.showNumberDec(score, false);
             }
             score = 0;
         }
@@ -223,10 +231,11 @@ struct PlayerBoard::Impl {
 
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &ackResponse);
-        ackResponse.log("Received");
 
-
-        display.showNumberDec(score, false);
+        if (received) {
+            display.showNumberDec(received.turnNumber, false);
+        }
+        delay(100);
     }
 };
 
