@@ -1,6 +1,5 @@
 #include "RF24.h"
 #include "TM1637Display.h"
-#include "printf.h"
 #include <string>
 
 #include <scorebot/Devices.hpp>
@@ -17,7 +16,7 @@ struct LeaderBoard::Impl {
     RF24 radio{CE_PIN, CSN_PIN};
     IOConfig config;
 
-    Impl(IOConfig config) : config{config} {}
+    explicit Impl(IOConfig config) : config{config} {}
 
     TM1637Display displays[4]{
         TM1637Display(8, 7), TM1637Display(6, 5), TM1637Display(4, 3), TM1637Display(2, 21)};
@@ -31,7 +30,7 @@ struct LeaderBoard::Impl {
             displays[i].setBrightness(0x0f);
             displays[i].setSegments(fullDisplay);
             delay(100);
-            displays[i].showNumberDec(i + 1);
+            displays[i].showNumberDec(int(i + 1));
             delay(100);
         }
 
@@ -68,14 +67,6 @@ struct LeaderBoard::Impl {
     }
 };
 
-// </Cruft>
-
-void scorebotSetup(const IOConfig& config) {
-    Serial.begin(9600);
-    printf_begin();
-    std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
-}
-
 TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
@@ -91,10 +82,10 @@ struct PlayerBoard::Impl {
     byte prevFive = HIGH;
     byte prevOne = HIGH;
     byte prevNeg1 = HIGH;
-    byte prevOk = HIGH;
+    //    byte prevOk = HIGH;
     short score = 0;
 
-    Impl(IOConfig config) : display(8, 7), config{config} {}
+    explicit Impl(IOConfig config) : display(8, 7), config{config} {}
 
     void setup() {
         pinMode(config.pinButton0, INPUT);
@@ -110,7 +101,7 @@ struct PlayerBoard::Impl {
         display.setBrightness(0x0f);
 
         uint8_t fullDisplay[] = {0xff, 0xff, 0xff, 0xff};
-        uint8_t blankDisplay[] = {0x00, 0x00, 0x00, 0x00};
+        //        uint8_t blankDisplay[] = {0x00, 0x00, 0x00, 0x00};
 
         display.setSegments(fullDisplay);
         delay(500);
@@ -220,7 +211,6 @@ PlayerBoard::PlayerBoard(IOConfig config) : impl{new Impl(config)} {}
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup(const IOConfig& config) {
-    scorebotSetup(config);
     impl->setup();
 }
 
@@ -234,19 +224,9 @@ LeaderBoard::~LeaderBoard() = default;
 
 LeaderBoard::LeaderBoard(IOConfig config) : impl{new Impl(config)} {}
 void LeaderBoard::setup(const IOConfig& config) {
-    scorebotSetup(config);
     impl->setup();
 }
 
 void LeaderBoard::loop() {
     impl->loop();
-}
-
-void blink() {
-    for (int i = 0; i < 3; ++i) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(300);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(300);
-    }
 }

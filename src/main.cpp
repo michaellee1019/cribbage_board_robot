@@ -1,8 +1,18 @@
 #include <Arduino.h>
 
+#include "printf.h"
 #include <scorebot/Devices.hpp>
 #include <scorebot/LeaderBoard.hpp>
 #include <scorebot/PlayerBoard.hpp>
+
+void blink() {
+    for (int i = 0; i < 3; ++i) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(300);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(300);
+    }
+}
 
 TabletopBoard* self;
 
@@ -17,13 +27,17 @@ void setup() {
                     .pinDip3 = 17,
                     .pinLedBuiltin = LED_BUILTIN,
                     .pinTurnLed = 2};
+    Serial.begin(9600);
+    printf_begin();
+    std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
+
     if (BOARD_ID == -1) {
         self = new LeaderBoard(config);
     } else {
         self = new PlayerBoard(config);
     }
-    self->setup(config);
 
+    self->setup(config);
     blink();
 }
 

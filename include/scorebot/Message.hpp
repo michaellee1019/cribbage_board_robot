@@ -40,7 +40,7 @@ struct WhatScoreboardSends {
 };
 
 // I think this is a requirement of the NRF stack.
-static_assert(sizeof(WhatScoreboardSends) <= 32);
+static_assert(sizeof(WhatScoreboardSends) <= 32, "WhatScoreboardSends max struct size");
 
 class WhatPlayerBoardSends {
 public:

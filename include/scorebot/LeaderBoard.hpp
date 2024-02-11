@@ -9,6 +9,8 @@ public:
     ~LeaderBoard() override;
     void setup(const IOConfig& config) override;
     void loop() override;
+
+private:
     struct Impl;
     Impl* impl;
 };
