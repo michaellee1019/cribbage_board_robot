@@ -11,6 +11,8 @@
 #define CE_PIN 10
 #define CSN_PIN 9
 
+
+namespace {
 // Send toSend and invoke callback if successfully sent.
 template <typename T, typename F>
 [[nodiscard]] bool doSend(RF24* radio, T* toSend, F&& callback) {
@@ -34,6 +36,7 @@ template <typename T>
 void doAck(RF24* radio, uint8_t pipe, T* acked) {
     radio->writeAckPayload(pipe, acked, sizeof(T));
 }
+}  // namespace
 
 struct LeaderBoard::Impl {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
@@ -67,11 +70,8 @@ struct LeaderBoard::Impl {
         radio.printPrettyDetails();
     }
 
-    bool send(WhatLeaderBoardSendsEverySecond* toSend,
-              WhatPlayerBoardAcksInResponse* ackReceived) {
-        return doSend(&this->radio, toSend, [&]() {
-            doRead(&this->radio, ackReceived);
-        });
+    bool send(WhatLeaderBoardSendsEverySecond* toSend, WhatPlayerBoardAcksInResponse* ackReceived) {
+        return doSend(&this->radio, toSend, [&]() { doRead(&this->radio, ackReceived); });
     }
 
     unsigned long lastSent = 0;
@@ -183,11 +183,6 @@ struct PlayerBoard::Impl {
     }
 
     void loop() {
-        WhatPlayerBoardAcksInResponse ackResponse{};
-        WhatLeaderBoardSendsEverySecond received{};
-        this->checkForMessages(&received, &ackResponse);
-        ackResponse.log("Received");
-
         // TODO: populate received with the result of the below logic
 
         // 5pt
@@ -221,6 +216,15 @@ struct PlayerBoard::Impl {
             }
             score = 0;
         }
+
+        WhatPlayerBoardAcksInResponse ackResponse{};
+        ackResponse.myScore = score;
+        ackResponse.myPlayerNumber = BOARD_ID;
+
+        WhatLeaderBoardSendsEverySecond received{};
+        this->checkForMessages(&received, &ackResponse);
+        ackResponse.log("Received");
+
 
         display.showNumberDec(score, false);
     }
