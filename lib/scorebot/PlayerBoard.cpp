@@ -1,6 +1,5 @@
 #include "RF24.h"
 #include "TM1637Display.h"
-#include <string>
 
 #include "TabletopBoard.hpp"
 #include "RadioHelper.hpp"
@@ -9,6 +8,7 @@
 #include "PlayerBoard.hpp"
 
 // Cruft
+// TODO: move to IOConfig
 #define CE_PIN 10
 #define CSN_PIN 9
 
@@ -18,13 +18,15 @@ TabletopBoard::TabletopBoard() = default;
 // PlayerBoard
 
 struct PlayerBoard::Impl {
-    RF24 radio{CE_PIN, CSN_PIN};  // Create a Radio
+    RF24 radio;
     TM1637Display display;
     IOConfig config;
     Button one;
     Button five;
     Button negOne;
     Button commit;
+    Light turnLight;
+    DipSwitches<4> dipSwitches;
 
     WhatPlayerBoardAcksInResponse state{};
 
@@ -36,40 +38,34 @@ struct PlayerBoard::Impl {
 #endif
 
     explicit Impl(IOConfig config)
-        : display(8, 7),
+        : radio{CE_PIN, CSN_PIN},
+          display(8, 7),
           config{config},
           one{config.pinButton0},
           five{config.pinButton1},
           negOne{config.pinButton2},
-          commit{config.pinButton3} {}
+          commit{config.pinButton3},
+          turnLight{config.pinTurnLed},
+          dipSwitches{config.pinDip0, config.pinDip1, config.pinDip2, config.pinDip3}
+          {}
 
     void setup() {
         one.setup();
         five.setup();
         negOne.setup();
         commit.setup();
+        turnLight.setup();
+        dipSwitches.setup();
 
         display.setBrightness(0x0f);
-
-        // Dip Switches
-        pinMode(config.pinDip0, INPUT_PULLUP);
-        pinMode(config.pinDip1, INPUT_PULLUP);
-        pinMode(config.pinDip2, INPUT_PULLUP);
-        pinMode(config.pinDip3, INPUT_PULLUP);
-
-        int dipValue = (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 1 |
-            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 2 |
-            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 3 |
-            (digitalRead(config.pinDip0) == LOW ? 0 : 1) << 4;
-        display.showNumberHexEx(dipValue);
+        display.showNumberHexEx(dipSwitches.value());
         delay(500);
         display.clear();
 
         // Turn LED
-        pinMode(config.pinTurnLed, OUTPUT);
-        digitalWrite(config.pinTurnLed, HIGH);
+        turnLight.turnOn();
         delay(250);
-        digitalWrite(config.pinTurnLed, LOW);
+        turnLight.turnOff();
 
         radio.begin();
         radio.setDataRate(RF24_250KBPS);
@@ -92,11 +88,11 @@ struct PlayerBoard::Impl {
     }
 
     void loop() {
-        five.update([&]() { state.scoreDelta += 5; });
-        one.update([&]() { state.scoreDelta++; });
-        negOne.update([&]() { state.scoreDelta--; });
+        five.onLoop([&]() { state.scoreDelta += 5; });
+        one.onLoop([&]() { state.scoreDelta++; });
+        negOne.onLoop([&]() { state.scoreDelta--; });
 
-        commit.update([&]() { state.commit = true; });
+        commit.onLoop([&]() { state.commit = true; });
 
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &state);
