@@ -13,14 +13,21 @@
 struct LeaderBoard::Impl {
     RF24 radio{CE_PIN, CSN_PIN};
     IOConfig config;
+    WhatLeaderBoardSendsEverySecond toSend{};
 
-    explicit Impl(IOConfig config) : config{config} {}
+    explicit Impl(IOConfig config) : config{config} {
+        toSend.whosTurn = 0;
+        toSend.turnNumber = 1;
+    }
 
-    static constexpr int N_DISPLAYS = 4;
+    static constexpr int N_DISPLAYS = 2;
 
     TM1637Display displays[N_DISPLAYS]{
-            TM1637Display(8, 7), TM1637Display(6, 5), TM1637Display(4, 3), TM1637Display(2, 21)};
-
+        // TM1637Display(8, 7),
+        TM1637Display(6, 5),
+        TM1637Display(4, 3),
+        // TM1637Display(2, 21)
+    };
 
     void setup() {
         for (size_t i = 0; i < N_DISPLAYS; i++) {
@@ -28,7 +35,7 @@ struct LeaderBoard::Impl {
             displays[i].showNumberDec(int(i + 1));
         }
         delay(1000);
-        for (auto & display : displays) {
+        for (auto& display : displays) {
             display.clear();
         }
 
@@ -37,13 +44,11 @@ struct LeaderBoard::Impl {
         radio.enableAckPayload();
         radio.setRetries(5, 5);  // delay, count
 
-        radio.openWritingPipe(slaveAddress);
-
         radio.printPrettyDetails();
     }
 
-    const byte slaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
-
+    const byte slaveAddress0[5] = {'R', 'x', 'A', 'A', 'A'};
+    const byte slaveAddress1[5] = {'R', 'x', 'A', 'A', 'B'};
 
     bool send(WhatLeaderBoardSendsEverySecond* toSendV,
               WhatPlayerBoardAcksInResponse* ackReceived) {
@@ -52,19 +57,35 @@ struct LeaderBoard::Impl {
 
     WhatLeaderBoardSendsEverySecond toSend{};
     ScoreT player0 = 0;
+    ScoreT player1 = 0;
     Periodically second{100};
     void loop() {  // Leaderboard
         second.run(millis(), [&]() {
-            WhatPlayerBoardAcksInResponse ack{};
-            this->send(&toSend, &ack);
-            if (ack.commit) {
-                player0 += ack.scoreDelta;
-                this->displays[2].showNumberDec(player0);
-                toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
-                toSend.turnNumber++;
+            WhatPlayerBoardAcksInResponse ack0{};
+            this->radio.stopListening();
+            this->radio.openWritingPipe(slaveAddress0);
+            this->send(&toSend, &ack0);
+            if (ack0.commit) {
+                player0 += ack0.scoreDelta;
+                this->displays[0].showNumberDec(player0);
+                if (toSend.whosTurn == 0) {
+                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.turnNumber++;
+                }
+            }
+            WhatPlayerBoardAcksInResponse ack1{};
+            this->radio.stopListening();
+            this->radio.openWritingPipe(slaveAddress1);
+            this->send(&toSend, &ack1);
+            if (ack1.commit) {
+                player1 += ack1.scoreDelta;
+                this->displays[1].showNumberDec(player1);
+                if (toSend.whosTurn == 1) {
+                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.turnNumber++;
+                }
             }
         });
-        this->displays[1].showNumberDec(toSend.turnNumber);
     }
 };
 
@@ -78,4 +99,3 @@ void LeaderBoard::setup() {
 void LeaderBoard::loop() {
     impl->loop();
 }
-

@@ -28,8 +28,12 @@ struct PlayerBoard::Impl {
 
     WhatPlayerBoardAcksInResponse state{};
 
+#if BOARD_ID == 0 || BOARD_ID == -1 
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
-
+#endif
+#if BOARD_ID == 1
+    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
+#endif
 
     explicit Impl(IOConfig config)
         : display(8, 7),
