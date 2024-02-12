@@ -55,7 +55,6 @@ struct LeaderBoard::Impl {
         return doSend(&this->radio, toSendV, [&]() { doRead(&this->radio, ackReceived); });
     }
 
-    WhatLeaderBoardSendsEverySecond toSend{};
     ScoreT player0 = 0;
     ScoreT player1 = 0;
     Periodically second{100};
