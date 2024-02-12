@@ -2,7 +2,7 @@
 #include "TM1637Display.h"
 #include <string>
 
-#include "Devices.hpp"
+#include "TabletopBoard.hpp"
 #include "RadioHelper.hpp"
 #include "Message.hpp"
 #include "Utility.hpp"

@@ -1,7 +1,7 @@
 #ifndef PLAYERBOARD_HPP
 #define PLAYERBOARD_HPP
 
-#include "Devices.hpp"
+#include "TabletopBoard.hpp"
 
 class PlayerBoard : public TabletopBoard {
 public:

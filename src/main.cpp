@@ -2,7 +2,7 @@
 #include <ArduinoSTL.h>
 
 #include "printf.h"
-#include "Devices.hpp"
+#include "TabletopBoard.hpp"
 #include "LeaderBoard.hpp"
 #include "PlayerBoard.hpp"
 

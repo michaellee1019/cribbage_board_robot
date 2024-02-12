@@ -1,5 +1,5 @@
-#ifndef DEVICES_HPP
-#define DEVICES_HPP
+#ifndef TABLETOPBOARD_HPP
+#define TABLETOPBOARD_HPP
 
 struct IOConfig {
     int pinButton0;
@@ -27,4 +27,4 @@ public:
 void blink();
 
 
-#endif  // DEVICES_HPP
+#endif  // TABLETOPBOARD_HPP

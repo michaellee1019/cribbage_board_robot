@@ -1,7 +1,7 @@
 #ifndef LEADERBOARD_HPP
 #define LEADERBOARD_HPP
 
-#include "Devices.hpp"
+#include "TabletopBoard.hpp"
 
 class LeaderBoard : public TabletopBoard {
 public:
