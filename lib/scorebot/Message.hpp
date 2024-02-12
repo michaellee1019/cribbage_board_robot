@@ -77,33 +77,33 @@ public:
     }
 };
 
-enum class SendStatus { Sent, SentNoAck, Failure };
-const char* toString(const SendStatus& status) {
-    switch (status) {
-        case SendStatus::Sent:
-            return "Sent";
-        case SendStatus::SentNoAck:
-            return "SentNoAck";
-        case SendStatus::Failure:
-            return "Failure";
-    }
-    return "Unknown";
-}
-enum class ReceiveStatus {
-    Received,
-    ReceivedNoAckSent,
-    Failure,
-};
-const char* toString(const ReceiveStatus& status) {
-    switch (status) {
-        case ReceiveStatus::ReceivedNoAckSent:
-            return "ReceivedNoAckSent";
-        case ReceiveStatus::Received:
-            return "Received";
-        case ReceiveStatus::Failure:
-            return "Failure";
-    }
-    return "Unknown";
-}
+//enum class SendStatus { Sent, SentNoAck, Failure };
+//const char* toString(const SendStatus& status) {
+//    switch (status) {
+//        case SendStatus::Sent:
+//            return "Sent";
+//        case SendStatus::SentNoAck:
+//            return "SentNoAck";
+//        case SendStatus::Failure:
+//            return "Failure";
+//    }
+//    return "Unknown";
+//}
+//enum class ReceiveStatus {
+//    Received,
+//    ReceivedNoAckSent,
+//    Failure,
+//};
+//const char* toString(const ReceiveStatus& status) {
+//    switch (status) {
+//        case ReceiveStatus::ReceivedNoAckSent:
+//            return "ReceivedNoAckSent";
+//        case ReceiveStatus::Received:
+//            return "Received";
+//        case ReceiveStatus::Failure:
+//            return "Failure";
+//    }
+//    return "Unknown";
+//}
 
-#endif
+#endif  // MESSAGE_HPP

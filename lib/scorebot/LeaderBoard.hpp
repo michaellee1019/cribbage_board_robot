@@ -1,7 +1,7 @@
-#ifndef SCOREBOARD_HPP
-#define SCOREBOARD_HPP
+#ifndef LEADERBOARD_HPP
+#define LEADERBOARD_HPP
 
-#include <scorebot/Devices.hpp>
+#include "Devices.hpp"
 
 class LeaderBoard : public TabletopBoard {
 public:
@@ -16,4 +16,4 @@ private:
 };
 
 
-#endif  // SCOREBOARD_HPP
+#endif  // LEADERBOARD_HPP

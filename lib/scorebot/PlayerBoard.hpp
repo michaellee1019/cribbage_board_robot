@@ -1,7 +1,7 @@
 #ifndef PLAYERBOARD_HPP
 #define PLAYERBOARD_HPP
 
-#include <scorebot/Devices.hpp>
+#include "Devices.hpp"
 
 class PlayerBoard : public TabletopBoard {
 public:

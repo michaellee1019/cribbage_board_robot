@@ -1,8 +1,6 @@
 #ifndef DEVICES_HPP
 #define DEVICES_HPP
 
-#include <ArduinoSTL.h>
-
 struct IOConfig {
     int pinButton0;
     int pinButton1;

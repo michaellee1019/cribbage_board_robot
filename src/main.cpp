@@ -1,9 +1,10 @@
 #include <Arduino.h>
+#include <ArduinoSTL.h>
 
 #include "printf.h"
-#include <scorebot/Devices.hpp>
-#include <scorebot/LeaderBoard.hpp>
-#include <scorebot/PlayerBoard.hpp>
+#include "Devices.hpp"
+#include "LeaderBoard.hpp"
+#include "PlayerBoard.hpp"
 
 void blink() {
     for (int i = 0; i < 3; ++i) {
