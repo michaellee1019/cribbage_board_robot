@@ -101,8 +101,12 @@ struct PlayerBoard::Impl {
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &state);
 
+        bool myTurn = false;
+        ScoreT myScore = -1;
         if (received) {
             if (received.whosTurn == BOARD_ID) {
+                myTurn = true;
+                myScore = received.whosTurnScore;
                 digitalWrite(config.pinTurnLed, HIGH);
             } else {
                 digitalWrite(config.pinTurnLed, LOW);
@@ -113,7 +117,20 @@ struct PlayerBoard::Impl {
             }
         }
 
-        display.showNumberDec(state.scoreDelta);
+        // Sweet jesuses on a pedestal.
+        // This is not acceptable code.
+        if (myTurn || state.scoreDelta != 0) {
+            display.showNumberDec(state.scoreDelta);
+            display.setBrightness(0xFF);
+        } else {
+            if (myScore < 0) {
+                display.showNumberHexEx(0xBEEF);
+            } else {
+                display.showNumberDec(myScore);
+            }
+            display.setBrightness(0xF0);
+        }
+
     }
 };
 

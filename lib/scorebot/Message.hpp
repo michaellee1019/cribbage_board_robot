@@ -16,6 +16,7 @@ void print(const T& t) {
 struct WhatLeaderBoardSendsEverySecond {
     TimestampT timestamp{0};
     PlayerNumberT whosTurn{0};
+    ScoreT whosTurnScore{0};
     TurnNumberT turnNumber{0};
 
     explicit operator bool() const {

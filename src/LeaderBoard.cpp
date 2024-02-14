@@ -69,6 +69,7 @@ struct LeaderBoard::Impl {
                 this->displays[0].showNumberDec(player0);
                 if (toSend.whosTurn == 0) {
                     toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.whosTurnScore = player0;
                     toSend.turnNumber++;
                 }
             }
@@ -81,6 +82,7 @@ struct LeaderBoard::Impl {
                 this->displays[1].showNumberDec(player1);
                 if (toSend.whosTurn == 1) {
                     toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.whosTurnScore = player1;
                     toSend.turnNumber++;
                 }
             }
