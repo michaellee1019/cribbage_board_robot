@@ -19,9 +19,6 @@ struct LeaderBoard::Impl {
       config{config}
     {}
 
-    static constexpr const byte slaveAddress[5] = {
-        'R', 'x', 'A', 'A', 'A'
-    };
     // TODO: Make this configurable.
     static constexpr int N_DISPLAYS = 4;
 
@@ -57,7 +54,7 @@ struct LeaderBoard::Impl {
         radio.enableAckPayload();
         radio.setRetries(5, 5);  // delay, count
 
-        radio.openWritingPipe(slaveAddress);
+        radio.openWritingPipe(reinterpret_cast<const uint8_t*>("RxAAA"));
 
         radio.printPrettyDetails();
     }
