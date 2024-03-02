@@ -6,6 +6,7 @@ struct IOConfig {
     int pinButton1;
     int pinButton2;
     int pinButton3;
+    int pinButton4;
 
     int pinDip0;
     int pinDip1;

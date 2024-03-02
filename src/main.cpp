@@ -18,10 +18,11 @@ void blink() {
 TabletopBoard* self;
 
 void setup() {
-    IOConfig config{.pinButton0 = 3,
-                    .pinButton1 = 4,
-                    .pinButton2 = 5,
-                    .pinButton3 = 6,
+    IOConfig config{.pinButton0 = 6,
+                    .pinButton1 = 5,
+                    .pinButton2 = 4,
+                    .pinButton3 = 3,
+                    .pinButton4 = 21,
                     .pinDip0 = 14,
                     .pinDip1 = 15,
                     .pinDip2 = 16,

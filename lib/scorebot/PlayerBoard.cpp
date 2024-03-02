@@ -24,6 +24,7 @@ struct PlayerBoard::Impl {
     Button one;
     Button five;
     Button negOne;
+    Button add;
     Button commit;
     Light turnLight;
     DipSwitches<4> dipSwitches;
@@ -41,18 +42,20 @@ struct PlayerBoard::Impl {
         : radio{CE_PIN, CSN_PIN},
           display(8, 7),
           config{config},
-          one{config.pinButton0},
-          five{config.pinButton1},
-          negOne{config.pinButton2},
-          commit{config.pinButton3},
+          five{config.pinButton2},
+          one{config.pinButton3},
+          negOne{config.pinButton1},
+          add{config.pinButton4},
+          commit{config.pinButton0},
           turnLight{config.pinTurnLed},
           dipSwitches{config.pinDip0, config.pinDip1, config.pinDip2, config.pinDip3}
           {}
 
     void setup() {
-        one.setup();
         five.setup();
+        one.setup();
         negOne.setup();
+        add.setup();
         commit.setup();
         turnLight.setup();
         dipSwitches.setup();
