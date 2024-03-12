@@ -65,7 +65,10 @@ struct PlayerBoard::Impl {
         delay(250);
         turnLight.turnOff();
 
+        // TODO: move to RadioHelper
         radio.begin();
+        // TODO: set power to low
+        // radio.setPALevel(RF_PWR_LOW);
         radio.setDataRate(RF24_250KBPS);
         radio.enableAckPayload();
         radio.setRetries(5, 5);  // delay, count
@@ -76,6 +79,8 @@ struct PlayerBoard::Impl {
         radio.printPrettyDetails();
     }
 
+    // TODO: this needs to be more robust
+    // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
     void checkForMessages(WhatLeaderBoardSendsEverySecond* leaderboardSent,
                           WhatPlayerBoardAcksInResponse* ackToSendBack) {
         if (!radio.available()) {
