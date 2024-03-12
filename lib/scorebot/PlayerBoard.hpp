@@ -3,9 +3,9 @@
 
 #include "TabletopBoard.hpp"
 
-class PlayerBoard : public TabletopBoard {
+class PlayerBoard final : public TabletopBoard {
 public:
-    explicit PlayerBoard(IOConfig config);
+    explicit PlayerBoard(const IOConfig& config);
     ~PlayerBoard() override;
     void setup() override;
     void loop() override;

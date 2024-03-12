@@ -18,22 +18,26 @@ void blink() {
 TabletopBoard* self;
 
 void setup() {
-    IOConfig config{.pinButton0 = 6,
-                    .pinButton1 = 5,
-                    .pinButton2 = 4,
-                    .pinButton3 = 3,
-                    .pinButton4 = 21,
-                    .pinDip0 = 14,
-                    .pinDip1 = 15,
-                    .pinDip2 = 16,
-                    .pinDip3 = 17,
-                    .pinLedBuiltin = LED_BUILTIN,
-                    .pinTurnLed = 2};
+    constexpr IOConfig config {
+        .pinButton0 = 6,
+        .pinButton1 = 5,
+        .pinButton2 = 4,
+        .pinButton3 = 3,
+        .pinButton4 = 21,
+        .pinDip0 = 14,
+        .pinDip1 = 15,
+        .pinDip2 = 16,
+        .pinDip3 = 17,
+        .pinLedBuiltin = LED_BUILTIN,
+        .pinTurnLed = 2,
+        .pinRadioCE = 10,
+        .pinRadioCSN = 9
+    };
     Serial.begin(9600);
     printf_begin();
     std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
 
-    if (BOARD_ID == -1) {
+    if constexpr (BOARD_ID == -1) {
         self = new LeaderBoard(config);
     } else {
         self = new PlayerBoard(config);

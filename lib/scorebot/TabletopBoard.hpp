@@ -15,6 +15,9 @@ struct IOConfig {
 
     int pinLedBuiltin;
     int pinTurnLed;
+
+    unsigned int pinRadioCE;
+    unsigned int pinRadioCSN;
 };
 
 class TabletopBoard {

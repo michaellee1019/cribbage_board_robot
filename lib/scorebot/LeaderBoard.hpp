@@ -3,9 +3,9 @@
 
 #include "TabletopBoard.hpp"
 
-class LeaderBoard : public TabletopBoard {
+class LeaderBoard final : public TabletopBoard {
 public:
-    explicit LeaderBoard(IOConfig config);
+    explicit LeaderBoard(const IOConfig& config);
     ~LeaderBoard() override;
     void setup() override;
     void loop() override;

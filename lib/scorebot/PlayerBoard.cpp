@@ -7,11 +7,6 @@
 #include "Utility.hpp"
 #include "PlayerBoard.hpp"
 
-// Cruft
-// TODO: move to IOConfig
-#define CE_PIN 10
-#define CSN_PIN 9
-
 
 TabletopBoard::TabletopBoard() = default;
 
@@ -39,11 +34,11 @@ struct PlayerBoard::Impl {
 #endif
 
     explicit Impl(IOConfig config)
-        : radio{CE_PIN, CSN_PIN},
+        : radio{config.pinRadioCE, config.pinRadioCSN},
           display(8, 7),
           config{config},
-          five{config.pinButton2},
           one{config.pinButton3},
+          five{config.pinButton2},
           negOne{config.pinButton1},
           add{config.pinButton4},
           commit{config.pinButton0},
@@ -133,7 +128,7 @@ struct PlayerBoard::Impl {
     }
 };
 
-PlayerBoard::PlayerBoard(IOConfig config) : impl{new Impl(config)} {}
+PlayerBoard::PlayerBoard(const IOConfig& config) : impl{new Impl(config)} {}
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {

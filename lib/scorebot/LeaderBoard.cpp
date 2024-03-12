@@ -6,17 +6,13 @@
 #include "RF24.h"
 #include "TM1637Display.h"
 
-// TODO: Put these pin numbers into IOConfig.
-#define CE_PIN 10
-#define CSN_PIN 9
-
 struct LeaderBoard::Impl {
     RF24 radio;
-    IOConfig config;
+    const IOConfig& config;
     WhatLeaderBoardSendsEverySecond toSend{};
 
-    explicit Impl(IOConfig config)
-    : radio{CE_PIN, CSN_PIN},
+    explicit Impl(const IOConfig& config)
+    : radio{config.pinRadioCE, config.pinRadioCSN},
     config{config} {
         toSend.whosTurn = 0;
         toSend.turnNumber = 1;
@@ -117,7 +113,7 @@ struct LeaderBoard::Impl {
 
 LeaderBoard::~LeaderBoard() = default;
 
-LeaderBoard::LeaderBoard(IOConfig config) : impl{new Impl(config)} {}
+LeaderBoard::LeaderBoard(const IOConfig& config) : impl{new Impl(config)} {}
 void LeaderBoard::setup() {
     impl->setup();
 }
