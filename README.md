@@ -16,6 +16,13 @@ pio run -t upload -t monitor -e leaderboard
 pio run -t upload -t monitor -e player0
 ```
 
+Debugging project setup and the like:
+
+```
+pio project config   --json-output
+pio project metadata --json-output -e leaderboard
+```
+
 TODO: 
 
 - Turn on light when no activity in a while. "Turn SOS"
