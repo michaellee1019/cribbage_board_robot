@@ -156,18 +156,21 @@ struct PlayerBoard::Impl {
         turnLight.setup();
 
         display.setBrightness(0x0f);
+        display.update();
         delay(500);
         display.clear();
+        display.update();
 
         // Turn LED
         turnLight.turnOn();
+        turnLight.update();
         delay(250);
         turnLight.turnOff();
+        turnLight.update();
 
         // TODO: move to RadioHelper
         radio.begin();
-        // TODO: set power to low
-        // radio.setPALevel(RF_PWR_LOW);
+        radio.setPALevel(RF24_PA_LOW);
         radio.setDataRate(RF24_250KBPS);
         radio.enableAckPayload();
         radio.setRetries(5, 5);  // delay, count
@@ -199,15 +202,17 @@ struct PlayerBoard::Impl {
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &state);
 
-        if (received && received.whosTurn == BOARD_ID) {
-            turnLight.turnOn();
-        } else {
-            turnLight.turnOff();
-        }
+        if (received) {
+            if (received.whosTurn == BOARD_ID) {
+                turnLight.turnOn();
+            } else {
+                turnLight.turnOff();
+            }
 
-        if (received && received.whosTurn == BOARD_ID && state.commit) {
-            state.commit = false;
-            state.scoreDelta = 0;
+            if (state.commit) {
+                state.commit = false;
+                state.scoreDelta = 0;
+            }
         }
 
         display.setValueDec(state.scoreDelta);
