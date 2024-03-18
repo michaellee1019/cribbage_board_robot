@@ -1,6 +1,8 @@
 #ifndef TABLETOPBOARD_HPP
 #define TABLETOPBOARD_HPP
 
+#include <RF24.h>
+
 struct IOConfig {
     int pinButton0;
     int pinButton1;
@@ -16,8 +18,8 @@ struct IOConfig {
     int pinLedBuiltin;
     int pinTurnLed;
 
-    unsigned int pinRadioCE;
-    unsigned int pinRadioCSN;
+    rf24_gpio_pin_t pinRadioCE;
+    rf24_gpio_pin_t pinRadioCSN;
 };
 
 class TabletopBoard {

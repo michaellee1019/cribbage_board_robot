@@ -26,7 +26,7 @@ struct View {
         };
 
         DisplayMode mode{DisplayMode::kUnchanged};
-        HexOrDecimal value{0};
+        HexOrDecimal value{};
         TM1637Display display;
 
         bool changedBrightness{false};
