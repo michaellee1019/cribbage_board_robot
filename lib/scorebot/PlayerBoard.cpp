@@ -12,17 +12,119 @@ TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
+struct View {
+    class SegmentDisplay {
+        enum class DisplayMode {
+            kDecimal,
+            kHex,
+            kUnchanged,
+            kClear,
+        };
+        using HexOrDecimal = union {
+            int decimalValue;
+            int hexValue;
+        };
+
+        DisplayMode mode{DisplayMode::kUnchanged};
+        HexOrDecimal value{0};
+        TM1637Display display;
+
+        bool changedBrightness{false};
+        uint8_t brightness{0xFF};
+
+    public:
+        explicit SegmentDisplay(TM1637Display&& display)
+            : display{display} {}
+
+        void setValueHex(const uint8_t hexValue) {
+            this->mode = DisplayMode::kHex;
+            this->value.hexValue = hexValue;
+        }
+        void setValueDec(const int decimalValue) {
+            this->mode = DisplayMode::kDecimal;
+            this->value.decimalValue = decimalValue;
+        }
+        void setBrightness(const uint8_t brightness) {
+            this->brightness = brightness;
+            changedBrightness = true;
+        }
+        void clear() {
+
+        }
+        void update() {
+            if(mode == DisplayMode::kDecimal) {
+                display.showNumberDec(value.decimalValue);
+                this->mode = DisplayMode::kUnchanged;
+            } else if (mode == DisplayMode::kHex) {
+                display.showNumberHexEx(value.hexValue);
+                this->mode = DisplayMode::kUnchanged;
+            } else if (mode == DisplayMode::kClear) {
+                display.clear();
+                this->mode = DisplayMode::kUnchanged;
+            }
+
+            if (changedBrightness) {
+                display.setBrightness(brightness);
+                changedBrightness = false;
+            }
+        }
+    };
+
+    class LEDLight {
+        bool lightOn;
+        bool changed;
+        Light light;
+
+    public:
+        LEDLight(Light&& light, bool initialOn)
+            : lightOn{initialOn}, changed{true}, light{light} {}
+
+        void setup() const {
+            this->light.setup();
+        }
+        void turnOn() {
+            if (!lightOn) {
+                this->lightOn = true;
+                this->changed = true;
+            }
+        }
+        void turnOff() {
+            if (lightOn) {
+                this->lightOn = false;
+                this->changed = true;
+            }
+        }
+
+        void update() {
+            if (changed) {
+                if (this->lightOn) {
+                    this->light.turnOn();
+                } else {
+                    this->light.turnOff();
+                }
+                changed = false;
+            }
+        }
+    };
+
+    LEDLight turnLed;
+    SegmentDisplay display;
+
+    View(LEDLight turnLed, SegmentDisplay display)
+        : turnLed{turnLed}, display{display} {}
+};
+
+
 struct PlayerBoard::Impl {
     RF24 radio;
-    TM1637Display display;
+    View::SegmentDisplay display;
     IOConfig config;
     Button one;
     Button five;
     Button negOne;
     Button add;
     Button commit;
-    Light turnLight;
-    DipSwitches<4> dipSwitches;
+    View::LEDLight turnLight;
 
     WhatPlayerBoardAcksInResponse state{};
 
@@ -35,15 +137,14 @@ struct PlayerBoard::Impl {
 
     explicit Impl(IOConfig config)
         : radio{config.pinRadioCE, config.pinRadioCSN},
-          display(8, 7),
+          display{{8, 7}},
           config{config},
           one{config.pinButton3},
           five{config.pinButton2},
           negOne{config.pinButton1},
           add{config.pinButton4},
           commit{config.pinButton0},
-          turnLight{config.pinTurnLed},
-          dipSwitches{config.pinDip0, config.pinDip1, config.pinDip2, config.pinDip3}
+          turnLight{Light{config.pinTurnLed}, false}
           {}
 
     void setup() {
@@ -53,10 +154,8 @@ struct PlayerBoard::Impl {
         add.setup();
         commit.setup();
         turnLight.setup();
-        dipSwitches.setup();
 
         display.setBrightness(0x0f);
-        display.showNumberHexEx(dipSwitches.value());
         delay(500);
         display.clear();
 
@@ -90,46 +189,31 @@ struct PlayerBoard::Impl {
         doAck(&this->radio, 1, ackToSendBack);
     }
 
+
     void loop() {
         five.onLoop([&]() { state.scoreDelta += 5; });
         one.onLoop([&]() { state.scoreDelta++; });
         negOne.onLoop([&]() { state.scoreDelta--; });
-
         commit.onLoop([&]() { state.commit = true; });
 
         WhatLeaderBoardSendsEverySecond received{};
         this->checkForMessages(&received, &state);
 
-        bool myTurn = false;
-        ScoreT myScore = -1;
-        if (received) {
-            if (received.whosTurn == BOARD_ID) {
-                myTurn = true;
-                myScore = received.whosTurnScore;
-                digitalWrite(config.pinTurnLed, HIGH);
-            } else {
-                digitalWrite(config.pinTurnLed, LOW);
-            }
-            if (state.commit) {
-                state.commit = false;
-                state.scoreDelta = 0;
-            }
-        }
-
-        // Sweet jesuses on a pedestal.
-        // This is not acceptable code.
-        if (myTurn || state.scoreDelta != 0) {
-            display.showNumberDec(state.scoreDelta);
-            display.setBrightness(0xFF);
+        if (received && received.whosTurn == BOARD_ID) {
+            turnLight.turnOn();
         } else {
-            if (myScore < 0) {
-                display.showNumberHexEx(0xBEEF);
-            } else {
-                display.showNumberDec(myScore);
-            }
-            display.setBrightness(0xF0);
+            turnLight.turnOff();
         }
 
+        if (received && received.whosTurn == BOARD_ID && state.commit) {
+            state.commit = false;
+            state.scoreDelta = 0;
+        }
+
+        display.setValueDec(state.scoreDelta);
+
+        display.update();
+        turnLight.update();
     }
 };
 
