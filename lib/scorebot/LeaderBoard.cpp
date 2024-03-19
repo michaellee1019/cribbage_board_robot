@@ -9,17 +9,15 @@
 struct LeaderBoard::Impl {
     RF24 radio;
     const IOConfig& config;
-    WhatLeaderBoardSendsEverySecond toSend{};
+    StateRefreshRequest request;
+    StateRefreshResponse responses[N_PLAYERS];
 
-    explicit Impl(const IOConfig& config)
+    explicit Impl(const IOConfig& config, TimestampT startupGeneration)
     : radio{config.pinRadioCE, config.pinRadioCSN},
-    config{config} {
-        toSend.whosTurn = 0;
-        toSend.turnNumber = 1;
-    }
+      config{config},
+      request{StateRefreshResponse.startup()} {
 
-    // TODO: Make this configurable.
-    static constexpr int N_DISPLAYS = 2;
+    }
 
     TM1637Display displays[N_DISPLAYS] {
         // TODO: Put these pin numbers into IOConfig.
@@ -60,54 +58,27 @@ struct LeaderBoard::Impl {
 
 
 
-    bool send(WhatLeaderBoardSendsEverySecond* toSendV,
-              WhatPlayerBoardAcksInResponse* ackReceived) {
-        return doSend(&this->radio, toSendV, [&]() { doRead(&this->radio, ackReceived); });
+    bool send(StateRefreshResponse* responseReceived) {
+        return doSend(&this->radio, &request, [&]() { return doRead(&this->radio, responseReceived); });
     }
 
-    const byte slaveAddress0[5] = {'R', 'x', 'A', 'A', 'A'};
-    const byte slaveAddress1[5] = {'R', 'x', 'A', 'A', 'B'};
+    const byte slaveAddresses[N_PLAYERS][5] = {
+        {'R', 'x', 'A', 'A', 'A'},
+        {'R', 'x', 'A', 'A', 'B'}
+    };
 
-    ScoreT player0 = 0;
-    ScoreT player1 = 0;
     Periodically second{100};
     void loop() {  // Leaderboard
-        second.run(millis(), [&]() {
-            WhatPlayerBoardAcksInResponse ack0{};
-            this->radio.stopListening();
-            this->radio.openWritingPipe(slaveAddress0);
-            this->send(&toSend, &ack0);
-            if (ack0.commit) {
-                player0 += ack0.scoreDelta;
-                this->displays[0].showNumberDec(player0);
-                if (toSend.whosTurn == 0) {
-                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
-                    toSend.turnNumber++;
-                }
-            }
 
-            WhatPlayerBoardAcksInResponse ack1{};
-            this->radio.stopListening();
-            this->radio.openWritingPipe(slaveAddress1);
-            this->send(&toSend, &ack1);
-            if (ack1.commit) {
-                player1 += ack1.scoreDelta;
-                this->displays[1].showNumberDec(player1);
-                if (toSend.whosTurn == 1) {
-                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
-                    toSend.turnNumber++;
-                }
+        second.run(millis(), [&]() {
+            for (PlayerNumberT i=0; i < N_PLAYERS; ++i) {
+                this->radio.stopListening();
+                this->radio.openWritingPipe(slaveAddresses[i]);
+                this->send(&responses[i]);
             }
-            // for (int i=0; i<N_DISPLAYS;i++) {
-            //     if (toSend.whosTurn == i) {
-            //         displays[i].setBrightness(0xF0);
-            //     } else {
-            //         displays[i].setBrightness(0xFF);
-            //     }
-            // }
         });
 
-
+        this->request.update(responses);
     }
 };
 

@@ -114,7 +114,6 @@ struct View {
         : turnLed{turnLed}, display{display} {}
 };
 
-
 struct PlayerBoard::Impl {
     RF24 radio;
     View::SegmentDisplay display;
@@ -126,7 +125,8 @@ struct PlayerBoard::Impl {
     Button commit;
     View::LEDLight turnLight;
 
-    WhatPlayerBoardAcksInResponse state{};
+    StateRefreshRequest request;
+    StateRefreshResponse response;
 
 #if BOARD_ID == 0 || BOARD_ID == -1 
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
@@ -135,7 +135,7 @@ struct PlayerBoard::Impl {
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
 #endif
 
-    explicit Impl(IOConfig config)
+    explicit Impl(IOConfig config, TimestampT startupGeneration)
         : radio{config.pinRadioCE, config.pinRadioCSN},
           display{{8, 7}},
           config{config},
@@ -144,7 +144,9 @@ struct PlayerBoard::Impl {
           negOne{config.pinButton1},
           add{config.pinButton4},
           commit{config.pinButton0},
-          turnLight{Light{config.pinTurnLed}, false}
+          turnLight{Light{config.pinTurnLed}, false},
+          request{true, startupGeneration, 0, {}},
+          response{false, -1, 0, false, false, {}}
           {}
 
     void setup() {
@@ -183,46 +185,45 @@ struct PlayerBoard::Impl {
 
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
-    void checkForMessages(WhatLeaderBoardSendsEverySecond* leaderboardSent,
-                          WhatPlayerBoardAcksInResponse* ackToSendBack) {
+    [[nodiscard]]
+    bool checkForMessages() {
         if (!radio.available()) {
-            return;
+            return false;
         }
-        doRead(&this->radio, leaderboardSent);
-        doAck(&this->radio, 1, ackToSendBack);
+        if (!doRead(&this->radio, &request)) {
+            return false;
+        }
+        if (!doAck(&this->radio, 1, &response)) {
+            return false;
+        }
+        return true;
     }
 
-
     void loop() {
-        five.onLoop([&]() { state.scoreDelta += 5; });
-        one.onLoop([&]() { state.scoreDelta++; });
-        negOne.onLoop([&]() { state.scoreDelta--; });
-        commit.onLoop([&]() { state.commit = true; });
+        five.onLoop([&]() { response.addScore(5); });
+        one.onLoop([&]() { response.addScore(1);; });
+        negOne.onLoop([&]() { response.addScore(-1); });
+        commit.onLoop([&]() { response.commit = true; });
 
-        WhatLeaderBoardSendsEverySecond received{};
-        this->checkForMessages(&received, &state);
+        if (this->checkForMessages()) {
+            this->response.update(this->request);
 
-        if (received) {
-            if (received.whosTurn == BOARD_ID) {
+            if (request.myTurn()) {
                 turnLight.turnOn();
             } else {
                 turnLight.turnOff();
             }
-
-            if (state.commit) {
-                state.commit = false;
-                state.scoreDelta = 0;
-            }
         }
 
-        display.setValueDec(state.scoreDelta);
+        display.setValueDec(this->response.delta.scoreDelta);
 
         display.update();
         turnLight.update();
     }
 };
 
-PlayerBoard::PlayerBoard(const IOConfig& config) : impl{new Impl(config)} {}
+PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
+: impl{new Impl(config, startupGeneration)} {}
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {

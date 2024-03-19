@@ -6,15 +6,14 @@
 // Send toSend and invoke callback if successfully sent.
 template <typename T, typename F>
 [[nodiscard]] bool doSend(RF24* radio, T* toSend, F&& callback) {
-    bool sent = radio->write(toSend, sizeof(T));
-    if (sent) {
-        callback();
+    if (radio->write(toSend, sizeof(T))) {
+        return callback();
     }
-    return sent;
+    return false;
 }
 
 template <typename T>
-bool doRead(RF24* radio, T* out) {
+[[nodiscard]] bool doRead(RF24* radio, T* out) {
     if (radio->isAckPayloadAvailable()) {
         radio->read(out, sizeof(T));
         return true;
@@ -23,8 +22,9 @@ bool doRead(RF24* radio, T* out) {
 }
 
 template <typename T>
-void doAck(RF24* radio, uint8_t pipe, T* acked) {
-    radio->writeAckPayload(pipe, acked, sizeof(T));
+[[nodiscard]]
+bool doAck(RF24* radio, uint8_t pipe, T* acked) {
+    return radio->writeAckPayload(pipe, acked, sizeof(T));
 }
 
 #endif // RADIOHELPER_HPP

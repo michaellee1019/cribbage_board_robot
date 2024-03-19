@@ -13,98 +13,64 @@ void print(const T& t) {
     Serial.print(t);
 }
 
-struct WhatLeaderBoardSendsEverySecond {
-    TimestampT timestamp{0};
-    PlayerNumberT whosTurn{0};
-    ScoreT whosTurnScore{0};
-    TurnNumberT turnNumber{0};
+// TODO: Make this configurable.
+static constexpr int N_DISPLAYS = 2;
+static constexpr int N_PLAYERS = N_DISPLAYS;
 
-    explicit operator bool() const {
-        return turnNumber > 0;
+struct GameState {
+    bool populated{false};
+    TurnNumberT turnNumber{-1};
+    PlayerNumberT whosTurn{-1};
+    ScoreT scores[N_PLAYERS]{};
+};
+
+struct StateDelta {
+    bool populated{false};
+    PlayerNumberT fromPlayer{-1};
+    ScoreT scoreDelta{0};
+};
+
+struct StateRefreshRequest {
+    bool populated{false};
+    TimestampT startupGeneration{0};
+    TimestampT requestedAtTime{0};
+    GameState state{};
+
+    [[nodiscard]]
+    bool myTurn() const {
+        return populated && this->state.whosTurn == BOARD_ID;
     }
 
-    void log(const char* name) const {
-        print(timestamp);
-        print("  Sends");
-        print(name);
-        print(">  ");
-
-        print(" ?");
-        print(whosTurn);
-        print(" @");
-        print(turnNumber);
-
-        print("\n");
+    static StateRefreshRequest startup() {
+        return {};
     }
+
+    void update(struct StateRefreshResponse* responses);
+};
+
+struct StateRefreshResponse {
+    bool populated {false};
+    PlayerNumberT fromPlayer{BOARD_ID};
+    TimestampT respondedAtTime{0};
+    bool passTurn{false};
+    bool commit{false};
+    StateDelta delta{};
+
+    static StateRefreshResponse startup() {
+        return {};
+    }
+
+    void addScore(const ScoreT n) {
+        this->delta.scoreDelta += n;
+    }
+
+    // PlayerBoard received this state update request.
+    void update(const StateRefreshRequest& request);
 };
 
 // I think this is a requirement of the NRF stack.
-static_assert(sizeof(WhatLeaderBoardSendsEverySecond) <= 32,
-              "WhatLeaderBoardSendsEverySecond max struct size");
+static_assert(sizeof(StateRefreshRequest) <= 32,
+              "StateRefreshRequest max struct size");
 
-class WhatPlayerBoardAcksInResponse {
-public:
-    PlayerNumberT myPlayerNumber{-1};
-    TurnNumberT iThinkItsNowTurnNumber{-1};
-    ScoreT scoreDelta{0};
-    bool commit{false};
-
-    explicit operator bool() const {
-        return myPlayerNumber >= 0;
-    }
-
-    //    void advanceForTesting() {
-    //        scoreDelta += 10;
-    //        iThinkItsNowTurnNumber++;
-    //    }
-
-    void log(const char* name) const {
-        if (!*this) {
-            return;
-        }
-
-        print("  PlayerSends");
-        print(name);
-        print(">  ");
-
-        print(" N");
-        print(myPlayerNumber);
-        print(" T");
-        print(iThinkItsNowTurnNumber);
-        print(" S");
-        print(scoreDelta);
-
-        print("\n");
-    }
-};
-
-//enum class SendStatus { Sent, SentNoAck, Failure };
-//const char* toString(const SendStatus& status) {
-//    switch (status) {
-//        case SendStatus::Sent:
-//            return "Sent";
-//        case SendStatus::SentNoAck:
-//            return "SentNoAck";
-//        case SendStatus::Failure:
-//            return "Failure";
-//    }
-//    return "Unknown";
-//}
-//enum class ReceiveStatus {
-//    Received,
-//    ReceivedNoAckSent,
-//    Failure,
-//};
-//const char* toString(const ReceiveStatus& status) {
-//    switch (status) {
-//        case ReceiveStatus::ReceivedNoAckSent:
-//            return "ReceivedNoAckSent";
-//        case ReceiveStatus::Received:
-//            return "Received";
-//        case ReceiveStatus::Failure:
-//            return "Failure";
-//    }
-//    return "Unknown";
-//}
 
 #endif  // MESSAGE_HPP
