@@ -119,6 +119,14 @@ struct LeaderBoard::Impl {
             //     }
             // }
             scores.whosTurn = toSend.whosTurn;
+            if (ack0.commit && ack0.scoreDelta == -10) {
+                scores = Scores{};
+                this->displays[0].showNumberHexEx(0xDEAD);
+                this->displays[1].showNumberHexEx(0xBEEF);
+                delay(1000);
+                this->displays[0].showNumberDec(scores.player0);
+                this->displays[1].showNumberDec(scores.player0);
+            }
             i2ceeprom.writeObject(0x00, scores);
         });
 
