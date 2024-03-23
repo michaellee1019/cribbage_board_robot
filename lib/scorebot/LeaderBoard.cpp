@@ -3,6 +3,7 @@
 #include "RadioHelper.hpp"
 #include "Utility.hpp"
 
+#include "Adafruit_FRAM_I2C.h"
 #include "RF24.h"
 #include "TM1637Display.h"
 
@@ -10,6 +11,8 @@ struct LeaderBoard::Impl {
     RF24 radio;
     const IOConfig& config;
     WhatLeaderBoardSendsEverySecond toSend{};
+
+    Adafruit_FRAM_I2C i2ceeprom;
 
     explicit Impl(const IOConfig& config)
     : radio{config.pinRadioCE, config.pinRadioCSN},
@@ -37,7 +40,17 @@ struct LeaderBoard::Impl {
         }
     }
 
+    struct Scores {
+        ScoreT player0{0};
+        ScoreT player1{0};
+        PlayerNumberT whosTurn;
+    };
+
     void setup() {
+        i2ceeprom.begin(0x50);
+        i2ceeprom.readObject(0x00, scores);
+        toSend.whosTurn = scores.whosTurn;
+
         eachDisplay([](TM1637Display& display, int i) {
             display.setBrightness(0xFF);
             display.showNumberDec(i + 1);
@@ -56,6 +69,9 @@ struct LeaderBoard::Impl {
         radio.openWritingPipe(reinterpret_cast<const uint8_t*>("RxAAA"));
 
         radio.printPrettyDetails();
+
+        this->displays[0].showNumberDec(scores.player0);
+        this->displays[1].showNumberDec(scores.player1);
     }
 
 
@@ -68,8 +84,7 @@ struct LeaderBoard::Impl {
     const byte slaveAddress0[5] = {'R', 'x', 'A', 'A', 'A'};
     const byte slaveAddress1[5] = {'R', 'x', 'A', 'A', 'B'};
 
-    ScoreT player0 = 0;
-    ScoreT player1 = 0;
+    Scores scores;
     Periodically second{100};
     void loop() {  // Leaderboard
         second.run(millis(), [&]() {
@@ -78,8 +93,8 @@ struct LeaderBoard::Impl {
             this->radio.openWritingPipe(slaveAddress0);
             this->send(&toSend, &ack0);
             if (ack0.commit) {
-                player0 += ack0.scoreDelta;
-                this->displays[0].showNumberDec(player0);
+                scores.player0 += ack0.scoreDelta;
+                this->displays[0].showNumberDec(scores.player0);
                 if (toSend.whosTurn == 0) {
                     toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
                     toSend.turnNumber++;
@@ -91,8 +106,8 @@ struct LeaderBoard::Impl {
             this->radio.openWritingPipe(slaveAddress1);
             this->send(&toSend, &ack1);
             if (ack1.commit) {
-                player1 += ack1.scoreDelta;
-                this->displays[1].showNumberDec(player1);
+                scores.player1 += ack1.scoreDelta;
+                this->displays[1].showNumberDec(scores.player1);
                 if (toSend.whosTurn == 1) {
                     toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
                     toSend.turnNumber++;
@@ -105,6 +120,8 @@ struct LeaderBoard::Impl {
             //         displays[i].setBrightness(0xFF);
             //     }
             // }
+            scores.whosTurn = toSend.whosTurn;
+            i2ceeprom.writeObject(0x00, scores);
         });
 
 
