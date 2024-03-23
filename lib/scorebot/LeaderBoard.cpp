@@ -26,8 +26,8 @@ struct LeaderBoard::Impl {
 
     TM1637Display displays[N_DISPLAYS] {
         // TODO: Put these pin numbers into IOConfig.
-        TM1637Display(8, 7),
         TM1637Display(6, 5),
+        TM1637Display(8, 7),
     };
 
 
