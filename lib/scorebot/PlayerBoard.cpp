@@ -44,8 +44,8 @@ struct View {
             this->mode = DisplayMode::kDecimal;
             this->value.decimalValue = decimalValue;
         }
-        void setBrightness(const uint8_t brightness) {
-            this->brightness = brightness;
+        void setBrightness(const uint8_t bval) {
+            this->brightness = bval;
             changedBrightness = true;
         }
         void clear() {
@@ -208,8 +208,10 @@ struct PlayerBoard::Impl {
         if (received) {
             if (received.whosTurn == BOARD_ID) {
                 turnLight.turnOn();
+                display.setBrightness(0xFF);
             } else {
                 turnLight.turnOff();
+                display.setBrightness(0xFF / 2);
             }
 
             if (state.commit) {
