@@ -37,10 +37,12 @@ void setup() {
     printf_begin();
     std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
 
+    TimestampT startupGeneration = millis();
+
     if constexpr (BOARD_ID == -1) {
-        self = new LeaderBoard(config);
+        self = new LeaderBoard(config, startupGeneration);
     } else {
-        self = new PlayerBoard(config);
+        self = new PlayerBoard(config, startupGeneration);
     }
 
     self->setup();

@@ -3,6 +3,7 @@
 #include "RadioHelper.hpp"
 #include "Utility.hpp"
 
+#include "Adafruit_FRAM_I2C.h"
 #include "RF24.h"
 #include "TM1637Display.h"
 
@@ -11,20 +12,17 @@ struct LeaderBoard::Impl {
     const IOConfig& config;
     StateRefreshRequest request;
     StateRefreshResponse responses[N_PLAYERS];
+    Adafruit_FRAM_I2C i2ceeprom;
 
     explicit Impl(const IOConfig& config, TimestampT startupGeneration)
     : radio{config.pinRadioCE, config.pinRadioCSN},
       config{config},
-      request{StateRefreshResponse.startup()} {
-
-    }
+      request{} {}
 
     TM1637Display displays[N_DISPLAYS] {
         // TODO: Put these pin numbers into IOConfig.
-        //TM1637Display(8, 7),
         TM1637Display(6, 5),
-        TM1637Display(4, 3)
-        //TM1637Display(2, 21)
+        TM1637Display(8, 7),
     };
 
 
@@ -36,6 +34,9 @@ struct LeaderBoard::Impl {
     }
 
     void setup() {
+        i2ceeprom.begin(0x50);
+        i2ceeprom.readObject(0x00, request);
+
         eachDisplay([](TM1637Display& display, int i) {
             display.setBrightness(0xFF);
             display.showNumberDec(i + 1);
@@ -54,6 +55,10 @@ struct LeaderBoard::Impl {
         radio.openWritingPipe(reinterpret_cast<const uint8_t*>("RxAAA"));
 
         radio.printPrettyDetails();
+
+        eachDisplay([&](TM1637Display& display, int i) {
+            display.showNumberDec(request.state.scores[i]);
+        });
     }
 
 
@@ -84,7 +89,8 @@ struct LeaderBoard::Impl {
 
 LeaderBoard::~LeaderBoard() = default;
 
-LeaderBoard::LeaderBoard(const IOConfig& config) : impl{new Impl(config)} {}
+LeaderBoard::LeaderBoard(const IOConfig& config, TimestampT startupGeneration)
+    : impl{new Impl(config, startupGeneration)} {}
 void LeaderBoard::setup() {
     impl->setup();
 }
