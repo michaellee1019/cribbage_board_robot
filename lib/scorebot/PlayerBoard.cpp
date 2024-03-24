@@ -134,6 +134,9 @@ struct PlayerBoard::Impl {
 #if BOARD_ID == 1
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
 #endif
+#if BOARD_ID == 2
+    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'C'};
+#endif
 
     explicit Impl(IOConfig config)
         : radio{config.pinRadioCE, config.pinRadioCSN},

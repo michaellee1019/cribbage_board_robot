@@ -22,12 +22,13 @@ struct LeaderBoard::Impl {
     }
 
     // TODO: Make this configurable.
-    static constexpr int N_DISPLAYS = 2;
+    static constexpr int N_DISPLAYS = 3;
 
     TM1637Display displays[N_DISPLAYS] {
         // TODO: Put these pin numbers into IOConfig.
         TM1637Display(6, 5),
         TM1637Display(8, 7),
+        TM1637Display(4, 3),
     };
 
 
@@ -41,6 +42,7 @@ struct LeaderBoard::Impl {
     struct Scores {
         ScoreT player0{0};
         ScoreT player1{0};
+        ScoreT player2{0};
         PlayerNumberT whosTurn;
     };
 
@@ -81,6 +83,7 @@ struct LeaderBoard::Impl {
 
     const byte slaveAddress0[5] = {'R', 'x', 'A', 'A', 'A'};
     const byte slaveAddress1[5] = {'R', 'x', 'A', 'A', 'B'};
+    const byte slaveAddress2[5] = {'R', 'x', 'A', 'A', 'C'};
 
     Scores scores;
     Periodically second{100};
@@ -107,6 +110,19 @@ struct LeaderBoard::Impl {
                 scores.player1 += ack1.scoreDelta;
                 this->displays[1].showNumberDec(scores.player1);
                 if (toSend.whosTurn == 1) {
+                    toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
+                    toSend.turnNumber++;
+                }
+            }
+
+            WhatPlayerBoardAcksInResponse ack2{};
+            this->radio.stopListening();
+            this->radio.openWritingPipe(slaveAddress2);
+            this->send(&toSend, &ack2);
+            if (ack2.commit) {
+                scores.player2 += ack2.scoreDelta;
+                this->displays[2].showNumberDec(scores.player2);
+                if (toSend.whosTurn == 2) {
                     toSend.whosTurn = (toSend.whosTurn + 1) % N_DISPLAYS;
                     toSend.turnNumber++;
                 }
