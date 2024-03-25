@@ -44,12 +44,11 @@ struct View {
             this->mode = DisplayMode::kDecimal;
             this->value.decimalValue = decimalValue;
         }
-        void setBrightness(const uint8_t brightness) {
-            this->brightness = brightness;
-            changedBrightness = true;
+        void setBrightness(const uint8_t bval) {
+            display.setBrightness(bval);
         }
         void clear() {
-
+            display.clear();
         }
         void update() {
             if(mode == DisplayMode::kDecimal) {
@@ -61,11 +60,6 @@ struct View {
             } else if (mode == DisplayMode::kClear) {
                 display.clear();
                 this->mode = DisplayMode::kUnchanged;
-            }
-
-            if (changedBrightness) {
-                display.setBrightness(brightness);
-                changedBrightness = false;
             }
         }
     };
@@ -133,6 +127,9 @@ struct PlayerBoard::Impl {
 #endif
 #if BOARD_ID == 1
     const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
+#endif
+#if BOARD_ID == 2
+    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'C'};
 #endif
 
     explicit Impl(IOConfig config, TimestampT startupGeneration)
@@ -210,8 +207,10 @@ struct PlayerBoard::Impl {
 
             if (request.myTurn()) {
                 turnLight.turnOn();
+                display.setBrightness(0xFF);
             } else {
                 turnLight.turnOff();
+                display.setBrightness(0xFF / 10);
             }
         }
 

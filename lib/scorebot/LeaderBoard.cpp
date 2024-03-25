@@ -23,6 +23,7 @@ struct LeaderBoard::Impl {
         // TODO: Put these pin numbers into IOConfig.
         TM1637Display(6, 5),
         TM1637Display(8, 7),
+        TM1637Display(4, 3),
     };
 
 
@@ -33,9 +34,17 @@ struct LeaderBoard::Impl {
         }
     }
 
+    struct Scores {
+        ScoreT player0{0};
+        ScoreT player1{0};
+        ScoreT player2{0};
+        PlayerNumberT whosTurn;
+    };
+
     void setup() {
         i2ceeprom.begin(0x50);
         i2ceeprom.readObject(0x00, request);
+        request.state.whosTurn = scores.whosTurn;
 
         eachDisplay([](TM1637Display& display, int i) {
             display.setBrightness(0xFF);
@@ -69,9 +78,11 @@ struct LeaderBoard::Impl {
 
     const byte slaveAddresses[N_PLAYERS][5] = {
         {'R', 'x', 'A', 'A', 'A'},
-        {'R', 'x', 'A', 'A', 'B'}
+        {'R', 'x', 'A', 'A', 'B'},
+        {'R', 'x', 'A', 'A', 'C'},
     };
 
+    Scores scores;
     Periodically second{100};
     void loop() {  // Leaderboard
 
