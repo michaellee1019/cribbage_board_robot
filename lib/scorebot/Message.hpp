@@ -20,18 +20,26 @@ struct StateDelta {
 };
 
 struct StateRefreshRequest {
-    bool populated{false};
-    TimestampT startupGeneration{0};
-    TimestampT requestedAtTime{0};
+    bool populated;
+    TimestampT requestedAtTime;
+    const TimestampT startupGeneration;
     GameState state{};
+
+    explicit StateRefreshRequest()
+        : StateRefreshRequest(0, false)
+    {}
+
+
+    explicit StateRefreshRequest(TimestampT startupGeneration, bool populated=false)
+        : populated{populated},
+          requestedAtTime{0},
+          startupGeneration{startupGeneration},
+          state{}
+    {}
 
     [[nodiscard]]
     bool myTurn() const {
         return populated && this->state.whosTurn == BOARD_ID;
-    }
-
-    static StateRefreshRequest startup() {
-        return {};
     }
 
     void update(struct StateRefreshResponse* responses);
@@ -53,7 +61,7 @@ struct StateRefreshResponse {
         this->delta.scoreDelta += n;
     }
 
-    // PlayerBoard received this state update request.
+    // PlayerBoard received this state update nextRequest.
     void update(const StateRefreshRequest& request);
 };
 

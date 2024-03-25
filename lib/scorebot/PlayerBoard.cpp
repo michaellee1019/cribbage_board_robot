@@ -49,7 +49,7 @@ struct PlayerBoard::Impl {
           add{config.pinButton4},
           commit{config.pinButton0},
           turnLight{Light{config.pinTurnLed}, false},
-          request{true, startupGeneration, 0, {}},
+          request{startupGeneration},
           response{false, -1, 0, false, false, {}}
           {}
 
@@ -105,7 +105,7 @@ struct PlayerBoard::Impl {
 
     void loop() {
         five.onLoop([&]() { response.addScore(5); });
-        one.onLoop([&]() { response.addScore(1);; });
+        one.onLoop([&]() { response.addScore(1); });
         negOne.onLoop([&]() { response.addScore(-1); });
         commit.onLoop([&]() { response.commit = true; });
 

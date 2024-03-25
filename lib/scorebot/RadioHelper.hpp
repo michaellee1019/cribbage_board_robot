@@ -27,4 +27,11 @@ bool doAck(RF24* radio, uint8_t pipe, T* acked) {
     return radio->writeAckPayload(pipe, acked, sizeof(T));
 }
 
+void doRadioSetup(RF24& rf24) {
+    rf24.begin();
+    rf24.setDataRate(RF24_250KBPS);
+    rf24.enableAckPayload();
+    rf24.setRetries(5, 5);  // delay, count
+}
+
 #endif // RADIOHELPER_HPP
