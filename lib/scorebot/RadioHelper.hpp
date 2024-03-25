@@ -29,6 +29,7 @@ bool doAck(RF24* radio, uint8_t pipe, T* acked) {
 
 void doRadioSetup(RF24& rf24) {
     rf24.begin();
+    radio.setPALevel(RF24_PA_LOW);
     rf24.setDataRate(RF24_250KBPS);
     rf24.enableAckPayload();
     rf24.setRetries(5, 5);  // delay, count

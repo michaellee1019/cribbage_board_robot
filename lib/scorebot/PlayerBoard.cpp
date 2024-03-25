@@ -74,13 +74,7 @@ struct PlayerBoard::Impl {
         turnLight.turnOff();
         turnLight.update();
 
-        // TODO: move to RadioHelper
-        radio.begin();
-        radio.setPALevel(RF24_PA_LOW);
-        radio.setDataRate(RF24_250KBPS);
-        radio.enableAckPayload();
-        radio.setRetries(5, 5);  // delay, count
-
+        doRadioSetup(radio);
         radio.openReadingPipe(1, thisSlaveAddress);
         radio.startListening();
 
