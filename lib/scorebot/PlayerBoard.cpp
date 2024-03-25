@@ -14,6 +14,16 @@ TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
+#if BOARD_ID == 0 || BOARD_ID == -1
+const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
+#endif
+#if BOARD_ID == 1
+const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
+#endif
+#if BOARD_ID == 2
+const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'C'};
+#endif
+
 
 struct PlayerBoard::Impl {
     RF24 radio;
@@ -26,18 +36,8 @@ struct PlayerBoard::Impl {
     Button commit;
     View::LEDLight turnLight;
 
-    StateRefreshRequest request;
-    StateRefreshResponse response;
-
-#if BOARD_ID == 0 || BOARD_ID == -1 
-    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
-#endif
-#if BOARD_ID == 1
-    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
-#endif
-#if BOARD_ID == 2
-    const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'C'};
-#endif
+    StateRefreshRequest lastReceived;
+    StateRefreshResponse nextResponse;
 
     explicit Impl(IOConfig config, TimestampT startupGeneration)
         : radio{config.pinRadioCE, config.pinRadioCSN},
@@ -49,8 +49,8 @@ struct PlayerBoard::Impl {
           add{config.pinButton4},
           commit{config.pinButton0},
           turnLight{Light{config.pinTurnLed}, false},
-          request{startupGeneration},
-          response{false, -1, 0, false, false, {}}
+          lastReceived{startupGeneration},
+          nextResponse{false, BOARD_ID, 0, false, false, {}}
           {}
 
     void setup() {
@@ -88,25 +88,25 @@ struct PlayerBoard::Impl {
         if (!radio.available()) {
             return false;
         }
-        if (!doRead(&this->radio, &request)) {
+        if (!doRead(&this->radio, &lastReceived)) {
             return false;
         }
-        if (!doAck(&this->radio, 1, &response)) {
+        if (!doAck(&this->radio, 1, &nextResponse)) {
             return false;
         }
         return true;
     }
 
     void loop() {
-        five.onLoop([&]() { response.addScore(5); });
-        one.onLoop([&]() { response.addScore(1); });
-        negOne.onLoop([&]() { response.addScore(-1); });
-        commit.onLoop([&]() { response.commit = true; });
+        five.onLoop([&]() { nextResponse.addScore(5); });
+        one.onLoop([&]() { nextResponse.addScore(1); });
+        negOne.onLoop([&]() { nextResponse.addScore(-1); });
+        commit.onLoop([&]() { nextResponse.commit = true; });
 
         if (this->checkForMessages()) {
-            this->response.update(this->request);
+            this->nextResponse.update(this->lastReceived);
 
-            if (request.myTurn()) {
+            if (lastReceived.myTurn()) {
                 turnLight.turnOn();
                 display.setBrightness(0xFF);
             } else {
@@ -115,7 +115,7 @@ struct PlayerBoard::Impl {
             }
         }
 
-        display.setValueDec(this->response.delta.scoreDelta);
+        display.setValueDec(this->nextResponse.delta.scoreDelta);
 
         display.update();
         turnLight.update();
