@@ -45,11 +45,10 @@ struct View {
             this->value.decimalValue = decimalValue;
         }
         void setBrightness(const uint8_t bval) {
-            this->brightness = bval;
-            changedBrightness = true;
+            display.setBrightness(bval);
         }
         void clear() {
-
+            display.clear();
         }
         void update() {
             if(mode == DisplayMode::kDecimal) {
@@ -61,11 +60,6 @@ struct View {
             } else if (mode == DisplayMode::kClear) {
                 display.clear();
                 this->mode = DisplayMode::kUnchanged;
-            }
-
-            if (changedBrightness) {
-                display.setBrightness(brightness);
-                changedBrightness = false;
             }
         }
     };
@@ -206,12 +200,20 @@ struct PlayerBoard::Impl {
         this->checkForMessages(&received, &state);
 
         if (received) {
+//            Serial.print(millis());
+//            Serial.print("> ");
+//            Serial.print("Received. Whos turn: ");
+//            Serial.print(received.whosTurn);
+//            Serial.print(". Commit ? ");
+//            Serial.print(state.commit);
+//            Serial.println();
+
             if (received.whosTurn == BOARD_ID) {
                 turnLight.turnOn();
                 display.setBrightness(0xFF);
             } else {
                 turnLight.turnOff();
-                display.setBrightness(0xFF / 2);
+                display.setBrightness(0xFF / 10);
             }
 
             if (state.commit) {
