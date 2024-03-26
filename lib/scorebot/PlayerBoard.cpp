@@ -24,13 +24,13 @@ struct PlayerBoard::Impl {
     Button passTurn;
     Button commit;
 
-    View::SegmentDisplay display;
-    View::LEDLight turnLight;
+    SegmentDisplay display;
+    LEDLight turnLight;
 
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;
 
-    explicit Impl(IOConfig config, TimestampT)
+    explicit Impl(const IOConfig& config, TimestampT)
         : radio{config.pinRadioCE, config.pinRadioCSN},
           one{config.pinPlusOne},
           five{config.pinPlusFive},
