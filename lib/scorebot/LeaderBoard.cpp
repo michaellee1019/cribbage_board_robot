@@ -22,9 +22,9 @@ struct LeaderBoard::Impl {
     StateRefreshRequest nextRequest;
     StateRefreshResponse lastResponses[MAX_PLAYERS];
 
-    explicit Impl(const IOConfig& config, TimestampT startupGeneration)
+    explicit Impl(const IOConfig& config, TimestampT)
     : radio{config.pinRadioCE, config.pinRadioCSN},
-      nextRequest{startupGeneration} {}
+      nextRequest{} {}
 
 
     template<typename F>

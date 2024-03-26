@@ -32,7 +32,7 @@ struct PlayerBoard::Impl {
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;
 
-    explicit Impl(IOConfig config, TimestampT startupGeneration)
+    explicit Impl(IOConfig config, TimestampT)
         : radio{config.pinRadioCE, config.pinRadioCSN},
           one{config.pinPlusOne},
           five{config.pinPlusFive},
@@ -41,7 +41,7 @@ struct PlayerBoard::Impl {
           commit{config.pinCommit},
           display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
-          lastReceived{startupGeneration},
+          lastReceived{},
           nextResponse{}
           {}
 

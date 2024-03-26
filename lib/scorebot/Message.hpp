@@ -7,47 +7,28 @@
 
 
 struct GameState {
-    bool populated{false};
     TurnNumberT turnNumber{-1};
     PlayerNumberT whosTurn{-1};
     ScoreT scores[MAX_PLAYERS]{};
 };
 
 struct StateDelta {
-    bool populated{false};
-    PlayerNumberT fromPlayer{-1};
     ScoreT scoreDelta{0};
 
     void reset() {
-        populated = false;
-        fromPlayer = -1;
         scoreDelta = 0;
     }
 };
 
 class StateRefreshRequest {
-    bool populated;
-    TimestampT requestedAtTime;
-    const TimestampT startupGeneration;
     GameState state{};
 
 public:
 
-    explicit StateRefreshRequest()
-        : StateRefreshRequest(0, false)
-    {}
-
-    [[nodiscard]]
-    auto turnNumber() const {
-        return state.turnNumber;
-    }
-
-    explicit StateRefreshRequest(TimestampT startupGeneration, bool populated=false)
-        : populated{populated},
-          requestedAtTime{0},
-          startupGeneration{startupGeneration},
-          state{}
-    {}
+//    [[nodiscard]]
+//    auto turnNumber() const {
+//        return state.turnNumber;
+//    }
 
     [[nodiscard]]
     bool myTurn() const {
@@ -68,10 +49,7 @@ public:
 };
 
 class StateRefreshResponse {
-    bool populated {false};
     PlayerNumberT fromPlayer{BOARD_ID};
-    TurnNumberT turnNumber{-1};
-    TimestampT respondedAtTime{0};
     bool passTurn{false};
     bool commit{false};
     StateDelta delta{};

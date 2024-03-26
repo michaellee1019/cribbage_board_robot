@@ -13,7 +13,7 @@ void StateRefreshResponse::update(const StateRefreshRequest& lastReceived) {
         this->delta.reset();
     }
 
-    this->turnNumber = lastReceived.turnNumber();
+//    this->turnNumber = lastReceived.turnNumber();
 }
 bool StateRefreshResponse::isPlayerAndPassedTurn(PlayerNumberT player) const {
     return this->fromPlayer == player && this->passedTurn();
