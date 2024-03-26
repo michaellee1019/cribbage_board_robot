@@ -14,8 +14,8 @@ void print(const T& t) {
 }
 
 // TODO: Make this configurable.
-static constexpr int N_DISPLAYS = 3;
-static constexpr int N_PLAYERS = N_DISPLAYS;
+static constexpr int MAX_DISPLAYS = 3;
+static constexpr int MAX_PLAYERS = MAX_DISPLAYS;
 
 
 #endif

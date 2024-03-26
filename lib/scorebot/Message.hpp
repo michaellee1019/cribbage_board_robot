@@ -10,7 +10,7 @@ struct GameState {
     bool populated{false};
     TurnNumberT turnNumber{-1};
     PlayerNumberT whosTurn{-1};
-    ScoreT scores[N_PLAYERS]{};
+    ScoreT scores[MAX_PLAYERS]{};
 };
 
 struct StateDelta {
@@ -45,11 +45,16 @@ public:
     }
 
     [[nodiscard]]
+    PlayerNumberT whosTurn() const {
+        return this->state.whosTurn;
+    }
+
+    [[nodiscard]]
     auto getPlayerScore(PlayerNumberT player) const {
         return state.scores[player];
     }
 
-    void update(class StateRefreshResponse* responses);
+    void update(class StateRefreshResponse* responses, size_t nResponses);
 };
 
 class StateRefreshResponse {
@@ -61,7 +66,9 @@ class StateRefreshResponse {
     StateDelta delta{};
 
 public:
-    auto myScoreDelta() const {
+
+    [[nodiscard]]
+    ScoreT myScoreDelta() const {
         return this->delta.scoreDelta;
     }
 

@@ -10,19 +10,23 @@
 #include "View.hpp"
 
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-pragmas"
+
 TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
 struct PlayerBoard::Impl {
     RF24 radio;
-    View::SegmentDisplay display;
-    IOConfig config;
+
     Button one;
     Button five;
     Button negOne;
     Button add;
     Button commit;
+
+    View::SegmentDisplay display;
     View::LEDLight turnLight;
 
     StateRefreshRequest lastReceived;
@@ -30,13 +34,12 @@ struct PlayerBoard::Impl {
 
     explicit Impl(IOConfig config, TimestampT startupGeneration)
         : radio{config.pinRadioCE, config.pinRadioCSN},
-          display{{8, 7}},
-          config{config},
           one{config.pinButton3},
           five{config.pinButton2},
           negOne{config.pinButton1},
           add{config.pinButton4},
           commit{config.pinButton0},
+          display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
           lastReceived{startupGeneration},
           nextResponse{}
@@ -111,8 +114,11 @@ struct PlayerBoard::Impl {
     }
 };
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "MemoryLeak"
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
 : impl{new Impl(config, startupGeneration)} {}
+#pragma clang diagnostic pop
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {
@@ -125,3 +131,5 @@ void PlayerBoard::loop() {
 
 // LeaderBoard
 
+
+#pragma clang diagnostic pop
