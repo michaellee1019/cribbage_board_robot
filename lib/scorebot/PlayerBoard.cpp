@@ -1,3 +1,4 @@
+// ReSharper disable CppDFAMemoryLeak
 #include "RF24.h"
 #include "TM1637Display.h"
 
@@ -9,9 +10,6 @@
 #include "Utility.hpp"
 #include "View.hpp"
 
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunknown-pragmas"
 
 TabletopBoard::TabletopBoard() = default;
 
@@ -120,11 +118,8 @@ struct PlayerBoard::Impl {
     }
 };
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "MemoryLeak"
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
 : impl{new Impl(config, startupGeneration)} {}
-#pragma clang diagnostic pop
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {
@@ -136,6 +131,3 @@ void PlayerBoard::loop() {
 }
 
 // LeaderBoard
-
-
-#pragma clang diagnostic pop

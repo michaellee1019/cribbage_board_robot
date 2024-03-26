@@ -1,3 +1,4 @@
+// ReSharper disable CppDFAMemoryLeak
 #include "LeaderBoard.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"

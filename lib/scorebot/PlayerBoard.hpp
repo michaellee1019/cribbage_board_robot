@@ -5,23 +5,23 @@
 
 #include "TabletopBoard.hpp"
 
-const byte _playerAddresses[MAX_PLAYERS][5] = {
+static constexpr const byte playerAddresses_[MAX_PLAYERS][5] = {
     // TODO: make the last digit the board id / player number.
     {'R', 'x', 'A', 'A', 'A'},
     {'R', 'x', 'A', 'A', 'B'},
     {'R', 'x', 'A', 'A', 'C'},
 };
 
-inline const byte* myBoardAddress() {
+inline static constexpr const byte* myBoardAddress() {
     static_assert(BOARD_ID < MAX_PLAYERS);
     if constexpr (BOARD_ID == -1 || BOARD_ID == 0) {
-        return _playerAddresses[0];
+        return playerAddresses_[0];
     }
-    return _playerAddresses[BOARD_ID];
+    return playerAddresses_[BOARD_ID];
 }
 
-inline const byte* playerAddress(PlayerNumberT playerNumberT) {
-    return _playerAddresses[playerNumberT];
+inline static constexpr const byte* playerAddress(PlayerNumberT playerNumberT) {
+    return playerAddresses_[playerNumberT];
 }
 
 
