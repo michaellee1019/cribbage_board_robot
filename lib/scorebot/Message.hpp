@@ -51,7 +51,7 @@ public:
 
     [[nodiscard]]
     bool myTurn() const {
-        return populated && this->state.whosTurn == BOARD_ID;
+        return this->state.whosTurn == BOARD_ID;
     }
 
     [[nodiscard]]

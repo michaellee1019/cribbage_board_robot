@@ -1,3 +1,4 @@
+#include "ArduinoSTL.h"
 #include <Message.hpp>
 
 // PlayerBoard response updates in response to the request.
@@ -41,7 +42,7 @@ void StateRefreshRequest::update(StateRefreshResponse* responses, PlayerNumberT 
         if (response.committed() || response.passedTurn()) {
             this->state.scores[i] += response.myScoreDelta();
         }
-        if (response.isPlayerAndPassedTurn(i)) {
+        if (response.isPlayerAndPassedTurn(this->state.whosTurn)) {
             advanceTurn = true;
         }
     }
@@ -49,4 +50,9 @@ void StateRefreshRequest::update(StateRefreshResponse* responses, PlayerNumberT 
         this->state.turnNumber++;
         this->state.whosTurn = (this->state.whosTurn + 1) % MAX_PLAYERS;
     }
+    Serial.print("Turn number ");
+    Serial.print(this->state.turnNumber);
+    Serial.print(", whos turn=");
+    Serial.print(this->state.whosTurn);
+    Serial.println();
 }
