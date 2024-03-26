@@ -22,8 +22,7 @@ struct View {
         uint8_t brightness{0xFF};
 
     public:
-        explicit SegmentDisplay(TM1637Display&& display)
-            : display{display} {}
+        explicit SegmentDisplay(TM1637Display&& display) : display{display} {}
 
         void setValueHex(const uint8_t hexValue) {
             this->mode = DisplayMode::kHex;
@@ -40,7 +39,7 @@ struct View {
             display.clear();
         }
         void update() {
-            if(mode == DisplayMode::kDecimal) {
+            if (mode == DisplayMode::kDecimal) {
                 display.showNumberDec(value.decimalValue);
                 this->mode = DisplayMode::kUnchanged;
             } else if (mode == DisplayMode::kHex) {
@@ -59,8 +58,7 @@ struct View {
         Light light;
 
     public:
-        LEDLight(Light&& light, bool initialOn)
-            : lightOn{initialOn}, changed{true}, light{light} {}
+        LEDLight(Light&& light, bool initialOn) : lightOn{initialOn}, changed{true}, light{light} {}
 
         void setup() const {
             this->light.setup();
@@ -92,8 +90,7 @@ struct View {
 
     SegmentDisplay display;
 
-    explicit View(SegmentDisplay display)
-        : display{display} {}
+    explicit View(SegmentDisplay display) : display{display} {}
 };
 
 

@@ -9,17 +9,12 @@ class StateRefreshRequest {
     ScoreT scores[MAX_PLAYERS];
 
 public:
+    //    [[nodiscard]]
+    //    auto turnNumber() const {
+    //        return state.turnNumber;
+    //    }
 
-//    [[nodiscard]]
-//    auto turnNumber() const {
-//        return state.turnNumber;
-//    }
-
-    explicit StateRefreshRequest()
-    : turnNumber{-1},
-      whosTurnV{-1},
-      scores{}
-    {}
+    explicit StateRefreshRequest() : turnNumber{-1}, whosTurnV{-1}, scores{} {}
 
     [[nodiscard]]
     bool myTurn() const {
@@ -36,10 +31,9 @@ public:
         return this->scores[player];
     }
 
-    void update(
-        class StateRefreshResponse const* responses,
-        PlayerNumberT nResponses,
-        PlayerNumberT maxActivePlayerIndex);
+    void update(class StateRefreshResponse const* responses,
+                PlayerNumberT nResponses,
+                PlayerNumberT maxActivePlayerIndex);
 };
 
 class StateRefreshResponse {
@@ -49,13 +43,8 @@ class StateRefreshResponse {
     ScoreT scoreDelta;
 
 public:
-
     explicit StateRefreshResponse()
-        : fromPlayer{BOARD_ID},
-          passTurn{false},
-          commit{false},
-          scoreDelta{0}
-    {}
+        : fromPlayer{BOARD_ID}, passTurn{false}, commit{false}, scoreDelta{0} {}
 
     void resetScoreDelta() {
         this->scoreDelta = 0;
@@ -88,8 +77,7 @@ public:
 };
 
 // I think this is a requirement of the NRF stack.
-static_assert(sizeof(StateRefreshRequest) <= 32,
-              "StateRefreshRequest max struct size");
+static_assert(sizeof(StateRefreshRequest) <= 32, "StateRefreshRequest max struct size");
 
 
 #endif  // MESSAGE_HPP

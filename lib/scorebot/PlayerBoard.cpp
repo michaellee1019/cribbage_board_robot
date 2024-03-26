@@ -40,8 +40,7 @@ struct PlayerBoard::Impl {
           display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
           lastReceived{},
-          nextResponse{}
-          {}
+          nextResponse{} {}
 
     void setup() {
         one.setup();
@@ -107,7 +106,7 @@ struct PlayerBoard::Impl {
             if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
                 display.setBrightness(0xFF);
             } else {
-                display.setBrightness(0xFF/10);
+                display.setBrightness(0xFF / 10);
             }
         }
 
@@ -119,7 +118,7 @@ struct PlayerBoard::Impl {
 };
 
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
-: impl{new Impl(config, startupGeneration)} {}
+    : impl{new Impl(config, startupGeneration)} {}
 
 PlayerBoard::~PlayerBoard() = default;
 void PlayerBoard::setup() {

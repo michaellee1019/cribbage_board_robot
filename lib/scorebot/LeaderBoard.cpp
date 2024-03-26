@@ -13,7 +13,7 @@ struct LeaderBoard::Impl {
     RF24 radio;
     Adafruit_FRAM_I2C storage;
 
-    TM1637Display displays[MAX_DISPLAYS] {
+    TM1637Display displays[MAX_DISPLAYS]{
         // TODO: Put these pin numbers into IOConfig.
         TM1637Display(6, 5),
         TM1637Display(8, 7),
@@ -24,11 +24,10 @@ struct LeaderBoard::Impl {
     StateRefreshResponse lastResponses[MAX_PLAYERS];
 
     explicit Impl(const IOConfig& config, TimestampT)
-    : radio{config.pinRadioCE, config.pinRadioCSN},
-      nextRequest{} {}
+        : radio{config.pinRadioCE, config.pinRadioCSN}, nextRequest{} {}
 
 
-    template<typename F>
+    template <typename F>
     void eachDisplay(F&& callback) {
         for (size_t i = 0; i < MAX_DISPLAYS; ++i) {
             callback(displays[i], i);
@@ -41,9 +40,7 @@ struct LeaderBoard::Impl {
             display.showNumberDec(i + 1);
         });
         delay(500);
-        eachDisplay([](TM1637Display& display, int i) {
-            display.clear();
-        });
+        eachDisplay([](TM1637Display& display, int i) { display.clear(); });
     }
 
 
@@ -57,15 +54,13 @@ struct LeaderBoard::Impl {
         radio.openWritingPipe(myBoardAddress());
         radio.printPrettyDetails();
 
-        eachDisplay([&](TM1637Display& display, int i) {
-            display.showNumberDec(i);
-        });
-
+        eachDisplay([&](TM1637Display& display, int i) { display.showNumberDec(i); });
     }
 
 
     bool send(StateRefreshResponse* responseReceived) {
-        return doSend(&this->radio, &nextRequest, [&]() { return doRead(&this->radio, responseReceived); });
+        return doSend(
+            &this->radio, &nextRequest, [&]() { return doRead(&this->radio, responseReceived); });
     }
 
     Periodically everySecond{500};
@@ -73,7 +68,7 @@ struct LeaderBoard::Impl {
     void loop() {  // Leaderboard
 
         everySecond.run(millis(), [&]() {
-            for (PlayerNumberT i=0; i < MAX_PLAYERS; ++i) {
+            for (PlayerNumberT i = 0; i < MAX_PLAYERS; ++i) {
                 this->radio.stopListening();
                 this->radio.openWritingPipe(playerAddress(i));
 
@@ -89,7 +84,7 @@ struct LeaderBoard::Impl {
                     display.setBrightness(0x01);
                 } else {
                     display.showNumberDec(nextRequest.getPlayerScore(i));
-                    display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF/10);
+                    display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF / 10);
                 }
             });
         });
@@ -107,4 +102,3 @@ void LeaderBoard::setup() {
 void LeaderBoard::loop() {
     impl->loop();
 }
-

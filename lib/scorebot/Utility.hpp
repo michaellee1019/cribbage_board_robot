@@ -23,8 +23,7 @@ struct Button {
 
 struct Light {
     const int pin;
-    explicit Light(int pin)
-    : pin{pin} {}
+    explicit Light(int pin) : pin{pin} {}
     void setup() const {
         pinMode(pin, OUTPUT);
     }
@@ -36,11 +35,11 @@ struct Light {
     }
 };
 
-template<size_t n>
+template <size_t n>
 struct DipSwitches {
     int pins[n];
 
-    template<typename... Args>
+    template <typename... Args>
     explicit DipSwitches(Args... args) : pins{args...} {
         static_assert(sizeof...(args) == n, "Incorrect number of arguments for DipSwitches");
     }
@@ -52,7 +51,7 @@ struct DipSwitches {
 
     int value() {
         int out = 0;
-        for(size_t i= 0; i < n; ++i) {
+        for (size_t i = 0; i < n; ++i) {
             out = out | (digitalRead(pins[i]) == LOW ? 0 : 1) << i;
         }
         return out;
@@ -72,4 +71,4 @@ struct Periodically {
     }
 };
 
-#endif //UTILITY_HPP
+#endif  // UTILITY_HPP

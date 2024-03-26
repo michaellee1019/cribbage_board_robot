@@ -23,13 +23,11 @@ pio project config   --json-output
 pio project metadata --json-output -e leaderboard
 ```
 
-Maybe add clang-format:
+Maybe add clang-format as a convenience script?:
 
 ```sh
 clang-format \
   -i \
-  --sort-includes \
-  --style=webkit \
   ./**/*.{hpp,cpp}
 ```
 

@@ -35,4 +35,4 @@ inline void doRadioSetup(RF24& rf24) {
     rf24.setRetries(5, 5);  // delay, count
 }
 
-#endif // RADIOHELPER_HPP
+#endif  // RADIOHELPER_HPP
