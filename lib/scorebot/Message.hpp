@@ -45,7 +45,7 @@ public:
         return state.scores[player];
     }
 
-    void update(class StateRefreshResponse* responses, PlayerNumberT nResponses);
+    void update(class StateRefreshResponse* responses, PlayerNumberT nResponses, PlayerNumberT maxActivePlayerIndex);
 };
 
 class StateRefreshResponse {

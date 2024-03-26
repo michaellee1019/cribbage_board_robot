@@ -35,7 +35,7 @@ void StateRefreshResponse::setPassTurn(bool pass) {
     this->passTurn = pass;
 }
 
-void StateRefreshRequest::update(StateRefreshResponse* responses, PlayerNumberT nResponses) {
+void StateRefreshRequest::update(StateRefreshResponse* responses, PlayerNumberT nResponses, PlayerNumberT maxActivePlayerIndex) {
     bool advanceTurn = false;
     for (PlayerNumberT i=0; i < nResponses; ++i) {
         const StateRefreshResponse& response = responses[i];
@@ -48,11 +48,13 @@ void StateRefreshRequest::update(StateRefreshResponse* responses, PlayerNumberT 
     }
     if (advanceTurn) {
         this->state.turnNumber++;
-        this->state.whosTurn = (this->state.whosTurn + 1) % MAX_PLAYERS;
+        this->state.whosTurn = (this->state.whosTurn + 1) % (maxActivePlayerIndex+1);
     }
-    Serial.print("Turn number ");
-    Serial.print(this->state.turnNumber);
-    Serial.print(", whos turn=");
-    Serial.print(this->state.whosTurn);
-    Serial.println();
+//    Serial.print("Turn number ");
+//    Serial.print(this->state.turnNumber);
+//    Serial.print(", whos turn=");
+//    Serial.print(this->state.whosTurn);
+//    Serial.print(", maxActivePlayerIndex=");
+//    Serial.print(maxActivePlayerIndex);
+//    Serial.println();
 }

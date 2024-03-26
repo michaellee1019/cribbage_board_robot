@@ -68,19 +68,28 @@ struct LeaderBoard::Impl {
     }
 
     Periodically everySecond{500};
+    PlayerNumberT maxActivePlayerIndex = 0;
     void loop() {  // Leaderboard
 
         everySecond.run(millis(), [&]() {
             for (PlayerNumberT i=0; i < MAX_PLAYERS; ++i) {
                 this->radio.stopListening();
                 this->radio.openWritingPipe(playerAddress(i));
-                this->send(&lastResponses[i]);
+
+                if (this->send(&lastResponses[i])) {
+                    this->maxActivePlayerIndex = max(this->maxActivePlayerIndex, i);
+                }
             }
-            this->nextRequest.update(lastResponses, MAX_PLAYERS);
+            this->nextRequest.update(lastResponses, MAX_PLAYERS, maxActivePlayerIndex);
 
             eachDisplay([&](TM1637Display& display, int i) {
-                display.showNumberDec(nextRequest.getPlayerScore(i));
-                display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF/10);
+                if (i > maxActivePlayerIndex) {
+                    display.showNumberHexEx(0xDEAD);
+                    display.setBrightness(0x01);
+                } else {
+                    display.showNumberDec(nextRequest.getPlayerScore(i));
+                    display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF/10);
+                }
             });
         });
     }
