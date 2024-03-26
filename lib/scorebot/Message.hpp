@@ -3,32 +3,10 @@
 
 #include <Types.hpp>
 
-struct GameState {
-    TurnNumberT turnNumber;
-    PlayerNumberT whosTurn;
-    ScoreT scores[MAX_PLAYERS];
-
-    explicit GameState()
-        : turnNumber{-1},
-          whosTurn{-1},
-          scores{}
-    {}
-};
-
-struct StateDelta {
-    ScoreT scoreDelta;
-
-    explicit StateDelta()
-        : scoreDelta{0}
-    {}
-
-    void reset() {
-        scoreDelta = 0;
-    }
-};
-
 class StateRefreshRequest {
-    GameState state;
+    TurnNumberT turnNumber;
+    PlayerNumberT whosTurnV;
+    ScoreT scores[MAX_PLAYERS];
 
 public:
 
@@ -38,32 +16,37 @@ public:
 //    }
 
     explicit StateRefreshRequest()
-        : state{}
+    : turnNumber{-1},
+      whosTurnV{-1},
+      scores{}
     {}
 
     [[nodiscard]]
     bool myTurn() const {
-        return this->state.whosTurn == BOARD_ID;
+        return this->whosTurnV == BOARD_ID;
     }
 
     [[nodiscard]]
     PlayerNumberT whosTurn() const {
-        return this->state.whosTurn;
+        return this->whosTurnV;
     }
 
     [[nodiscard]]
     auto getPlayerScore(const PlayerNumberT player) const {
-        return state.scores[player];
+        return this->scores[player];
     }
 
-    void update(class StateRefreshResponse* responses, PlayerNumberT nResponses, PlayerNumberT maxActivePlayerIndex);
+    void update(
+        class StateRefreshResponse const* responses,
+        PlayerNumberT nResponses,
+        PlayerNumberT maxActivePlayerIndex);
 };
 
 class StateRefreshResponse {
     PlayerNumberT fromPlayer;
     bool passTurn;
     bool commit;
-    StateDelta delta;
+    ScoreT scoreDelta;
 
 public:
 
@@ -71,8 +54,12 @@ public:
         : fromPlayer{BOARD_ID},
           passTurn{false},
           commit{false},
-          delta{}
+          scoreDelta{0}
     {}
+
+    void resetScoreDelta() {
+        this->scoreDelta = 0;
+    }
 
     [[nodiscard]]
     bool committed() const {
