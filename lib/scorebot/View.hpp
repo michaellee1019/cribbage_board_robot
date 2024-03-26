@@ -90,11 +90,10 @@ struct View {
         }
     };
 
-    LEDLight turnLed;
     SegmentDisplay display;
 
-    View(LEDLight turnLed, SegmentDisplay display)
-        : turnLed{turnLed}, display{display} {}
+    explicit View(SegmentDisplay display)
+        : display{display} {}
 };
 
 

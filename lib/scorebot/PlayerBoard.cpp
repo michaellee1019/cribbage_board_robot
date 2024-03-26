@@ -100,10 +100,14 @@ struct PlayerBoard::Impl {
 
             if (lastReceived.myTurn()) {
                 turnLight.turnOn();
-                display.setBrightness(0xFF);
             } else {
                 turnLight.turnOff();
-                display.setBrightness(0xFF / 10);
+            }
+
+            if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
+                display.setBrightness(0xFF);
+            } else {
+                display.setBrightness(0xFF/10);
             }
         }
 
