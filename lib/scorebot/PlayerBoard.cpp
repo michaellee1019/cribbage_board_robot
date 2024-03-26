@@ -23,7 +23,7 @@ struct PlayerBoard::Impl {
     Button one;
     Button five;
     Button negOne;
-    Button add;
+    Button passTurn;
     Button commit;
 
     View::SegmentDisplay display;
@@ -34,11 +34,11 @@ struct PlayerBoard::Impl {
 
     explicit Impl(IOConfig config, TimestampT startupGeneration)
         : radio{config.pinRadioCE, config.pinRadioCSN},
-          one{config.pinButton3},
-          five{config.pinButton2},
-          negOne{config.pinButton1},
-          add{config.pinButton4},
-          commit{config.pinButton0},
+          one{config.pinPlusOne},
+          five{config.pinPlusFive},
+          negOne{config.pinNegOne},
+          passTurn{config.pinPassTurn},
+          commit{config.pinCommit},
           display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
           lastReceived{startupGeneration},
@@ -46,11 +46,12 @@ struct PlayerBoard::Impl {
           {}
 
     void setup() {
-        five.setup();
         one.setup();
+        five.setup();
         negOne.setup();
-        add.setup();
+        passTurn.setup();
         commit.setup();
+
         turnLight.setup();
 
         display.setBrightness(0x0f);
@@ -94,6 +95,7 @@ struct PlayerBoard::Impl {
         one.onLoop([&]() { nextResponse.addScore(1); });
         negOne.onLoop([&]() { nextResponse.addScore(-1); });
         commit.onLoop([&]() { nextResponse.setCommit(true); });
+        passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
 
         if (this->checkForMessages()) {
             this->nextResponse.update(this->lastReceived);

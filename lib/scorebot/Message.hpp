@@ -79,6 +79,10 @@ class StateRefreshResponse {
 public:
 
     [[nodiscard]]
+    bool committed() const {
+        return commit;
+    }
+    [[nodiscard]]
     bool passedTurn() const {
         return passTurn;
     }
@@ -97,6 +101,7 @@ public:
     bool isPlayerAndPassedTurn(PlayerNumberT i) const;
 
     void update(const StateRefreshRequest& request);
+    void setPassTurn(bool passTurn);
 };
 
 // I think this is a requirement of the NRF stack.

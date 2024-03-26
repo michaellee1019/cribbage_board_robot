@@ -19,17 +19,17 @@ TabletopBoard* self;
 
 void setup() {
     constexpr IOConfig config {
-        .pinButton0 = 6,
-        .pinButton1 = 5,
-        .pinButton2 = 4,
-        .pinButton3 = 3,
-        .pinButton4 = 21,
+        .pinCommit = 2,
+        .pinNegOne = 5,
+        .pinPlusFive = 4,
+        .pinPlusOne = 3,
+        .pinPassTurn = 6,
         .pinDip0 = 14,
         .pinDip1 = 15,
         .pinDip2 = 16,
         .pinDip3 = 17,
         .pinLedBuiltin = LED_BUILTIN,
-        .pinTurnLed = 2,
+        .pinTurnLed = 21,
         .pinRadioCE = 10,
         .pinRadioCSN = 9
     };

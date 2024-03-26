@@ -6,6 +6,7 @@
 #include "TabletopBoard.hpp"
 
 const byte _playerAddresses[MAX_PLAYERS][5] = {
+    // TODO: make the last digit the board id / player number.
     {'R', 'x', 'A', 'A', 'A'},
     {'R', 'x', 'A', 'A', 'B'},
     {'R', 'x', 'A', 'A', 'C'},

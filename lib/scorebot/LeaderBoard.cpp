@@ -76,13 +76,12 @@ struct LeaderBoard::Impl {
                 this->radio.openWritingPipe(playerAddress(i));
                 this->send(&lastResponses[i]);
             }
-        });
+            this->nextRequest.update(lastResponses, MAX_PLAYERS);
 
-        this->nextRequest.update(lastResponses, MAX_PLAYERS);
-
-        eachDisplay([&](TM1637Display& display, int i) {
-            display.showNumberDec(nextRequest.getPlayerScore(i));
-            display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF/9);
+            eachDisplay([&](TM1637Display& display, int i) {
+                display.showNumberDec(nextRequest.getPlayerScore(i));
+                display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF/10);
+            });
         });
     }
 };

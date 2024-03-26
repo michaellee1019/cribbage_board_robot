@@ -4,11 +4,11 @@
 #include <RF24.h>
 
 struct IOConfig {
-    int pinButton0;
-    int pinButton1;
-    int pinButton2;
-    int pinButton3;
-    int pinButton4;
+    int pinCommit;
+    int pinNegOne;
+    int pinPlusFive;
+    int pinPlusOne;
+    int pinPassTurn;
 
     int pinDip0;
     int pinDip1;
