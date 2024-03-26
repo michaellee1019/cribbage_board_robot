@@ -6,15 +6,6 @@
 #include "LeaderBoard.hpp"
 #include "PlayerBoard.hpp"
 
-void blink() {
-    for (int i = 0; i < 3; ++i) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(300);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(300);
-    }
-}
-
 TabletopBoard* self;
 
 void setup() {
@@ -37,7 +28,7 @@ void setup() {
     printf_begin();
     std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
 
-    TimestampT startupGeneration = millis();
+    const TimestampT startupGeneration = millis();
 
     if constexpr (BOARD_ID == -1) {
         self = new LeaderBoard(config, startupGeneration);
@@ -46,7 +37,6 @@ void setup() {
     }
 
     self->setup();
-    blink();
 }
 
 void loop() {

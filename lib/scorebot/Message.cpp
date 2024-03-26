@@ -1,4 +1,3 @@
-#include "ArduinoSTL.h"
 #include <Message.hpp>
 
 // PlayerBoard response updates in response to the request.

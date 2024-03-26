@@ -3,17 +3,24 @@
 
 #include <Types.hpp>
 
-#include <Arduino.h>
-
-
 struct GameState {
-    TurnNumberT turnNumber{-1};
-    PlayerNumberT whosTurn{-1};
-    ScoreT scores[MAX_PLAYERS]{};
+    TurnNumberT turnNumber;
+    PlayerNumberT whosTurn;
+    ScoreT scores[MAX_PLAYERS];
+
+    explicit GameState()
+        : turnNumber{-1},
+          whosTurn{-1},
+          scores{}
+    {}
 };
 
 struct StateDelta {
-    ScoreT scoreDelta{0};
+    ScoreT scoreDelta;
+
+    explicit StateDelta()
+        : scoreDelta{0}
+    {}
 
     void reset() {
         scoreDelta = 0;
@@ -21,7 +28,7 @@ struct StateDelta {
 };
 
 class StateRefreshRequest {
-    GameState state{};
+    GameState state;
 
 public:
 
@@ -29,6 +36,10 @@ public:
 //    auto turnNumber() const {
 //        return state.turnNumber;
 //    }
+
+    explicit StateRefreshRequest()
+        : state{}
+    {}
 
     [[nodiscard]]
     bool myTurn() const {
@@ -41,7 +52,7 @@ public:
     }
 
     [[nodiscard]]
-    auto getPlayerScore(PlayerNumberT player) const {
+    auto getPlayerScore(const PlayerNumberT player) const {
         return state.scores[player];
     }
 
@@ -49,12 +60,19 @@ public:
 };
 
 class StateRefreshResponse {
-    PlayerNumberT fromPlayer{BOARD_ID};
-    bool passTurn{false};
-    bool commit{false};
-    StateDelta delta{};
+    PlayerNumberT fromPlayer;
+    bool passTurn;
+    bool commit;
+    StateDelta delta;
 
 public:
+
+    explicit StateRefreshResponse()
+        : fromPlayer{BOARD_ID},
+          passTurn{false},
+          commit{false},
+          delta{}
+    {}
 
     [[nodiscard]]
     bool committed() const {
