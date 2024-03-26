@@ -23,6 +23,16 @@ pio project config   --json-output
 pio project metadata --json-output -e leaderboard
 ```
 
+Maybe add clang-format:
+
+```sh
+clang-format \
+  -i \
+  --sort-includes \
+  --style=webkit \
+  ./**/*.{hpp,cpp}
+```
+
 TODO: 
 
 - Turn on light when no activity in a while. "Turn SOS"
