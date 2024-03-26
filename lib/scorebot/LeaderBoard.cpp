@@ -4,6 +4,7 @@
 #include "Utility.hpp"
 
 #include "Adafruit_FRAM_I2C.h"
+#include "PlayerBoard.hpp"
 #include "RF24.h"
 #include "TM1637Display.h"
 
@@ -57,21 +58,14 @@ struct LeaderBoard::Impl {
         radio.printPrettyDetails();
 
         eachDisplay([&](TM1637Display& display, int i) {
-            display.showNumberDec(nextRequest.state.scores[i]);
+            display.showNumberDec(nextRequest.getPlayerScore(i));
         });
     }
-
 
 
     bool send(StateRefreshResponse* responseReceived) {
         return doSend(&this->radio, &nextRequest, [&]() { return doRead(&this->radio, responseReceived); });
     }
-
-    const byte slaveAddresses[N_PLAYERS][5] = {
-        {'R', 'x', 'A', 'A', 'A'},
-        {'R', 'x', 'A', 'A', 'B'},
-        {'R', 'x', 'A', 'A', 'C'},
-    };
 
     Periodically everySecond{500};
     void loop() {  // Leaderboard

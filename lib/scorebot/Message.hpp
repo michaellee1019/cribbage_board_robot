@@ -19,11 +19,13 @@ struct StateDelta {
     ScoreT scoreDelta{0};
 };
 
-struct StateRefreshRequest {
+class StateRefreshRequest {
     bool populated;
     TimestampT requestedAtTime;
     const TimestampT startupGeneration;
     GameState state{};
+
+public:
 
     explicit StateRefreshRequest()
         : StateRefreshRequest(0, false)
@@ -42,10 +44,15 @@ struct StateRefreshRequest {
         return populated && this->state.whosTurn == BOARD_ID;
     }
 
-    void update(struct StateRefreshResponse* responses);
+    [[nodiscard]]
+    auto getPlayerScore(PlayerNumberT player) const {
+        return state.scores[player];
+    }
+
+    void update(class StateRefreshResponse* responses);
 };
 
-struct StateRefreshResponse {
+class StateRefreshResponse {
     bool populated {false};
     PlayerNumberT fromPlayer{BOARD_ID};
     TimestampT respondedAtTime{0};
@@ -53,8 +60,9 @@ struct StateRefreshResponse {
     bool commit{false};
     StateDelta delta{};
 
-    static StateRefreshResponse startup() {
-        return {};
+public:
+    auto myScoreDelta() const {
+        return this->delta.scoreDelta;
     }
 
     void addScore(const ScoreT n) {
@@ -63,6 +71,10 @@ struct StateRefreshResponse {
 
     // PlayerBoard received this state update nextRequest.
     void update(const StateRefreshRequest& request);
+
+    void setCommit(bool commitVal) {
+        this->commit = commitVal;
+    }
 };
 
 // I think this is a requirement of the NRF stack.

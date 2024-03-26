@@ -14,17 +14,6 @@ TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
-#if BOARD_ID == 0 || BOARD_ID == -1
-const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'A'};
-#endif
-#if BOARD_ID == 1
-const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'B'};
-#endif
-#if BOARD_ID == 2
-const byte thisSlaveAddress[5] = {'R', 'x', 'A', 'A', 'C'};
-#endif
-
-
 struct PlayerBoard::Impl {
     RF24 radio;
     View::SegmentDisplay display;
@@ -50,7 +39,7 @@ struct PlayerBoard::Impl {
           commit{config.pinButton0},
           turnLight{Light{config.pinTurnLed}, false},
           lastReceived{startupGeneration},
-          nextResponse{false, BOARD_ID, 0, false, false, {}}
+          nextResponse{}
           {}
 
     void setup() {
@@ -75,7 +64,7 @@ struct PlayerBoard::Impl {
         turnLight.update();
 
         doRadioSetup(radio);
-        radio.openReadingPipe(1, thisSlaveAddress);
+        radio.openReadingPipe(1, myBoardAddress());
         radio.startListening();
 
         radio.printPrettyDetails();
@@ -101,7 +90,7 @@ struct PlayerBoard::Impl {
         five.onLoop([&]() { nextResponse.addScore(5); });
         one.onLoop([&]() { nextResponse.addScore(1); });
         negOne.onLoop([&]() { nextResponse.addScore(-1); });
-        commit.onLoop([&]() { nextResponse.commit = true; });
+        commit.onLoop([&]() { nextResponse.setCommit(true); });
 
         if (this->checkForMessages()) {
             this->nextResponse.update(this->lastReceived);
@@ -115,7 +104,7 @@ struct PlayerBoard::Impl {
             }
         }
 
-        display.setValueDec(this->nextResponse.delta.scoreDelta);
+        display.setValueDec(this->nextResponse.myScoreDelta());
 
         display.update();
         turnLight.update();
