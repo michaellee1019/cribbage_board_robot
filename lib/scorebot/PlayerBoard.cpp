@@ -15,7 +15,7 @@ TabletopBoard::TabletopBoard() = default;
 // PlayerBoard
 
 struct PlayerBoard::Impl {
-    RF24 radio;
+    RadioHelper radio;
 
     Button one;
     Button five;
@@ -30,7 +30,7 @@ struct PlayerBoard::Impl {
     StateRefreshResponse nextResponse;
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{config.pinRadioCE, config.pinRadioCSN},
+        : radio{{config.pinRadioCE, config.pinRadioCSN}},
           one{config.pinPlusOne},
           five{config.pinPlusFive},
           negOne{config.pinNegOne},
@@ -63,7 +63,7 @@ struct PlayerBoard::Impl {
         turnLight.turnOff();
         turnLight.update();
 
-        doRadioSetup(radio);
+        radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
         radio.startListening();
 
@@ -77,10 +77,10 @@ struct PlayerBoard::Impl {
         if (!radio.available()) {
             return false;
         }
-        if (!doRead(&this->radio, &lastReceived)) {
+        if (!radio.doRead(&lastReceived)) {
             return false;
         }
-        if (!doAck(&this->radio, 1, &nextResponse)) {
+        if (!radio.doAck(1, &nextResponse)) {
             return false;
         }
         return true;
