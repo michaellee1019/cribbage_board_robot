@@ -35,14 +35,15 @@ void loop2() {
     self->loop();
 }
 
+
 /**************************************************************************
  This is an example for our Monochrome OLEDs based on SSD1306 drivers
 
  Pick one up today in the adafruit shop!
  ------> http://www.adafruit.com/category/63_98
 
- This example is for a 128x64 pixel display using SPI to communicate
- 4 or 5 pins are required to interface.
+ This example is for a 128x32 pixel display using I2C to communicate
+ 3 pins are required to interface (two I2C and one reset).
 
  Adafruit invests time and resources providing this open
  source code, please support Adafruit and open-source
@@ -61,24 +62,16 @@ void loop2() {
 #include <Adafruit_SSD1306.h>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
 
- // Declaration for SSD1306 display connected using software SPI (default case):
-#define OLED_MOSI   9
-#define OLED_CLK   10
-#define OLED_DC    11
-#define OLED_CS    12
-#define OLED_RESET 13
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
-  OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
-
- /* Comment out above, uncomment this block to use hardware SPI
- #define OLED_DC     6
- #define OLED_CS     7
- #define OLED_RESET  8
- Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
-   &SPI, OLED_DC, OLED_RESET, OLED_CS);
- */
+ // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+ // The pins for I2C are defined by the Wire-library.
+ // On an arduino UNO:       A4(SDA), A5(SCL)
+ // On an arduino MEGA 2560: 20(SDA), 21(SCL)
+ // On an arduino LEONARDO:   2(SDA),  3(SCL), ...
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define NUMFLAKES     10 // Number of snowflakes in the animation example
 
@@ -122,11 +115,10 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
      setup2();
 
      // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-     if(!display.begin(SSD1306_SWITCHCAPVCC)) {
+     if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
          Serial.println(F("SSD1306 allocation failed"));
          for(;;); // Don't proceed, loop forever
      }
-
 
      // Show initial display buffer contents on the screen --
      // the library initializes this with an Adafruit splash screen.
@@ -181,6 +173,10 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
      delay(1000);
 
      testanimate(logo_bmp, LOGO_WIDTH, LOGO_HEIGHT); // Animate bitmaps
+ }
+
+ void loop() {
+     loop2();
  }
 
  void testdrawline() {
