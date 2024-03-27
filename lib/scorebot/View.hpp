@@ -1,6 +1,9 @@
 #ifndef VIEW_HPP
 #define VIEW_HPP
 
+#include <TM1637Display.h>
+#include <Arduino.h>
+
 namespace scorebot::view {
 class SegmentDisplay {
     enum class DisplayMode {

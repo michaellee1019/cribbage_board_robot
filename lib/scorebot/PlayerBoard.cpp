@@ -1,14 +1,13 @@
 // ReSharper disable CppDFAMemoryLeak
-#include "RF24.h"
-#include "TM1637Display.h"
-
+#include "BoardTypes.hpp"
 #include "Message.hpp"
-#include "PlayerBoard.hpp"
 #include "RadioHelper.hpp"
-#include "TabletopBoard.hpp"
 #include "Types.hpp"
 #include "Utility.hpp"
 #include "View.hpp"
+
+#include "RF24.h"
+#include "TM1637Display.h"
 
 
 TabletopBoard::TabletopBoard() = default;

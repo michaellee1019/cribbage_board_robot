@@ -1,10 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoSTL.h>
-
-#include "LeaderBoard.hpp"
-#include "PlayerBoard.hpp"
-#include "TabletopBoard.hpp"
 #include "printf.h"
+
+#include "BoardTypes.hpp"
 
 TabletopBoard* self;
 

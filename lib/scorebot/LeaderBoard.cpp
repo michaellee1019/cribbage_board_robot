@@ -1,11 +1,10 @@
 // ReSharper disable CppDFAMemoryLeak
-#include "LeaderBoard.hpp"
+#include "BoardTypes.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"
 #include "Utility.hpp"
 
 #include "Adafruit_FRAM_I2C.h"
-#include "PlayerBoard.hpp"
 #include "RF24.h"
 #include "TM1637Display.h"
 
