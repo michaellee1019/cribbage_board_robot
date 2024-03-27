@@ -15,6 +15,74 @@ TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
+#include "Adafruit_seesaw.h"
+#include <seesaw_neopixel.h>
+
+#define SS_SWITCH        24
+#define SS_NEOPIX        6
+
+#define SEESAW_ADDR          0x36
+
+Adafruit_seesaw ss;
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
+
+int32_t encoder_position;
+
+uint32_t Wheel(byte WheelPos);
+
+void rotaryEncoderSetup() {
+    if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
+        while(1) delay(10);
+    }
+    sspixel.setBrightness(20);
+    sspixel.show();
+
+    // use a pin for the built in encoder switch
+    ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+    // get starting position
+    encoder_position = ss.getEncoderPosition();
+
+    Serial.println("Turning on interrupts");
+    delay(10);
+    ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
+    ss.enableEncoderInterrupt();
+}
+
+void loop2() {
+    if (! ss.digitalRead(SS_SWITCH)) {
+        Serial.println("Button pressed!");
+    }
+
+    int32_t new_position = ss.getEncoderPosition();
+    // did we move arounde?
+    if (encoder_position != new_position) {
+        Serial.println(new_position);         // display new position
+
+        // change the neopixel color
+        sspixel.setPixelColor(0, Wheel(new_position & 0xFF));
+        sspixel.show();
+        encoder_position = new_position;      // and save for next round
+    }
+
+    // don't overwhelm serial port
+    delay(10);
+}
+
+
+uint32_t Wheel(byte WheelPos) {
+    WheelPos = 255 - WheelPos;
+    if (WheelPos < 85) {
+        return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    }
+    if (WheelPos < 170) {
+        WheelPos -= 85;
+        return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    }
+    WheelPos -= 170;
+    return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
 struct PlayerBoard::Impl {
     RF24 radio;
 
@@ -69,6 +137,7 @@ struct PlayerBoard::Impl {
         radio.startListening();
 
         radio.printPrettyDetails();
+        rotaryEncoderSetup();
     }
 
     // TODO: this needs to be more robust
@@ -88,6 +157,7 @@ struct PlayerBoard::Impl {
     }
 
     void loop() {
+        loop2();
         five.onLoop([&]() { nextResponse.addScore(5); });
         one.onLoop([&]() { nextResponse.addScore(1); });
         negOne.onLoop([&]() { nextResponse.addScore(-1); });
