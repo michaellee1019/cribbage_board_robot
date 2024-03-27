@@ -1,9 +1,9 @@
-#ifndef PLAYERBOARD_HPP
-#define PLAYERBOARD_HPP
+#ifndef BOARDTYPES_HPP
+#define BOARDTYPES_HPP
 
-#include <Message.hpp>
+#include <RF24.h>
 
-#include "TabletopBoard.hpp"
+#include <Types.hpp>
 
 static constexpr const byte playerAddresses_[MAX_PLAYERS][5] = {
     // TODO: make the last digit the board id / player number.
@@ -24,6 +24,27 @@ inline static constexpr const byte* playerAddress(PlayerNumberT playerNumberT) {
     return playerAddresses_[playerNumberT];
 }
 
+struct IOConfig {
+    int pinCommit;
+    int pinNegOne;
+    int pinPlusFive;
+    int pinPlusOne;
+    int pinPassTurn;
+
+    int pinLedBuiltin;
+    int pinTurnLed;
+
+    rf24_gpio_pin_t pinRadioCE;
+    rf24_gpio_pin_t pinRadioCSN;
+};
+
+class TabletopBoard {
+public:
+    virtual ~TabletopBoard() = default;
+    virtual void setup() = 0;
+    virtual void loop() = 0;
+    explicit TabletopBoard();
+};
 
 class PlayerBoard final : public TabletopBoard {
 public:
@@ -37,5 +58,16 @@ private:
     Impl* impl;
 };
 
+class LeaderBoard final : public TabletopBoard {
+public:
+    explicit LeaderBoard(const IOConfig& config, TimestampT startupGeneration);
+    ~LeaderBoard() override;
+    void setup() override;
+    void loop() override;
 
-#endif  // PLAYERBOARD_HPP
+private:
+    struct Impl;
+    Impl* impl;
+};
+
+#endif //BOARDTYPES_HPP

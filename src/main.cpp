@@ -1,10 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoSTL.h>
-
-#include "LeaderBoard.hpp"
-#include "PlayerBoard.hpp"
-#include "TabletopBoard.hpp"
 #include "printf.h"
+
+#include "BoardTypes.hpp"
 
 TabletopBoard* self;
 
@@ -14,10 +12,6 @@ void setup() {
                               .pinPlusFive = 4,
                               .pinPlusOne = 3,
                               .pinPassTurn = 6,
-                              .pinDip0 = 14,
-                              .pinDip1 = 15,
-                              .pinDip2 = 16,
-                              .pinDip3 = 17,
                               .pinLedBuiltin = LED_BUILTIN,
                               .pinTurnLed = 21,
                               .pinRadioCE = 10,

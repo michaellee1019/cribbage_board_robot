@@ -1,16 +1,14 @@
 // ReSharper disable CppDFAMemoryLeak
-#include "LeaderBoard.hpp"
+#include "BoardTypes.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"
 #include "Utility.hpp"
 
 #include "Adafruit_FRAM_I2C.h"
-#include "PlayerBoard.hpp"
-#include "RF24.h"
 #include "TM1637Display.h"
 
 struct LeaderBoard::Impl {
-    RF24 radio;
+    RadioHelper radio;
     Adafruit_FRAM_I2C storage;
 
     TM1637Display displays[MAX_DISPLAYS]{
@@ -24,7 +22,7 @@ struct LeaderBoard::Impl {
     StateRefreshResponse lastResponses[MAX_PLAYERS];
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{config.pinRadioCE, config.pinRadioCSN}, nextRequest{} {}
+        : radio{{config.pinRadioCE, config.pinRadioCSN}}, nextRequest{} {}
 
 
     template <typename F>
@@ -50,7 +48,7 @@ struct LeaderBoard::Impl {
 
         this->displayStartup();
 
-        doRadioSetup(radio);
+        radio.doRadioSetup();
         radio.openWritingPipe(myBoardAddress());
         radio.printPrettyDetails();
 
@@ -58,9 +56,10 @@ struct LeaderBoard::Impl {
     }
 
 
-    bool send(StateRefreshResponse* responseReceived) {
-        return doSend(
-            &this->radio, &nextRequest, [&]() { return doRead(&this->radio, responseReceived); });
+    bool send(StateRefreshResponse* outputResponse) {
+        return radio.doSend(&nextRequest, [&]() {
+            return radio.doRead(outputResponse);
+        });
     }
 
     Periodically everySecond{500};

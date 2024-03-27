@@ -1,14 +1,13 @@
 // ReSharper disable CppDFAMemoryLeak
-#include "RF24.h"
-#include "TM1637Display.h"
-
+#include "BoardTypes.hpp"
 #include "Message.hpp"
-#include "PlayerBoard.hpp"
 #include "RadioHelper.hpp"
-#include "TabletopBoard.hpp"
 #include "Types.hpp"
 #include "Utility.hpp"
 #include "View.hpp"
+
+#include "RF24.h"
+#include "TM1637Display.h"
 
 
 TabletopBoard::TabletopBoard() = default;
@@ -63,7 +62,7 @@ uint32_t colorWheel(byte WheelPos) {
 }
 
 struct PlayerBoard::Impl {
-    RF24 radio;
+    RadioHelper radio;
 
     Button one;
     Button five;
@@ -71,14 +70,14 @@ struct PlayerBoard::Impl {
     Button passTurn;
     Button commit;
 
-    SegmentDisplay display;
-    LEDLight turnLight;
+    scorebot::view::SegmentDisplay display;
+    scorebot::view::LEDLight turnLight;
 
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{config.pinRadioCE, config.pinRadioCSN},
+        : radio{{config.pinRadioCE, config.pinRadioCSN}},
           one{config.pinPlusOne},
           five{config.pinPlusFive},
           negOne{config.pinNegOne},
@@ -111,7 +110,7 @@ struct PlayerBoard::Impl {
         turnLight.turnOff();
         turnLight.update();
 
-        doRadioSetup(radio);
+        radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
         radio.startListening();
 
@@ -126,10 +125,10 @@ struct PlayerBoard::Impl {
         if (!radio.available()) {
             return false;
         }
-        if (!doRead(&this->radio, &lastReceived)) {
+        if (!radio.doRead(&lastReceived)) {
             return false;
         }
-        if (!doAck(&this->radio, 1, &nextResponse)) {
+        if (!radio.doAck(1, &nextResponse)) {
             return false;
         }
         return true;
