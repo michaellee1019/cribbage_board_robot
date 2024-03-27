@@ -24,8 +24,8 @@ struct PlayerBoard::Impl {
     Button passTurn;
     Button commit;
 
-    SegmentDisplay display;
-    LEDLight turnLight;
+    scorebot::view::SegmentDisplay display;
+    scorebot::view::LEDLight turnLight;
 
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;

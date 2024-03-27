@@ -10,11 +10,6 @@ struct IOConfig {
     int pinPlusOne;
     int pinPassTurn;
 
-    int pinDip0;
-    int pinDip1;
-    int pinDip2;
-    int pinDip3;
-
     int pinLedBuiltin;
     int pinTurnLed;
 

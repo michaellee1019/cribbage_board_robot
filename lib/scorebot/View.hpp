@@ -1,6 +1,7 @@
 #ifndef VIEW_HPP
 #define VIEW_HPP
 
+namespace scorebot::view {
 class SegmentDisplay {
     enum class DisplayMode {
         kDecimal,
@@ -87,6 +88,7 @@ public:
     }
 };
 
+}  // namespace scorebot::view
 
 
 #endif
