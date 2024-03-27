@@ -26,9 +26,9 @@ TabletopBoard::TabletopBoard() = default;
 Adafruit_seesaw ss;
 seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
-int32_t encoder_position;
+int32_t oldPosition;
 
-uint32_t Wheel(byte WheelPos);
+uint32_t colorWheel(byte WheelPos);
 
 void rotaryEncoderSetup() {
     if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
@@ -41,7 +41,7 @@ void rotaryEncoderSetup() {
     ss.pinMode(SS_SWITCH, INPUT_PULLUP);
 
     // get starting position
-    encoder_position = ss.getEncoderPosition();
+    oldPosition = ss.getEncoderPosition();
 
     Serial.println("Turning on interrupts");
     delay(10);
@@ -49,28 +49,7 @@ void rotaryEncoderSetup() {
     ss.enableEncoderInterrupt();
 }
 
-void loop2() {
-    if (! ss.digitalRead(SS_SWITCH)) {
-        Serial.println("Button pressed!");
-    }
-
-    int32_t new_position = ss.getEncoderPosition();
-    // did we move arounde?
-    if (encoder_position != new_position) {
-        Serial.println(new_position);         // display new position
-
-        // change the neopixel color
-        sspixel.setPixelColor(0, Wheel(new_position & 0xFF));
-        sspixel.show();
-        encoder_position = new_position;      // and save for next round
-    }
-
-    // don't overwhelm serial port
-    delay(10);
-}
-
-
-uint32_t Wheel(byte WheelPos) {
+uint32_t colorWheel(byte WheelPos) {
     WheelPos = 255 - WheelPos;
     if (WheelPos < 85) {
         return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
@@ -157,33 +136,51 @@ struct PlayerBoard::Impl {
     }
 
     void loop() {
-        loop2();
         five.onLoop([&]() { nextResponse.addScore(5); });
         one.onLoop([&]() { nextResponse.addScore(1); });
         negOne.onLoop([&]() { nextResponse.addScore(-1); });
         commit.onLoop([&]() { nextResponse.setCommit(true); });
         passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
 
-        if (this->checkForMessages()) {
-            this->nextResponse.update(this->lastReceived);
+        auto newPosition = ss.getEncoderPosition() / 2;
 
-            if (lastReceived.myTurn()) {
-                turnLight.turnOn();
-            } else {
-                turnLight.turnOff();
-            }
+        if (!ss.digitalRead(SS_SWITCH)) {
+            nextResponse.setCommit(true);
+        }
+        if (oldPosition != newPosition) {
+            this->nextResponse.addScore(newPosition - oldPosition);
+            oldPosition = newPosition;
+        }
 
-            if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
-                display.setBrightness(0xFF);
-            } else {
-                display.setBrightness(0xFF / 10);
-            }
+        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
+            sspixel.setPixelColor(0, colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
+            sspixel.setBrightness(10);
+            sspixel.show();
+        } else {
+            sspixel.setPixelColor(0, colorWheel(0xFF));
+            sspixel.setBrightness(1);
+            sspixel.show();
+        }
+
+        if (lastReceived.myTurn()) {
+            turnLight.turnOn();
+        } else {
+            turnLight.turnOff();
+        }
+        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
+            display.setBrightness(0xFF);
+        } else {
+            display.setBrightness(0xFF / 10);
         }
 
         display.setValueDec(this->nextResponse.myScoreDelta());
 
         display.update();
         turnLight.update();
+
+        if (this->checkForMessages()) {
+            this->nextResponse.update(this->lastReceived);
+        }
     }
 };
 
