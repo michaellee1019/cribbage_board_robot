@@ -18,6 +18,10 @@ bool StateRefreshResponse::isPlayerAndPassedTurn(PlayerNumberT player) const {
     return this->fromPlayer == player && this->passedTurn();
 }
 
+bool StateRefreshResponse::readyToAddDelta() const {
+    return this->committed() || this->passedTurn();
+}
+
 ScoreT StateRefreshResponse::myScoreDelta() const {
     return this->scoreDelta;
 }
@@ -40,7 +44,7 @@ void StateRefreshRequest::update(StateRefreshResponse const* responses,
     bool advanceTurn = false;
     for (PlayerNumberT i = 0; i < nResponses; ++i) {
         const StateRefreshResponse& response = responses[i];
-        if (response.committed() || response.passedTurn()) {
+        if (response.readyToAddDelta()) {
             this->scores[i] += response.myScoreDelta();
         }
         if (response.isPlayerAndPassedTurn(this->whosTurnV)) {

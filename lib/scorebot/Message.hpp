@@ -74,6 +74,7 @@ public:
 
     void update(const StateRefreshRequest& request);
     void setPassTurn(bool passTurn);
+    bool readyToAddDelta() const;
 };
 
 // I think this is a requirement of the NRF stack.
