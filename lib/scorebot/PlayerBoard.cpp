@@ -9,17 +9,60 @@
 #include "RF24.h"
 #include "TM1637Display.h"
 
-
 #include <Adafruit_SSD1306.h>
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
+#include "Adafruit_seesaw.h"
+#include <seesaw_neopixel.h>
+
+#define SS_SWITCH        24
+#define SS_NEOPIX        6
+
+#define SEESAW_ADDR          0x36
+
+Adafruit_seesaw ss;
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
+
+int32_t oldPosition;
+
+uint32_t colorWheel(byte WheelPos);
 
 TabletopBoard::TabletopBoard() = default;
 
-// PlayerBoard
+void rotaryEncoderSetup() {
+    if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
+        while(1) delay(10);
+    }
+    sspixel.setBrightness(20);
+    sspixel.show();
+
+    // use a pin for the built in encoder switch
+    ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+    // get starting position
+    oldPosition = ss.getEncoderPosition();
+
+    Serial.println("Turning on interrupts");
+    delay(10);
+    ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
+    ss.enableEncoderInterrupt();
+}
+
+uint32_t colorWheel(byte WheelPos) {
+    WheelPos = 255 - WheelPos;
+    if (WheelPos < 85) {
+        return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    }
+    if (WheelPos < 170) {
+        WheelPos -= 85;
+        return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    }
+    WheelPos -= 170;
+    return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
 
 struct PlayerBoard::Impl {
     RadioHelper radio;
@@ -104,6 +147,8 @@ struct PlayerBoard::Impl {
         oled.clearDisplay();
         oled.display();
         Serial.println("Started OLED");
+        rotaryEncoderSetup();
+        Serial.println("Started Rotary Encoder");
     }
 
     // TODO: this needs to be more robust
@@ -129,33 +174,52 @@ struct PlayerBoard::Impl {
         commit.onLoop([&]() { nextResponse.setCommit(true); });
         passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
 
-        if (this->checkForMessages()) {
-            if (this->nextResponse.passedTurn()) {
-                addLogLine("Passed    ",this->nextResponse.myScoreDelta());
-            }
-            if (this->nextResponse.committed()) {
-                addLogLine("Committed ",this->nextResponse.myScoreDelta());
-            }
+        auto newPosition = ss.getEncoderPosition() / 2;
 
-            this->nextResponse.update(this->lastReceived);
+        if (!ss.digitalRead(SS_SWITCH)) {
+            nextResponse.setCommit(true);
+        }
+        if (oldPosition != newPosition) {
+            this->nextResponse.addScore(newPosition - oldPosition);
+            oldPosition = newPosition;
+        }
 
-            if (lastReceived.myTurn()) {
-                turnLight.turnOn();
-            } else {
-                turnLight.turnOff();
-            }
+        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
+            sspixel.setPixelColor(0, colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
+            sspixel.setBrightness(10);
+            sspixel.show();
+        } else {
+            sspixel.setPixelColor(0, colorWheel(0xFF));
+            sspixel.setBrightness(1);
+            sspixel.show();
+        }
 
-            if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
-                display.setBrightness(0xFF);
-            } else {
-                display.setBrightness(0xFF / 10);
-            }
+        if (lastReceived.myTurn()) {
+            turnLight.turnOn();
+        } else {
+            turnLight.turnOff();
+        }
+        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
+            display.setBrightness(0xFF);
+        } else {
+            display.setBrightness(0xFF / 10);
         }
 
         display.setValueDec(this->nextResponse.myScoreDelta());
 
         display.update();
         turnLight.update();
+
+        if (this->checkForMessages()) {
+            if (this->nextResponse.passedTurn()) {
+                addLogLine("Passed    ", this->nextResponse.myScoreDelta());
+            }
+            if (this->nextResponse.committed()) {
+                addLogLine("Committed ", this->nextResponse.myScoreDelta());
+            }
+            this->nextResponse.update(this->lastReceived);
+        }
+
     }
 };
 
