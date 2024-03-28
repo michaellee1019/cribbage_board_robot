@@ -77,12 +77,54 @@ public:
     }
 };
 
+class RotaryEncoder {
+    Adafruit_seesaw ss;
+    seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
+
+public:
+    int32_t oldPosition = 0;
+    void doRotaryEncoderSetup() {
+        ss.begin(SEESAW_ADDR);
+        sspixel.begin(SEESAW_ADDR);
+        sspixel.setBrightness(20);
+        sspixel.show();
+
+        ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+        // get starting position
+        oldPosition = ss.getEncoderPosition();
+
+        ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, true);
+        ss.enableEncoderInterrupt();
+    }
+
+    void loopRotaryEncoder(StateRefreshResponse& nextResponse, const StateRefreshRequest& lastReceived) {
+        if (!ss.digitalRead(SS_SWITCH)) {
+            nextResponse.setCommit(true);
+        }
+        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
+            nextResponse.addScore(newPosition - oldPosition);
+            oldPosition = newPosition;
+        }
+        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
+            sspixel.setPixelColor(
+                0, OledDisplay::colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
+            sspixel.setBrightness(10);
+            sspixel.show();
+        } else {
+            sspixel.setPixelColor(0, OledDisplay::colorWheel(0xFF));
+            sspixel.setBrightness(1);
+            sspixel.show();
+        }
+    }
+
+};
+
 struct PlayerBoard::Impl {
     RadioHelper radio;
 
     OledDisplay oled{};
-    Adafruit_seesaw ss;
-    seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
+    RotaryEncoder rotaryEncoder{};
 
     Button one;
     Button five;
@@ -108,28 +150,14 @@ struct PlayerBoard::Impl {
           lastReceived{},
           nextResponse{} {}
 
-    int32_t oldPosition = 0;
-    void doRotaryEncoderSetup() {
-        ss.begin(SEESAW_ADDR);
-        sspixel.begin(SEESAW_ADDR);
-        sspixel.setBrightness(20);
-        sspixel.show();
 
-        ss.pinMode(SS_SWITCH, INPUT_PULLUP);
-
-        // get starting position
-        oldPosition = ss.getEncoderPosition();
-
-        ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, true);
-        ss.enableEncoderInterrupt();
-    }
 
     void setup() {
         this->doKeyGridSetup();
         this->doTurnLightSetup();
         this->doRadioSetup();
         oled.doOledSetup();
-        this->doRotaryEncoderSetup();
+        rotaryEncoder.doRotaryEncoderSetup();
     }
     void doKeyGridSetup() const {
         one.setup();
@@ -173,7 +201,7 @@ struct PlayerBoard::Impl {
 
     void loop() {
         this->loopKeygrid();
-        this->loopRotaryEncoder();
+        rotaryEncoder.loopRotaryEncoder(this->nextResponse, this->lastReceived);
         this->loopTurnLight();
         this->loopSegmentDisplay();
 
@@ -206,24 +234,7 @@ struct PlayerBoard::Impl {
         }
         turnLight.update();
     }
-    void loopRotaryEncoder() {
-        if (!ss.digitalRead(SS_SWITCH)) {
-            nextResponse.setCommit(true);
-        }
-        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
-            nextResponse.addScore(newPosition - oldPosition);
-            oldPosition = newPosition;
-        }
-        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
-            sspixel.setPixelColor(0, OledDisplay::colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
-            sspixel.setBrightness(10);
-            sspixel.show();
-        } else {
-            sspixel.setPixelColor(0, OledDisplay::colorWheel(0xFF));
-            sspixel.setBrightness(1);
-            sspixel.show();
-        }
-    }
+
 };
 
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
