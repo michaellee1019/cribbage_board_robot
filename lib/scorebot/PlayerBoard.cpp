@@ -174,12 +174,11 @@ struct PlayerBoard::Impl {
         commit.onLoop([&]() { nextResponse.setCommit(true); });
         passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
 
-        auto newPosition = ss.getEncoderPosition() / 2;
-
         if (!ss.digitalRead(SS_SWITCH)) {
             nextResponse.setCommit(true);
         }
-        if (oldPosition != newPosition) {
+
+        if (auto newPosition = ss.getEncoderPosition() / 2; oldPosition != newPosition) {
             this->nextResponse.addScore(newPosition - oldPosition);
             oldPosition = newPosition;
         }
