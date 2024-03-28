@@ -6,67 +6,30 @@
 #include "Utility.hpp"
 #include "View.hpp"
 
-#include "RF24.h"
-#include "TM1637Display.h"
-
 #include <Adafruit_SSD1306.h>
+#include "Adafruit_seesaw.h"
+#include <seesaw_neopixel.h>
+
+// Rotary Encoder
+#define SS_SWITCH        24
+#define SS_NEOPIX        6
+#define SEESAW_ADDR          0x36
+
+// OLED
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
-#include "Adafruit_seesaw.h"
-#include <seesaw_neopixel.h>
-
-#define SS_SWITCH        24
-#define SS_NEOPIX        6
-
-#define SEESAW_ADDR          0x36
-
-Adafruit_seesaw ss;
-seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
-
-int32_t oldPosition;
-
-uint32_t colorWheel(byte WheelPos);
 
 TabletopBoard::TabletopBoard() = default;
 
-void rotaryEncoderSetup() {
-    if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
-        while(1) delay(10);
-    }
-    sspixel.setBrightness(20);
-    sspixel.show();
-
-    // use a pin for the built in encoder switch
-    ss.pinMode(SS_SWITCH, INPUT_PULLUP);
-
-    // get starting position
-    oldPosition = ss.getEncoderPosition();
-
-    Serial.println("Turning on interrupts");
-    delay(10);
-    ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
-    ss.enableEncoderInterrupt();
-}
-
-uint32_t colorWheel(byte WheelPos) {
-    WheelPos = 255 - WheelPos;
-    if (WheelPos < 85) {
-        return sspixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-    }
-    if (WheelPos < 170) {
-        WheelPos -= 85;
-        return sspixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-    }
-    WheelPos -= 170;
-    return sspixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
 struct PlayerBoard::Impl {
     RadioHelper radio;
+
     Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
+    Adafruit_seesaw ss;
+    seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
     Button one;
     Button five;
@@ -114,41 +77,61 @@ struct PlayerBoard::Impl {
         i++;
     }
 
+    int32_t oldPosition = 0;
+    void doRotaryEncoderSetup() {
+        ss.begin(SEESAW_ADDR);
+        sspixel.begin(SEESAW_ADDR);
+        sspixel.setBrightness(20);
+        sspixel.show();
+
+        ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+        // get starting position
+        oldPosition = ss.getEncoderPosition();
+
+        ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, true);
+        ss.enableEncoderInterrupt();
+    }
+
+    static uint32_t colorWheel(byte WheelPos) {
+        WheelPos = 255 - WheelPos;
+        if (WheelPos < 85) {
+            return seesaw_NeoPixel::Color(255 - WheelPos * 3, 0, WheelPos * 3);
+        }
+        if (WheelPos < 170) {
+            WheelPos -= 85;
+            return seesaw_NeoPixel::Color(0, WheelPos * 3, 255 - WheelPos * 3);
+        }
+        WheelPos -= 170;
+        return seesaw_NeoPixel::Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+    }
+
     void setup() {
+        this->doKeyGridSetup();
+        this->doTurnLightSetup();
+        this->doRadioSetup();
+        this->doOledSetup();
+        this->doRotaryEncoderSetup();
+    }
+    void doKeyGridSetup() const {
         one.setup();
         five.setup();
         negOne.setup();
         passTurn.setup();
         commit.setup();
-
+    }
+    void doTurnLightSetup() const {
         turnLight.setup();
-
-        display.setBrightness(0x0f);
-        display.update();
-        delay(10);
-        display.clear();
-        display.update();
-
-        // Turn LED
-        turnLight.turnOn();
-        turnLight.update();
-        delay(10);
-        turnLight.turnOff();
-        turnLight.update();
-
-        radio.doRadioSetup();
-        radio.openReadingPipe(1, myBoardAddress());
-        radio.startListening();
-
-//        radio.printPrettyDetails();
-        Serial.println("Started Radio");
-
+    }
+    void doOledSetup() {
         oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
         oled.clearDisplay();
         oled.display();
-        Serial.println("Started OLED");
-        rotaryEncoderSetup();
-        Serial.println("Started Rotary Encoder");
+    }
+    void doRadioSetup() {
+        radio.doRadioSetup();
+        radio.openReadingPipe(1, myBoardAddress());
+        radio.startListening();
     }
 
     // TODO: this needs to be more robust
@@ -167,22 +150,64 @@ struct PlayerBoard::Impl {
         return true;
     }
 
-    void loop() {
+    void loopKeygrid() {
         five.onLoop([&]() { nextResponse.addScore(5); });
         one.onLoop([&]() { nextResponse.addScore(1); });
         negOne.onLoop([&]() { nextResponse.addScore(-1); });
         commit.onLoop([&]() { nextResponse.setCommit(true); });
         passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
+    }
 
+    void loop() {
+        this->loopKeygrid();
+        this->loopRotaryEncoder();
+        this->loopTurnLight();
+        this->loopSegmentDisplay();
+
+
+        if (this->checkForMessages()) {
+            this->loopOledDisplay_onMessage();
+            this->loopLogic_onMessage();
+            this->loopLogic_onMessage();
+        }
+
+    }
+    void loopLogic_onMessage() {
+        nextResponse.update(lastReceived);
+    }
+    void loopOledDisplay_onMessage() {
+        if (nextResponse.passedTurn()) {
+            addLogLine("Passed    ", nextResponse.myScoreDelta());
+        }
+        if (nextResponse.committed()) {
+            addLogLine("Committed ", nextResponse.myScoreDelta());
+        }
+    }
+    void loopSegmentDisplay() {
+        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
+            display.setBrightness(0xFF);
+        } else {
+            display.setBrightness(0xFF / 10);
+        }
+        display.setValueDec(nextResponse.myScoreDelta());
+        display.update();
+    }
+    void loopTurnLight() {
+        if (lastReceived.myTurn()) {
+            turnLight.turnOn();
+        } else {
+            turnLight.turnOff();
+        }
+        turnLight.update();
+    }
+    void loopRotaryEncoder() {
         if (!ss.digitalRead(SS_SWITCH)) {
             nextResponse.setCommit(true);
         }
-
-        if (auto newPosition = ss.getEncoderPosition() / 2; oldPosition != newPosition) {
-            this->nextResponse.addScore(newPosition - oldPosition);
+        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
+            nextResponse.addScore(newPosition - oldPosition);
             oldPosition = newPosition;
         }
-
         if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(0, colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
             sspixel.setBrightness(10);
@@ -192,33 +217,6 @@ struct PlayerBoard::Impl {
             sspixel.setBrightness(1);
             sspixel.show();
         }
-
-        if (lastReceived.myTurn()) {
-            turnLight.turnOn();
-        } else {
-            turnLight.turnOff();
-        }
-        if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
-            display.setBrightness(0xFF);
-        } else {
-            display.setBrightness(0xFF / 10);
-        }
-
-        display.setValueDec(this->nextResponse.myScoreDelta());
-
-        display.update();
-        turnLight.update();
-
-        if (this->checkForMessages()) {
-            if (this->nextResponse.passedTurn()) {
-                addLogLine("Passed    ", this->nextResponse.myScoreDelta());
-            }
-            if (this->nextResponse.committed()) {
-                addLogLine("Committed ", this->nextResponse.myScoreDelta());
-            }
-            this->nextResponse.update(this->lastReceived);
-        }
-
     }
 };
 
