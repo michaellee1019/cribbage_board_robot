@@ -151,15 +151,33 @@ public:
     }
 };
 
+class TurnLight {
+    scorebot::view::LEDLight turnLight;
+public:
+    explicit TurnLight(Light light, bool initialOn)
+        : turnLight{light, initialOn} {}
+    void doTurnLightSetup() const {
+        turnLight.setup();
+    }
+    void loopTurnLight(const StateRefreshRequest& lastReceived) {
+        if (lastReceived.myTurn()) {
+            turnLight.turnOn();
+        } else {
+            turnLight.turnOff();
+        }
+        turnLight.update();
+    }
+};
+
 struct PlayerBoard::Impl {
     RadioHelper radio;
 
     OledDisplay oled{};
     RotaryEncoder rotaryEncoder{};
     Keygrid keygrid;
+    TurnLight turnLight;
 
     scorebot::view::SegmentDisplay display;
-    scorebot::view::LEDLight turnLight;
 
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;
@@ -167,21 +185,19 @@ struct PlayerBoard::Impl {
     explicit Impl(const IOConfig& config, TimestampT)
         : radio{{config.pinRadioCE, config.pinRadioCSN}},
           keygrid{config},
-          display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
+          display{{8, 7}},
           lastReceived{},
           nextResponse{} {}
 
     void setup() {
         keygrid.doKeyGridSetup();
-        this->doTurnLightSetup();
+        turnLight.doTurnLightSetup();
         this->doRadioSetup();
         oled.doOledSetup();
         rotaryEncoder.doRotaryEncoderSetup();
     }
-    void doTurnLightSetup() const {
-        turnLight.setup();
-    }
+
     void doRadioSetup() {
         radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
@@ -207,7 +223,7 @@ struct PlayerBoard::Impl {
     void loop() {
         keygrid.loopKeygrid(this->nextResponse);
         rotaryEncoder.loopRotaryEncoder(this->nextResponse, this->lastReceived);
-        this->loopTurnLight();
+        turnLight.loopTurnLight(this->lastReceived);
         this->loopSegmentDisplay();
 
         if (this->checkForMessages()) {
@@ -229,14 +245,6 @@ struct PlayerBoard::Impl {
         }
         display.setValueDec(nextResponse.myScoreDelta());
         display.update();
-    }
-    void loopTurnLight() {
-        if (lastReceived.myTurn()) {
-            turnLight.turnOn();
-        } else {
-            turnLight.turnOff();
-        }
-        turnLight.update();
     }
 
 };

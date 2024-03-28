@@ -61,7 +61,7 @@ class LEDLight {
     Light light;
 
 public:
-    LEDLight(Light&& light, bool initialOn) : lightOn{initialOn}, changed{true}, light{light} {}
+    LEDLight(Light light, bool initialOn) : lightOn{initialOn}, changed{true}, light{light} {}
 
     void setup() const {
         this->light.setup();
