@@ -169,6 +169,24 @@ public:
     }
 };
 
+class MySegmentDisplay {
+    scorebot::view::SegmentDisplay segmentDisplay;
+public:
+    explicit MySegmentDisplay(scorebot::view::SegmentDisplay segmentDisplay)
+    : segmentDisplay{segmentDisplay} {}
+
+    void loopSegmentDisplay(const StateRefreshRequest& lastReceived,
+                            const StateRefreshResponse& nextResponse) {
+        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
+            segmentDisplay.setBrightness(0xFF);
+        } else {
+            segmentDisplay.setBrightness(0xFF / 10);
+        }
+        segmentDisplay.setValueDec(nextResponse.myScoreDelta());
+        segmentDisplay.update();
+    }
+};
+
 struct PlayerBoard::Impl {
     RadioHelper radio;
 
@@ -176,8 +194,7 @@ struct PlayerBoard::Impl {
     RotaryEncoder rotaryEncoder{};
     Keygrid keygrid;
     TurnLight turnLight;
-
-    scorebot::view::SegmentDisplay display;
+    MySegmentDisplay segmentDisplay;
 
     StateRefreshRequest lastReceived;
     StateRefreshResponse nextResponse;
@@ -186,7 +203,7 @@ struct PlayerBoard::Impl {
         : radio{{config.pinRadioCE, config.pinRadioCSN}},
           keygrid{config},
           turnLight{Light{config.pinTurnLed}, false},
-          display{{8, 7}},
+          segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}},
           lastReceived{},
           nextResponse{} {}
 
@@ -224,29 +241,12 @@ struct PlayerBoard::Impl {
         keygrid.loopKeygrid(this->nextResponse);
         rotaryEncoder.loopRotaryEncoder(this->nextResponse, this->lastReceived);
         turnLight.loopTurnLight(this->lastReceived);
-        this->loopSegmentDisplay();
-
+        segmentDisplay.loopSegmentDisplay(this->lastReceived, this->nextResponse);
         if (this->checkForMessages()) {
             this->oled.loopOledDisplay_onMessage(this->nextResponse);
-            this->loopLogic_onMessage();
-            this->loopLogic_onMessage();
+            nextResponse.update(lastReceived);
         }
-
     }
-    void loopLogic_onMessage() {
-        nextResponse.update(lastReceived);
-    }
-
-    void loopSegmentDisplay() {
-        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
-            display.setBrightness(0xFF);
-        } else {
-            display.setBrightness(0xFF / 10);
-        }
-        display.setValueDec(nextResponse.myScoreDelta());
-        display.update();
-    }
-
 };
 
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
