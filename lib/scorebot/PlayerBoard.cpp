@@ -10,12 +10,20 @@
 #include "TM1637Display.h"
 
 
+#include <Adafruit_SSD1306.h>
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+
+
 TabletopBoard::TabletopBoard() = default;
 
 // PlayerBoard
 
 struct PlayerBoard::Impl {
     RadioHelper radio;
+    Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
 
     Button one;
     Button five;
@@ -41,6 +49,28 @@ struct PlayerBoard::Impl {
           lastReceived{},
           nextResponse{} {}
 
+    int i = 0;
+    void addLogLine(const char action[], ScoreT val) {
+        oled.setTextSize(1);      // Normal 1:1 pixel scale
+        oled.setTextColor(SSD1306_WHITE); // Draw white text
+        oled.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+        if (i % 4 == 0) {
+            oled.clearDisplay();
+            oled.setCursor(0, 0);     // Start at top-left corner
+        }
+
+        oled.print(i%10);
+        oled.print(" ");
+        oled.print(action);
+        oled.print(" ");
+        oled.print(val);
+        oled.println();
+
+        oled.display();
+        i++;
+    }
+
     void setup() {
         one.setup();
         five.setup();
@@ -52,14 +82,14 @@ struct PlayerBoard::Impl {
 
         display.setBrightness(0x0f);
         display.update();
-        delay(500);
+        delay(10);
         display.clear();
         display.update();
 
         // Turn LED
         turnLight.turnOn();
         turnLight.update();
-        delay(250);
+        delay(10);
         turnLight.turnOff();
         turnLight.update();
 
@@ -67,7 +97,13 @@ struct PlayerBoard::Impl {
         radio.openReadingPipe(1, myBoardAddress());
         radio.startListening();
 
-        radio.printPrettyDetails();
+//        radio.printPrettyDetails();
+        Serial.println("Started Radio");
+
+        oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+        oled.clearDisplay();
+        oled.display();
+        Serial.println("Started OLED");
     }
 
     // TODO: this needs to be more robust
@@ -94,6 +130,13 @@ struct PlayerBoard::Impl {
         passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
 
         if (this->checkForMessages()) {
+            if (this->nextResponse.passedTurn()) {
+                addLogLine("Passed    ",this->nextResponse.myScoreDelta());
+            }
+            if (this->nextResponse.committed()) {
+                addLogLine("Committed ",this->nextResponse.myScoreDelta());
+            }
+
             this->nextResponse.update(this->lastReceived);
 
             if (lastReceived.myTurn()) {
