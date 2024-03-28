@@ -20,7 +20,7 @@ TabletopBoard::TabletopBoard() = default;
 class OledDisplay {
     #define SCREEN_WIDTH 128 // OLED display width, in pixels
     #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-    #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+    #define OLED_RESET    (-1) // Reset pin # (or -1 if sharing Arduino reset pin)
     #define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
     Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
@@ -120,17 +120,43 @@ public:
 
 };
 
-struct PlayerBoard::Impl {
-    RadioHelper radio;
-
-    OledDisplay oled{};
-    RotaryEncoder rotaryEncoder{};
-
+class Keygrid {
     Button one;
     Button five;
     Button negOne;
     Button passTurn;
     Button commit;
+public:
+    explicit Keygrid(const IOConfig& config)
+    : one{config.pinPlusOne},
+      five{config.pinPlusFive},
+      negOne{config.pinNegOne},
+      passTurn{config.pinPassTurn},
+      commit{config.pinCommit} {}
+
+    void doKeyGridSetup() const {
+        one.setup();
+        five.setup();
+        negOne.setup();
+        passTurn.setup();
+        commit.setup();
+    }
+
+    void loopKeygrid(StateRefreshResponse& nextResponse) {
+        five.onLoop([&]() { nextResponse.addScore(5); });
+        one.onLoop([&]() { nextResponse.addScore(1); });
+        negOne.onLoop([&]() { nextResponse.addScore(-1); });
+        commit.onLoop([&]() { nextResponse.setCommit(true); });
+        passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
+    }
+};
+
+struct PlayerBoard::Impl {
+    RadioHelper radio;
+
+    OledDisplay oled{};
+    RotaryEncoder rotaryEncoder{};
+    Keygrid keygrid;
 
     scorebot::view::SegmentDisplay display;
     scorebot::view::LEDLight turnLight;
@@ -140,31 +166,18 @@ struct PlayerBoard::Impl {
 
     explicit Impl(const IOConfig& config, TimestampT)
         : radio{{config.pinRadioCE, config.pinRadioCSN}},
-          one{config.pinPlusOne},
-          five{config.pinPlusFive},
-          negOne{config.pinNegOne},
-          passTurn{config.pinPassTurn},
-          commit{config.pinCommit},
+          keygrid{config},
           display{{8, 7}},
           turnLight{Light{config.pinTurnLed}, false},
           lastReceived{},
           nextResponse{} {}
 
-
-
     void setup() {
-        this->doKeyGridSetup();
+        keygrid.doKeyGridSetup();
         this->doTurnLightSetup();
         this->doRadioSetup();
         oled.doOledSetup();
         rotaryEncoder.doRotaryEncoderSetup();
-    }
-    void doKeyGridSetup() const {
-        one.setup();
-        five.setup();
-        negOne.setup();
-        passTurn.setup();
-        commit.setup();
     }
     void doTurnLightSetup() const {
         turnLight.setup();
@@ -191,20 +204,11 @@ struct PlayerBoard::Impl {
         return true;
     }
 
-    void loopKeygrid() {
-        five.onLoop([&]() { nextResponse.addScore(5); });
-        one.onLoop([&]() { nextResponse.addScore(1); });
-        negOne.onLoop([&]() { nextResponse.addScore(-1); });
-        commit.onLoop([&]() { nextResponse.setCommit(true); });
-        passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
-    }
-
     void loop() {
-        this->loopKeygrid();
+        keygrid.loopKeygrid(this->nextResponse);
         rotaryEncoder.loopRotaryEncoder(this->nextResponse, this->lastReceived);
         this->loopTurnLight();
         this->loopSegmentDisplay();
-
 
         if (this->checkForMessages()) {
             this->oled.loopOledDisplay_onMessage(this->nextResponse);
