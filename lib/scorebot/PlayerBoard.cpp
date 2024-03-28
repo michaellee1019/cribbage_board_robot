@@ -15,19 +15,72 @@
 #define SS_NEOPIX        6
 #define SEESAW_ADDR          0x36
 
-// OLED
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-
-
 TabletopBoard::TabletopBoard() = default;
+
+class OledDisplay {
+    #define SCREEN_WIDTH 128 // OLED display width, in pixels
+    #define SCREEN_HEIGHT 32 // OLED display height, in pixels
+    #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+    #define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+
+    Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
+
+public:
+    static uint32_t colorWheel(byte WheelPos) {
+        WheelPos = 255 - WheelPos;
+        if (WheelPos < 85) {
+            return seesaw_NeoPixel::Color(255 - WheelPos * 3, 0, WheelPos * 3);
+        }
+        if (WheelPos < 170) {
+            WheelPos -= 85;
+            return seesaw_NeoPixel::Color(0, WheelPos * 3, 255 - WheelPos * 3);
+        }
+        WheelPos -= 170;
+        return seesaw_NeoPixel::Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+    }
+
+    int i = 0;
+    void addLogLine(const char action[], ScoreT val) {
+        oled.setTextSize(1);               // Normal 1:1 pixel scale
+        oled.setTextColor(SSD1306_WHITE);  // Draw white text
+        oled.cp437(true);                  // Use full 256 char 'Code Page 437' font
+
+        if (i % 4 == 0) {
+            oled.clearDisplay();
+            oled.setCursor(0, 0);  // Start at top-left corner
+        }
+
+        oled.print(i % 10);
+        oled.print(" ");
+        oled.print(action);
+        oled.print(" ");
+        oled.print(val);
+        oled.println();
+
+        oled.display();
+        i++;
+    }
+
+    void doOledSetup() {
+        oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+        oled.clearDisplay();
+        oled.display();
+    }
+
+    void loopOledDisplay_onMessage(const StateRefreshResponse& nextResponse) {
+        if (nextResponse.passedTurn()) {
+            addLogLine("Passed    ", nextResponse.myScoreDelta());
+        }
+        if (nextResponse.committed()) {
+            addLogLine("Committed ", nextResponse.myScoreDelta());
+        }
+    }
+};
 
 struct PlayerBoard::Impl {
     RadioHelper radio;
 
-    Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
+    OledDisplay oled{};
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
@@ -55,28 +108,6 @@ struct PlayerBoard::Impl {
           lastReceived{},
           nextResponse{} {}
 
-    int i = 0;
-    void addLogLine(const char action[], ScoreT val) {
-        oled.setTextSize(1);      // Normal 1:1 pixel scale
-        oled.setTextColor(SSD1306_WHITE); // Draw white text
-        oled.cp437(true);         // Use full 256 char 'Code Page 437' font
-
-        if (i % 4 == 0) {
-            oled.clearDisplay();
-            oled.setCursor(0, 0);     // Start at top-left corner
-        }
-
-        oled.print(i%10);
-        oled.print(" ");
-        oled.print(action);
-        oled.print(" ");
-        oled.print(val);
-        oled.println();
-
-        oled.display();
-        i++;
-    }
-
     int32_t oldPosition = 0;
     void doRotaryEncoderSetup() {
         ss.begin(SEESAW_ADDR);
@@ -93,24 +124,11 @@ struct PlayerBoard::Impl {
         ss.enableEncoderInterrupt();
     }
 
-    static uint32_t colorWheel(byte WheelPos) {
-        WheelPos = 255 - WheelPos;
-        if (WheelPos < 85) {
-            return seesaw_NeoPixel::Color(255 - WheelPos * 3, 0, WheelPos * 3);
-        }
-        if (WheelPos < 170) {
-            WheelPos -= 85;
-            return seesaw_NeoPixel::Color(0, WheelPos * 3, 255 - WheelPos * 3);
-        }
-        WheelPos -= 170;
-        return seesaw_NeoPixel::Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-    }
-
     void setup() {
         this->doKeyGridSetup();
         this->doTurnLightSetup();
         this->doRadioSetup();
-        this->doOledSetup();
+        oled.doOledSetup();
         this->doRotaryEncoderSetup();
     }
     void doKeyGridSetup() const {
@@ -122,11 +140,6 @@ struct PlayerBoard::Impl {
     }
     void doTurnLightSetup() const {
         turnLight.setup();
-    }
-    void doOledSetup() {
-        oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-        oled.clearDisplay();
-        oled.display();
     }
     void doRadioSetup() {
         radio.doRadioSetup();
@@ -166,7 +179,7 @@ struct PlayerBoard::Impl {
 
 
         if (this->checkForMessages()) {
-            this->loopOledDisplay_onMessage();
+            this->oled.loopOledDisplay_onMessage(this->nextResponse);
             this->loopLogic_onMessage();
             this->loopLogic_onMessage();
         }
@@ -175,14 +188,7 @@ struct PlayerBoard::Impl {
     void loopLogic_onMessage() {
         nextResponse.update(lastReceived);
     }
-    void loopOledDisplay_onMessage() {
-        if (nextResponse.passedTurn()) {
-            addLogLine("Passed    ", nextResponse.myScoreDelta());
-        }
-        if (nextResponse.committed()) {
-            addLogLine("Committed ", nextResponse.myScoreDelta());
-        }
-    }
+
     void loopSegmentDisplay() {
         if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
             display.setBrightness(0xFF);
@@ -209,11 +215,11 @@ struct PlayerBoard::Impl {
             oldPosition = newPosition;
         }
         if (lastReceived.myTurn() || this->nextResponse.hasScoreDelta()) {
-            sspixel.setPixelColor(0, colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
+            sspixel.setPixelColor(0, OledDisplay::colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
             sspixel.setBrightness(10);
             sspixel.show();
         } else {
-            sspixel.setPixelColor(0, colorWheel(0xFF));
+            sspixel.setPixelColor(0, OledDisplay::colorWheel(0xFF));
             sspixel.setBrightness(1);
             sspixel.show();
         }
