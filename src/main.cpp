@@ -6,7 +6,7 @@
 
 TabletopBoard* self;
 
-void setup2() {
+void oldSetup() {
     constexpr IOConfig config{.pinCommit = 2,
                               .pinNegOne = 5,
                               .pinPlusFive = 4,
@@ -31,7 +31,7 @@ void setup2() {
     self->setup();
 }
 
-void loop2() {
+void oldLoop() {
     self->loop();
 }
 
@@ -110,19 +110,36 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
  void testdrawbitmap();    // Draw a small bitmap image
  void testanimate(const uint8_t *bitmap, uint8_t w, uint8_t h);
 
- void setup() {
-     Serial.begin(9600);
-     setup2();
+ void oledSetup() {
 
      // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
      if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
          Serial.println(F("SSD1306 allocation failed"));
          for(;;); // Don't proceed, loop forever
      }
+ }
 
+ void setup3();
+
+ void setup() {
+     Serial.begin(9600);
+     oldSetup();
+
+     oledSetup();
+     display.clearDisplay();
+
+     display.drawPixel(10, 10, SSD1306_WHITE);
+     display.drawPixel(10+1, 10+1, SSD1306_WHITE);
+     display.drawPixel(10+2, 10+2, SSD1306_WHITE);
+     Serial.println("after oled");
+
+     display.display();
+     Serial.println("after display");
+ }
+
+ void setup3() {
      // Show initial display buffer contents on the screen --
      // the library initializes this with an Adafruit splash screen.
-     display.display();
      delay(2000); // Pause for 2 seconds
 
      // Clear the buffer
@@ -176,7 +193,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
  }
 
  void loop() {
-     loop2();
+     oldLoop();
  }
 
  void testdrawline() {
