@@ -8,7 +8,7 @@ class RadioHelper {
 
 public:
 
-    explicit RadioHelper(RF24&& radio)
+    explicit RadioHelper(RF24 radio)
         : radio{radio} {};
 
     // Send toSend and invoke callback if successfully sent.

@@ -17,6 +17,24 @@
 
 TabletopBoard::TabletopBoard() = default;
 
+
+struct StateAndLogic {
+    StateRefreshRequest lastReceived;
+    StateRefreshResponse nextResponse;
+
+public:
+    explicit StateAndLogic()
+        : lastReceived{},
+          nextResponse{} {}
+
+    void update(bool stateUpdate) {
+        if (!stateUpdate) {
+            return;
+        }
+        nextResponse.update(lastReceived);
+    }
+};
+
 class OledDisplay {
     #define SCREEN_WIDTH 128 // OLED display width, in pixels
     #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -61,18 +79,21 @@ public:
         i++;
     }
 
-    void doOledSetup() {
+    void setup() {
         oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
         oled.clearDisplay();
         oled.display();
     }
 
-    void loopOledDisplay_onMessage(const StateRefreshResponse& nextResponse) {
-        if (nextResponse.passedTurn()) {
-            addLogLine("Passed    ", nextResponse.myScoreDelta());
+    void onMessage(const StateAndLogic& logic, bool stateUpdate) {
+        if (!stateUpdate) {
+            return;
         }
-        if (nextResponse.committed()) {
-            addLogLine("Committed ", nextResponse.myScoreDelta());
+        if (logic.nextResponse.passedTurn()) {
+            addLogLine("Passed    ", logic.nextResponse.myScoreDelta());
+        }
+        if (logic.nextResponse.committed()) {
+            addLogLine("Committed ", logic.nextResponse.myScoreDelta());
         }
     }
 };
@@ -83,7 +104,7 @@ class RotaryEncoder {
 
 public:
     int32_t oldPosition = 0;
-    void doRotaryEncoderSetup() {
+    void setup() {
         ss.begin(SEESAW_ADDR);
         sspixel.begin(SEESAW_ADDR);
         sspixel.setBrightness(20);
@@ -98,17 +119,17 @@ public:
         ss.enableEncoderInterrupt();
     }
 
-    void loopRotaryEncoder(StateRefreshResponse& nextResponse, const StateRefreshRequest& lastReceived) {
+    void loop(StateAndLogic& logic) {
         if (!ss.digitalRead(SS_SWITCH)) {
-            nextResponse.setCommit(true);
+            logic.nextResponse.setCommit(true);
         }
         if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
-            nextResponse.addScore(newPosition - oldPosition);
+            logic.nextResponse.addScore(newPosition - oldPosition);
             oldPosition = newPosition;
         }
-        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
+        if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
-                0, OledDisplay::colorWheel((nextResponse.myScoreDelta() * 10) & 0xFF));
+                0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
             sspixel.setBrightness(10);
             sspixel.show();
         } else {
@@ -134,7 +155,7 @@ public:
       passTurn{config.pinPassTurn},
       commit{config.pinCommit} {}
 
-    void doKeyGridSetup() const {
+    void setup() const {
         one.setup();
         five.setup();
         negOne.setup();
@@ -142,12 +163,12 @@ public:
         commit.setup();
     }
 
-    void loopKeygrid(StateRefreshResponse& nextResponse) {
-        five.onLoop([&]() { nextResponse.addScore(5); });
-        one.onLoop([&]() { nextResponse.addScore(1); });
-        negOne.onLoop([&]() { nextResponse.addScore(-1); });
-        commit.onLoop([&]() { nextResponse.setCommit(true); });
-        passTurn.onLoop([&]() { nextResponse.setPassTurn(true); });
+    void loop(StateAndLogic& logic) {
+        five.onLoop([&]() { logic.nextResponse.addScore(5); });
+        one.onLoop([&]() { logic.nextResponse.addScore(1); });
+        negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
+        commit.onLoop([&]() { logic.nextResponse.setCommit(true); });
+        passTurn.onLoop([&]() { logic.nextResponse.setPassTurn(true); });
     }
 };
 
@@ -156,11 +177,11 @@ class TurnLight {
 public:
     explicit TurnLight(Light light, bool initialOn)
         : turnLight{light, initialOn} {}
-    void doTurnLightSetup() const {
+    void setup() const {
         turnLight.setup();
     }
-    void loopTurnLight(const StateRefreshRequest& lastReceived) {
-        if (lastReceived.myTurn()) {
+    void loop(const StateAndLogic& logic) {
+        if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
             turnLight.turnOff();
@@ -175,47 +196,24 @@ public:
     explicit MySegmentDisplay(scorebot::view::SegmentDisplay segmentDisplay)
     : segmentDisplay{segmentDisplay} {}
 
-    void loopSegmentDisplay(const StateRefreshRequest& lastReceived,
-                            const StateRefreshResponse& nextResponse) {
-        if (lastReceived.myTurn() || nextResponse.hasScoreDelta()) {
+    void loop(const StateAndLogic& logic) {
+        if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
             segmentDisplay.setBrightness(0xFF / 10);
         }
-        segmentDisplay.setValueDec(nextResponse.myScoreDelta());
+        segmentDisplay.setValueDec(logic.nextResponse.myScoreDelta());
         segmentDisplay.update();
     }
 };
 
-struct PlayerBoard::Impl {
+class MyRadio {
     RadioHelper radio;
-
-    OledDisplay oled{};
-    RotaryEncoder rotaryEncoder{};
-    Keygrid keygrid;
-    TurnLight turnLight;
-    MySegmentDisplay segmentDisplay;
-
-    StateRefreshRequest lastReceived;
-    StateRefreshResponse nextResponse;
-
-    explicit Impl(const IOConfig& config, TimestampT)
-        : radio{{config.pinRadioCE, config.pinRadioCSN}},
-          keygrid{config},
-          turnLight{Light{config.pinTurnLed}, false},
-          segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}},
-          lastReceived{},
-          nextResponse{} {}
+public:
+    explicit MyRadio(RadioHelper radio)
+    : radio{radio} {}
 
     void setup() {
-        keygrid.doKeyGridSetup();
-        turnLight.doTurnLightSetup();
-        this->doRadioSetup();
-        oled.doOledSetup();
-        rotaryEncoder.doRotaryEncoderSetup();
-    }
-
-    void doRadioSetup() {
         radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
         radio.startListening();
@@ -224,29 +222,56 @@ struct PlayerBoard::Impl {
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
     [[nodiscard]]
-    bool checkForMessages() {
+    bool checkForMessages(StateAndLogic& logic) {
         if (!radio.available()) {
             return false;
         }
-        if (!radio.doRead(&lastReceived)) {
+        if (!radio.doRead(&logic.lastReceived)) {
             return false;
         }
-        if (!radio.doAck(1, &nextResponse)) {
+        if (!radio.doAck(1, &logic.nextResponse)) {
             return false;
         }
         return true;
     }
+};
+
+struct PlayerBoard::Impl {
+    MyRadio radio;
+    OledDisplay oled{};
+    RotaryEncoder rotaryEncoder{};
+    Keygrid keygrid;
+    TurnLight turnLight;
+    MySegmentDisplay segmentDisplay;
+    StateAndLogic logic;
+
+    explicit Impl(const IOConfig& config, TimestampT)
+        : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}},
+          keygrid{config},
+          turnLight{Light{config.pinTurnLed}, false},
+          segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}},
+          logic{} {}
+
+    void setup() {
+        keygrid.setup();
+        turnLight.setup();
+        radio.setup();
+        oled.setup();
+        rotaryEncoder.setup();
+    }
 
     void loop() {
-        keygrid.loopKeygrid(this->nextResponse);
-        rotaryEncoder.loopRotaryEncoder(this->nextResponse, this->lastReceived);
-        turnLight.loopTurnLight(this->lastReceived);
-        segmentDisplay.loopSegmentDisplay(this->lastReceived, this->nextResponse);
-        if (this->checkForMessages()) {
-            this->oled.loopOledDisplay_onMessage(this->nextResponse);
-            nextResponse.update(lastReceived);
-        }
+        keygrid.loop(this->logic);
+        rotaryEncoder.loop(this->logic);
+        turnLight.loop(this->logic);
+        segmentDisplay.loop(this->logic);
+
+        bool stateUpdate = radio.checkForMessages(this->logic);
+        this->oled.onMessage(this->logic, stateUpdate);
+
+        this->logic.update(stateUpdate);
     }
+
 };
 
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)
