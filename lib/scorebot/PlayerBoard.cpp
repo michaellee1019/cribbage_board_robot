@@ -27,7 +27,7 @@ public:
         : lastReceived{},
           nextResponse{} {}
 
-    void update(bool stateUpdate) {
+    void prepNextLoop(bool stateUpdate) {
         if (!stateUpdate) {
             return;
         }
@@ -57,43 +57,41 @@ public:
         return seesaw_NeoPixel::Color(WheelPos * 3, 255 - WheelPos * 3, 0);
     }
 
-    int i = 0;
+    short i = 0;
     void addLogLine(const char action[], ScoreT val) {
-        oled.setTextSize(1);               // Normal 1:1 pixel scale
-        oled.setTextColor(SSD1306_WHITE);  // Draw white text
-        oled.cp437(true);                  // Use full 256 char 'Code Page 437' font
-
-        if (i % 4 == 0) {
+        if (i == 0) {
             oled.clearDisplay();
             oled.setCursor(0, 0);  // Start at top-left corner
         }
 
         oled.print(i % 10);
-        oled.print(" ");
         oled.print(action);
-        oled.print(" ");
         oled.print(val);
-        oled.println();
+        oled.print(" ");
 
         oled.display();
-        i++;
+        i = (i + 1) % 20;
     }
 
     void setup() {
         oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
         oled.clearDisplay();
         oled.display();
+
+        oled.setTextSize(1);
+        oled.setTextColor(SSD1306_WHITE);
+        oled.cp437(true);
     }
 
-    void onMessage(const StateAndLogic& logic, bool stateUpdate) {
+    void updateView(const StateAndLogic& logic, bool stateUpdate) {
         if (!stateUpdate) {
             return;
         }
         if (logic.nextResponse.passedTurn()) {
-            addLogLine("Passed    ", logic.nextResponse.myScoreDelta());
+            addLogLine("P", logic.nextResponse.myScoreDelta());
         }
         if (logic.nextResponse.committed()) {
-            addLogLine("Committed ", logic.nextResponse.myScoreDelta());
+            addLogLine("C", logic.nextResponse.myScoreDelta());
         }
     }
 };
@@ -119,14 +117,7 @@ public:
         ss.enableEncoderInterrupt();
     }
 
-    void loop(StateAndLogic& logic) {
-        if (!ss.digitalRead(SS_SWITCH)) {
-            logic.nextResponse.setCommit(true);
-        }
-        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
-            logic.nextResponse.addScore(newPosition - oldPosition);
-            oldPosition = newPosition;
-        }
+    void updateView(const StateAndLogic& logic, bool) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
                 0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
@@ -136,6 +127,16 @@ public:
             sspixel.setPixelColor(0, OledDisplay::colorWheel(0xFF));
             sspixel.setBrightness(1);
             sspixel.show();
+        }
+    }
+
+    void loop(StateAndLogic& logic) {
+        if (!ss.digitalRead(SS_SWITCH)) {
+            logic.nextResponse.setCommit(true);
+        }
+        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
+            logic.nextResponse.addScore(newPosition - oldPosition);
+            oldPosition = newPosition;
         }
     }
 
@@ -180,7 +181,7 @@ public:
     void setup() const {
         turnLight.setup();
     }
-    void loop(const StateAndLogic& logic) {
+    void updateView(const StateAndLogic& logic, bool) {
         if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
@@ -196,7 +197,7 @@ public:
     explicit MySegmentDisplay(scorebot::view::SegmentDisplay segmentDisplay)
     : segmentDisplay{segmentDisplay} {}
 
-    void loop(const StateAndLogic& logic) {
+    void updateView(const StateAndLogic& logic, bool) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
@@ -261,15 +262,21 @@ struct PlayerBoard::Impl {
     }
 
     void loop() {
-        keygrid.loop(this->logic);
-        rotaryEncoder.loop(this->logic);
-        turnLight.loop(this->logic);
-        segmentDisplay.loop(this->logic);
-
+        // Update from the outside world.
         bool stateUpdate = radio.checkForMessages(this->logic);
-        this->oled.onMessage(this->logic, stateUpdate);
 
-        this->logic.update(stateUpdate);
+        // Check for inputs.
+        this->keygrid.loop(this->logic);
+        this->rotaryEncoder.loop(this->logic);
+
+        // Update Views
+        this->rotaryEncoder.updateView(this->logic, stateUpdate);
+        this->turnLight.updateView(this->logic, stateUpdate);
+        this->segmentDisplay.updateView(this->logic, stateUpdate);
+        this->oled.updateView(this->logic, stateUpdate);
+
+        // Wind up to go again.
+        this->logic.prepNextLoop(stateUpdate);
     }
 
 };
