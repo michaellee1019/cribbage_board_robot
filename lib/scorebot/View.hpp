@@ -55,42 +55,6 @@ public:
     }
 };
 
-class LEDLight {
-    bool lightOn;
-    bool changed;
-    Light light;
-
-public:
-    LEDLight(Light light, bool initialOn) : lightOn{initialOn}, changed{true}, light{light} {}
-
-    void setup() const {
-        this->light.setup();
-    }
-    void turnOn() {
-        if (!lightOn) {
-            this->lightOn = true;
-            this->changed = true;
-        }
-    }
-    void turnOff() {
-        if (lightOn) {
-            this->lightOn = false;
-            this->changed = true;
-        }
-    }
-
-    void update() {
-        if (changed) {
-            if (this->lightOn) {
-                this->light.turnOn();
-            } else {
-                this->light.turnOff();
-            }
-            changed = false;
-        }
-    }
-};
-
 }  // namespace scorebot::view
 
 

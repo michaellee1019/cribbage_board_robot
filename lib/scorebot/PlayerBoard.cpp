@@ -10,11 +10,6 @@
 #include "Adafruit_seesaw.h"
 #include <seesaw_neopixel.h>
 
-// Rotary Encoder
-#define SS_SWITCH        24
-#define SS_NEOPIX        6
-#define SEESAW_ADDR          0x36
-
 TabletopBoard::TabletopBoard() = default;
 
 
@@ -44,6 +39,7 @@ class OledDisplay {
     Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
 
 public:
+    explicit OledDisplay(const IOConfig&) {}
     static uint32_t colorWheel(byte WheelPos) {
         WheelPos = 255 - WheelPos;
         if (WheelPos < 85) {
@@ -64,17 +60,19 @@ public:
             oled.setCursor(0, 0);  // Start at top-left corner
         }
 
-        oled.print(i % 10);
-        oled.print(action);
-        oled.print(val);
-        oled.print(" ");
+        char message[100];
+        snprintf(message, 100, "%2d%s%-3d", i, action, val);
+        if (i%3==0 && i > 0){oled.println();}
+        oled.print(message);
 
         oled.display();
-        i = (i + 1) % 20;
+        i = (i + 1) % 12;
     }
 
     void setup() {
         oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+        oled.display();
+        delay(50);
         oled.clearDisplay();
         oled.display();
 
@@ -97,11 +95,16 @@ public:
 };
 
 class RotaryEncoder {
+    #define SS_SWITCH        24
+    #define SS_NEOPIX        6
+    #define SEESAW_ADDR          0x36
+
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
+    int32_t oldPosition = 0;
 
 public:
-    int32_t oldPosition = 0;
+    explicit RotaryEncoder(const IOConfig&) {}
     void setup() {
         ss.begin(SEESAW_ADDR);
         sspixel.begin(SEESAW_ADDR);
@@ -174,10 +177,10 @@ public:
 };
 
 class TurnLight {
-    scorebot::view::LEDLight turnLight;
+    Light turnLight;
 public:
-    explicit TurnLight(Light light, bool initialOn)
-        : turnLight{light, initialOn} {}
+    explicit TurnLight(const IOConfig config)
+        : turnLight{config.pinTurnLed} {}
     void setup() const {
         turnLight.setup();
     }
@@ -187,15 +190,18 @@ public:
         } else {
             turnLight.turnOff();
         }
-        turnLight.update();
     }
 };
 
 class MySegmentDisplay {
     scorebot::view::SegmentDisplay segmentDisplay;
 public:
-    explicit MySegmentDisplay(scorebot::view::SegmentDisplay segmentDisplay)
-    : segmentDisplay{segmentDisplay} {}
+    explicit MySegmentDisplay(const IOConfig&)
+    : segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}}
+    {}
+
+    void setup() {
+    }
 
     void updateView(const StateAndLogic& logic, bool) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
@@ -211,8 +217,9 @@ public:
 class MyRadio {
     RadioHelper radio;
 public:
-    explicit MyRadio(RadioHelper radio)
-    : radio{radio} {}
+    explicit MyRadio(const IOConfig& config)
+    : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}}
+    {}
 
     void setup() {
         radio.doRadioSetup();
@@ -239,26 +246,29 @@ public:
 
 struct PlayerBoard::Impl {
     MyRadio radio;
-    OledDisplay oled{};
-    RotaryEncoder rotaryEncoder{};
+    OledDisplay oled;
+    RotaryEncoder rotaryEncoder;
     Keygrid keygrid;
     TurnLight turnLight;
     MySegmentDisplay segmentDisplay;
     StateAndLogic logic;
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}},
+        : radio{config},
+          oled{config},
+          rotaryEncoder{config},
           keygrid{config},
-          turnLight{Light{config.pinTurnLed}, false},
-          segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}},
+          turnLight{config},
+          segmentDisplay{config},
           logic{} {}
 
     void setup() {
-        keygrid.setup();
-        turnLight.setup();
         radio.setup();
         oled.setup();
         rotaryEncoder.setup();
+        keygrid.setup();
+        turnLight.setup();
+        segmentDisplay.setup();
     }
 
     void loop() {
