@@ -22,7 +22,7 @@ public:
         : lastReceived{},
           nextResponse{} {}
 
-    void prepNextLoop(bool stateUpdate) {
+    void prepNextLoop(bool stateUpdate, unsigned long i, const unsigned long i1) {
         if (!stateUpdate) {
             return;
         }
@@ -81,7 +81,8 @@ public:
         oled.cp437(true);
     }
 
-    void updateView(const StateAndLogic& logic, bool stateUpdate) {
+    void updateView(const StateAndLogic &logic, bool stateUpdate,
+                    unsigned long iteration, const unsigned long now) {
         if (!stateUpdate) {
             return;
         }
@@ -120,11 +121,29 @@ public:
         ss.enableEncoderInterrupt();
     }
 
-    void updateView(const StateAndLogic& logic, bool) {
+    #define BLINK_DELAY_MS 100
+    TimestampT blinkStart = 0;
+    bool turnOn = true;
+    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const unsigned long now) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
                 0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
-            sspixel.setBrightness(10);
+            if (blinkStart + BLINK_DELAY_MS <= now) {
+                if (turnOn) {
+                    sspixel.setBrightness(1);
+                } else {
+                    sspixel.setBrightness(0);
+                }
+//                Serial.print(turnOn);
+//                Serial.print(blinkStart);
+//                Serial.print(0);
+//                Serial.print(0);
+//                Serial.print(now);
+//                Serial.println();
+                blinkStart = now;
+                turnOn = !turnOn;
+            }
+
             sspixel.show();
         } else {
             sspixel.setPixelColor(0, OledDisplay::colorWheel(0xFF));
@@ -133,7 +152,7 @@ public:
         }
     }
 
-    void loop(StateAndLogic& logic) {
+    void loop(StateAndLogic &logic, unsigned long i, const unsigned long i1) {
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
@@ -167,7 +186,7 @@ public:
         commit.setup();
     }
 
-    void loop(StateAndLogic& logic) {
+    void loop(StateAndLogic &logic, unsigned long i, const unsigned long i1) {
         five.onLoop([&]() { logic.nextResponse.addScore(5); });
         one.onLoop([&]() { logic.nextResponse.addScore(1); });
         negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
@@ -184,7 +203,7 @@ public:
     void setup() const {
         turnLight.setup();
     }
-    void updateView(const StateAndLogic& logic, bool) {
+    void updateView(const StateAndLogic &logic, bool, unsigned long i, const unsigned long i1) {
         if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
@@ -203,7 +222,7 @@ public:
     void setup() {
     }
 
-    void updateView(const StateAndLogic& logic, bool) {
+    void updateView(const StateAndLogic &logic, bool, unsigned long i, const unsigned long i1) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
@@ -230,7 +249,7 @@ public:
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
     [[nodiscard]]
-    bool checkForMessages(StateAndLogic& logic) {
+    bool checkForMessages(StateAndLogic &logic, unsigned long iteration, const unsigned long now) {
         if (!radio.available()) {
             return false;
         }
@@ -271,22 +290,25 @@ struct PlayerBoard::Impl {
         segmentDisplay.setup();
     }
 
+    unsigned long iteration = 0;
     void loop() {
+        const auto now = millis();
+
         // Update from the outside world.
-        bool stateUpdate = radio.checkForMessages(this->logic);
+        bool stateUpdate = radio.checkForMessages(this->logic, iteration, now);
 
         // Check for inputs.
-        this->keygrid.loop(this->logic);
-        this->rotaryEncoder.loop(this->logic);
+        this->keygrid.loop(this->logic, iteration, now);
+        this->rotaryEncoder.loop(this->logic, iteration, now);
 
         // Update Views
-        this->rotaryEncoder.updateView(this->logic, stateUpdate);
-        this->turnLight.updateView(this->logic, stateUpdate);
-        this->segmentDisplay.updateView(this->logic, stateUpdate);
-        this->oled.updateView(this->logic, stateUpdate);
+        this->rotaryEncoder.updateView(this->logic, stateUpdate, iteration, now);
+        this->turnLight.updateView(this->logic, stateUpdate, iteration, now);
+        this->segmentDisplay.updateView(this->logic, stateUpdate, iteration, now);
+        this->oled.updateView(this->logic, stateUpdate, iteration, now);
 
         // Wind up to go again.
-        this->logic.prepNextLoop(stateUpdate);
+        this->logic.prepNextLoop(stateUpdate, iteration, now);
     }
 
 };
