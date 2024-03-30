@@ -1,17 +1,29 @@
-// ReSharper disable CppDFAMemoryLeak
 #include "BoardTypes.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"
 #include "Types.hpp"
 #include "Utility.hpp"
-#include "View.hpp"
 
 #include <Adafruit_SSD1306.h>
-#include "Adafruit_seesaw.h"
+#include <Adafruit_seesaw.h>
+#include <TM1637Display.h>
 #include <seesaw_neopixel.h>
 
 TabletopBoard::TabletopBoard() = default;
 
+
+struct LoopState {
+    unsigned long iteration;
+    TimestampT now;
+
+    explicit LoopState()
+    : iteration{0}, now{0} {}
+
+    void advance() {
+        this->iteration++;
+        this->now = millis();
+    }
+};
 
 struct StateAndLogic {
     StateRefreshRequest lastReceived;
@@ -22,8 +34,7 @@ public:
         : lastReceived{},
           nextResponse{} {}
 
-    void prepNextLoop(bool stateUpdate,
-                      unsigned long iteration, const TimestampT now) {
+    void prepNextLoop(bool stateUpdate, const LoopState&) {
         if (!stateUpdate) {
             return;
         }
@@ -81,7 +92,7 @@ public:
     }
 
     void updateView(const StateAndLogic &logic, bool stateUpdate,
-                    unsigned long iteration, const TimestampT now) {
+                    const LoopState&) {
         if (!stateUpdate) {
             return;
         }
@@ -123,12 +134,12 @@ public:
     #define BLINK_DELAY_MS 100
     TimestampT blinkStart = 0;
     bool turnOn = true;
-    void updateView(const StateAndLogic &logic, bool stateUpdate,
-                    unsigned long iteration, const TimestampT now) {
+    void updateView(const StateAndLogic &logic, bool,
+                    const LoopState& loopState) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
                 0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
-            if (blinkStart + BLINK_DELAY_MS <= now) {
+            if (blinkStart + BLINK_DELAY_MS <= loopState.now) {
                 if (turnOn) {
                     sspixel.setBrightness(1);
                 } else {
@@ -140,7 +151,7 @@ public:
 //                Serial.print(0);
 //                Serial.print(now);
 //                Serial.println();
-                blinkStart = now;
+                blinkStart = loopState.now;
                 turnOn = !turnOn;
             }
 
@@ -152,8 +163,7 @@ public:
         }
     }
 
-    void loop(StateAndLogic &logic,
-              unsigned long iteration, const TimestampT now) {
+    void loop(StateAndLogic &logic, const LoopState&) {
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
@@ -187,8 +197,7 @@ public:
         commit.setup();
     }
 
-    void loop(StateAndLogic &logic,
-              unsigned long iteration, const TimestampT now) {
+    void loop(StateAndLogic &logic, const LoopState& loopState) {
         five.onLoop([&]() { logic.nextResponse.addScore(5); });
         one.onLoop([&]() { logic.nextResponse.addScore(1); });
         negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
@@ -205,7 +214,7 @@ public:
     void setup() const {
         turnLight.setup();
     }
-    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const TimestampT now) {
+    void updateView(const StateAndLogic &logic, bool, const LoopState&) {
         if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
@@ -215,23 +224,22 @@ public:
 };
 
 class MySegmentDisplay {
-    scorebot::view::SegmentDisplay segmentDisplay;
+    TM1637Display segmentDisplay;
 public:
     explicit MySegmentDisplay(const IOConfig&)
-    : segmentDisplay{scorebot::view::SegmentDisplay{{8, 7}}}
+    : segmentDisplay{8, 7}
     {}
 
     void setup() {
     }
 
-    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const TimestampT now) {
+    void updateView(const StateAndLogic &logic, bool, const LoopState&) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
             segmentDisplay.setBrightness(0xFF / 10);
         }
-        segmentDisplay.setValueDec(logic.nextResponse.myScoreDelta());
-        segmentDisplay.update();
+        segmentDisplay.showNumberDec(logic.nextResponse.myScoreDelta());
     }
 };
 
@@ -251,7 +259,7 @@ public:
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
     [[nodiscard]]
-    bool checkForMessages(StateAndLogic &logic, unsigned long iteration, const TimestampT now) {
+    bool checkForMessages(StateAndLogic &logic, const LoopState&) {
         if (!radio.available()) {
             return false;
         }
@@ -292,25 +300,25 @@ struct PlayerBoard::Impl {
         segmentDisplay.setup();
     }
 
-    unsigned long iteration = 0;
+    LoopState loopState;
     void loop() {
-        const auto now = millis();
+        loopState.advance();
 
         // Update from the outside world.
-        bool stateUpdate = radio.checkForMessages(this->logic, iteration, now);
+        bool stateUpdate = radio.checkForMessages(this->logic, loopState);
 
         // Check for inputs.
-        this->keygrid.loop(this->logic, iteration, now);
-        this->rotaryEncoder.loop(this->logic, iteration, now);
+        this->keygrid.loop(this->logic, loopState);
+        this->rotaryEncoder.loop(this->logic, loopState);
 
         // Update Views
-        this->rotaryEncoder.updateView(this->logic, stateUpdate, iteration, now);
-        this->turnLight.updateView(this->logic, stateUpdate, iteration, now);
-        this->segmentDisplay.updateView(this->logic, stateUpdate, iteration, now);
-        this->oled.updateView(this->logic, stateUpdate, iteration, now);
+        this->rotaryEncoder.updateView(this->logic, stateUpdate, loopState);
+        this->turnLight.updateView(this->logic, stateUpdate, loopState);
+        this->segmentDisplay.updateView(this->logic, stateUpdate, loopState);
+        this->oled.updateView(this->logic, stateUpdate, loopState);
 
         // Wind up to go again.
-        this->logic.prepNextLoop(stateUpdate, iteration, now);
+        this->logic.prepNextLoop(stateUpdate, loopState);
     }
 
 };
