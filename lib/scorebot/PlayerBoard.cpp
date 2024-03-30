@@ -22,7 +22,8 @@ public:
         : lastReceived{},
           nextResponse{} {}
 
-    void prepNextLoop(bool stateUpdate, unsigned long i, const unsigned long i1) {
+    void prepNextLoop(bool stateUpdate,
+                      unsigned long iteration, const TimestampT now) {
         if (!stateUpdate) {
             return;
         }
@@ -71,8 +72,6 @@ public:
 
     void setup() {
         oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-        oled.display();
-        delay(50);
         oled.clearDisplay();
         oled.display();
 
@@ -82,7 +81,7 @@ public:
     }
 
     void updateView(const StateAndLogic &logic, bool stateUpdate,
-                    unsigned long iteration, const unsigned long now) {
+                    unsigned long iteration, const TimestampT now) {
         if (!stateUpdate) {
             return;
         }
@@ -124,7 +123,8 @@ public:
     #define BLINK_DELAY_MS 100
     TimestampT blinkStart = 0;
     bool turnOn = true;
-    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const unsigned long now) {
+    void updateView(const StateAndLogic &logic, bool stateUpdate,
+                    unsigned long iteration, const TimestampT now) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
                 0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
@@ -152,7 +152,8 @@ public:
         }
     }
 
-    void loop(StateAndLogic &logic, unsigned long i, const unsigned long i1) {
+    void loop(StateAndLogic &logic,
+              unsigned long iteration, const TimestampT now) {
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
@@ -186,7 +187,8 @@ public:
         commit.setup();
     }
 
-    void loop(StateAndLogic &logic, unsigned long i, const unsigned long i1) {
+    void loop(StateAndLogic &logic,
+              unsigned long iteration, const TimestampT now) {
         five.onLoop([&]() { logic.nextResponse.addScore(5); });
         one.onLoop([&]() { logic.nextResponse.addScore(1); });
         negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
@@ -203,7 +205,7 @@ public:
     void setup() const {
         turnLight.setup();
     }
-    void updateView(const StateAndLogic &logic, bool, unsigned long i, const unsigned long i1) {
+    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const TimestampT now) {
         if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
@@ -222,7 +224,7 @@ public:
     void setup() {
     }
 
-    void updateView(const StateAndLogic &logic, bool, unsigned long i, const unsigned long i1) {
+    void updateView(const StateAndLogic &logic, bool stateUpdate, unsigned long iteration, const TimestampT now) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
@@ -249,7 +251,7 @@ public:
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
     [[nodiscard]]
-    bool checkForMessages(StateAndLogic &logic, unsigned long iteration, const unsigned long now) {
+    bool checkForMessages(StateAndLogic &logic, unsigned long iteration, const TimestampT now) {
         if (!radio.available()) {
             return false;
         }
