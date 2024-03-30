@@ -16,18 +16,15 @@ public:
 
     explicit StateRefreshRequest() : turnNumber{-1}, whosTurnV{-1}, scores{} {}
 
-    [[nodiscard]]
-    bool myTurn() const {
+    [[nodiscard]] bool myTurn() const {
         return this->whosTurnV == BOARD_ID;
     }
 
-    [[nodiscard]]
-    PlayerNumberT whosTurn() const {
+    [[nodiscard]] PlayerNumberT whosTurn() const {
         return this->whosTurnV;
     }
 
-    [[nodiscard]]
-    auto getPlayerScore(const PlayerNumberT player) const {
+    [[nodiscard]] auto getPlayerScore(const PlayerNumberT player) const {
         return this->scores[player];
     }
 
@@ -50,27 +47,22 @@ public:
         this->scoreDelta = 0;
     }
 
-    [[nodiscard]]
-    bool committed() const {
+    [[nodiscard]] bool committed() const {
         return commit;
     }
-    [[nodiscard]]
-    bool passedTurn() const {
+    [[nodiscard]] bool passedTurn() const {
         return passTurn;
     }
 
-    [[nodiscard]]
-    ScoreT myScoreDelta() const;
+    [[nodiscard]] ScoreT myScoreDelta() const;
 
-    [[nodiscard]]
-    bool hasScoreDelta() const;
+    [[nodiscard]] bool hasScoreDelta() const;
 
     void addScore(ScoreT n);
 
     void setCommit(bool commitVal);
 
-    [[nodiscard]]
-    bool isPlayerAndPassedTurn(PlayerNumberT i) const;
+    [[nodiscard]] bool isPlayerAndPassedTurn(PlayerNumberT i) const;
 
     void update(const StateRefreshRequest& request);
     void setPassTurn(bool passTurn);

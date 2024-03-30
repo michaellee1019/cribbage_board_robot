@@ -1,6 +1,6 @@
+#include "printf.h"
 #include <Arduino.h>
 #include <ArduinoSTL.h>
-#include "printf.h"
 
 #include "BoardTypes.hpp"
 
@@ -32,6 +32,6 @@ void setup() {
 }
 
 
- void loop() {
-     self->loop();
- }
+void loop() {
+    self->loop();
+}

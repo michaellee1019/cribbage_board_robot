@@ -7,9 +7,7 @@ class RadioHelper {
     RF24 radio;
 
 public:
-
-    explicit RadioHelper(RF24 radio)
-        : radio{radio} {};
+    explicit RadioHelper(RF24 radio) : radio{radio} {};
 
     // Send toSend and invoke callback if successfully sent.
     template <typename T, typename F>
@@ -30,8 +28,7 @@ public:
     }
 
     template <typename T>
-    [[nodiscard]]
-    bool doAck(uint8_t pipe, T* acked) {
+    [[nodiscard]] bool doAck(uint8_t pipe, T* acked) {
         return radio.writeAckPayload(pipe, acked, sizeof(T));
     }
 
@@ -67,7 +64,6 @@ public:
         return radio.available();
     }
 };
-
 
 
 #endif  // RADIOHELPER_HPP

@@ -70,4 +70,4 @@ private:
     Impl* impl;
 };
 
-#endif //BOARDTYPES_HPP
+#endif  // BOARDTYPES_HPP

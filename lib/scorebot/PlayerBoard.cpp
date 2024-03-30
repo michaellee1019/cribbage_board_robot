@@ -16,8 +16,7 @@ struct LoopState {
     unsigned long iteration;
     TimestampT now;
 
-    explicit LoopState()
-    : iteration{0}, now{0} {}
+    explicit LoopState() : iteration{0}, now{0} {}
 
     void advance() {
         this->iteration++;
@@ -30,9 +29,7 @@ struct StateAndLogic {
     StateRefreshResponse nextResponse;
 
 public:
-    explicit StateAndLogic()
-        : lastReceived{},
-          nextResponse{} {}
+    explicit StateAndLogic() : lastReceived{}, nextResponse{} {}
 
     void prepNextLoop(bool stateUpdate, const LoopState&) {
         if (!stateUpdate) {
@@ -43,10 +40,10 @@ public:
 };
 
 class OledDisplay {
-    #define SCREEN_WIDTH 128 // OLED display width, in pixels
-    #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-    #define OLED_RESET    (-1) // Reset pin # (or -1 if sharing Arduino reset pin)
-    #define SCREEN_ADDRESS 0x3D ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+#define SCREEN_WIDTH 128     // OLED display width, in pixels
+#define SCREEN_HEIGHT 32     // OLED display height, in pixels
+#define OLED_RESET (-1)      // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3D  ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
     Adafruit_SSD1306 oled{SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET};
 
@@ -74,7 +71,9 @@ public:
 
         char message[100];
         snprintf(message, 100, "%2d%s%-3d", i, action, val);
-        if (i%3==0 && i > 0){oled.println();}
+        if (i % 3 == 0 && i > 0) {
+            oled.println();
+        }
         oled.print(message);
 
         oled.display();
@@ -91,8 +90,7 @@ public:
         oled.cp437(true);
     }
 
-    void updateView(const StateAndLogic &logic, bool stateUpdate,
-                    const LoopState&) {
+    void updateView(const StateAndLogic& logic, bool stateUpdate, const LoopState&) {
         if (!stateUpdate) {
             return;
         }
@@ -106,9 +104,9 @@ public:
 };
 
 class RotaryEncoder {
-    #define SS_SWITCH        24
-    #define SS_NEOPIX        6
-    #define SEESAW_ADDR          0x36
+#define SS_SWITCH 24
+#define SS_NEOPIX 6
+#define SEESAW_ADDR 0x36
 
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
@@ -131,11 +129,10 @@ public:
         ss.enableEncoderInterrupt();
     }
 
-    #define BLINK_DELAY_MS 100
+#define BLINK_DELAY_MS 100
     TimestampT blinkStart = 0;
     bool turnOn = true;
-    void updateView(const StateAndLogic &logic, bool,
-                    const LoopState& loopState) {
+    void updateView(const StateAndLogic& logic, bool, const LoopState& loopState) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             sspixel.setPixelColor(
                 0, OledDisplay::colorWheel((logic.nextResponse.myScoreDelta() * 10) & 0xFF));
@@ -145,12 +142,12 @@ public:
                 } else {
                     sspixel.setBrightness(0);
                 }
-//                Serial.print(turnOn);
-//                Serial.print(blinkStart);
-//                Serial.print(0);
-//                Serial.print(0);
-//                Serial.print(now);
-//                Serial.println();
+                //                Serial.print(turnOn);
+                //                Serial.print(blinkStart);
+                //                Serial.print(0);
+                //                Serial.print(0);
+                //                Serial.print(now);
+                //                Serial.println();
                 blinkStart = loopState.now;
                 turnOn = !turnOn;
             }
@@ -163,7 +160,7 @@ public:
         }
     }
 
-    void loop(StateAndLogic &logic, const LoopState&) {
+    void loop(StateAndLogic& logic, const LoopState&) {
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
@@ -172,7 +169,6 @@ public:
             oldPosition = newPosition;
         }
     }
-
 };
 
 class Keygrid {
@@ -181,13 +177,14 @@ class Keygrid {
     Button negOne;
     Button passTurn;
     Button commit;
+
 public:
     explicit Keygrid(const IOConfig& config)
-    : one{config.pinPlusOne},
-      five{config.pinPlusFive},
-      negOne{config.pinNegOne},
-      passTurn{config.pinPassTurn},
-      commit{config.pinCommit} {}
+        : one{config.pinPlusOne},
+          five{config.pinPlusFive},
+          negOne{config.pinNegOne},
+          passTurn{config.pinPassTurn},
+          commit{config.pinCommit} {}
 
     void setup() const {
         one.setup();
@@ -197,7 +194,7 @@ public:
         commit.setup();
     }
 
-    void loop(StateAndLogic &logic, const LoopState& loopState) {
+    void loop(StateAndLogic& logic, const LoopState& loopState) {
         five.onLoop([&]() { logic.nextResponse.addScore(5); });
         one.onLoop([&]() { logic.nextResponse.addScore(1); });
         negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
@@ -208,13 +205,13 @@ public:
 
 class TurnLight {
     Light turnLight;
+
 public:
-    explicit TurnLight(const IOConfig config)
-        : turnLight{config.pinTurnLed} {}
+    explicit TurnLight(const IOConfig config) : turnLight{config.pinTurnLed} {}
     void setup() const {
         turnLight.setup();
     }
-    void updateView(const StateAndLogic &logic, bool, const LoopState&) {
+    void updateView(const StateAndLogic& logic, bool, const LoopState&) {
         if (logic.lastReceived.myTurn()) {
             turnLight.turnOn();
         } else {
@@ -225,15 +222,13 @@ public:
 
 class MySegmentDisplay {
     TM1637Display segmentDisplay;
+
 public:
-    explicit MySegmentDisplay(const IOConfig&)
-    : segmentDisplay{8, 7}
-    {}
+    explicit MySegmentDisplay(const IOConfig&) : segmentDisplay{8, 7} {}
 
-    void setup() {
-    }
+    void setup() {}
 
-    void updateView(const StateAndLogic &logic, bool, const LoopState&) {
+    void updateView(const StateAndLogic& logic, bool, const LoopState&) {
         if (logic.lastReceived.myTurn() || logic.nextResponse.hasScoreDelta()) {
             segmentDisplay.setBrightness(0xFF);
         } else {
@@ -245,10 +240,10 @@ public:
 
 class MyRadio {
     RadioHelper radio;
+
 public:
     explicit MyRadio(const IOConfig& config)
-    : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}}
-    {}
+        : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}} {}
 
     void setup() {
         radio.doRadioSetup();
@@ -258,8 +253,7 @@ public:
 
     // TODO: this needs to be more robust
     // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
-    [[nodiscard]]
-    bool checkForMessages(StateAndLogic &logic, const LoopState&) {
+    [[nodiscard]] bool checkForMessages(StateAndLogic& logic, const LoopState&) {
         if (!radio.available()) {
             return false;
         }
@@ -320,7 +314,6 @@ struct PlayerBoard::Impl {
         // Wind up to go again.
         this->logic.prepNextLoop(stateUpdate, loopState);
     }
-
 };
 
 PlayerBoard::PlayerBoard(const IOConfig& config, const TimestampT startupGeneration)

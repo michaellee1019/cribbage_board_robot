@@ -57,9 +57,7 @@ struct LeaderBoard::Impl {
 
 
     bool send(StateRefreshResponse* outputResponse) {
-        return radio.doSend(&nextRequest, [&]() {
-            return radio.doRead(outputResponse);
-        });
+        return radio.doSend(&nextRequest, [&]() { return radio.doRead(outputResponse); });
     }
 
     Periodically everySecond{500};
