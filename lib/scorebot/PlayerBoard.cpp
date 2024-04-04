@@ -70,7 +70,7 @@ public:
         }
 
         char message[100];
-        snprintf(message, 100, "%2d%s%-3ld", i, action, val);
+        snprintf(message, 100, "%2d%s%-3d", i, action, val);
         if (i % 3 == 0 && i > 0) {
             oled.println();
         }
@@ -164,7 +164,7 @@ public:
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
-        if (auto newPosition = ss.getEncoderPosition() / 2; oldPosition != newPosition) {
+        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
             logic.nextResponse.addScore(newPosition - oldPosition);
             oldPosition = newPosition;
         }
@@ -194,7 +194,7 @@ public:
         commit.setup();
     }
 
-    void loop(StateAndLogic& logic, const LoopState&) {
+    void loop(StateAndLogic& logic, const LoopState& loopState) {
         five.onLoop([&]() { logic.nextResponse.addScore(5); });
         one.onLoop([&]() { logic.nextResponse.addScore(1); });
         negOne.onLoop([&]() { logic.nextResponse.addScore(-1); });
@@ -234,7 +234,7 @@ public:
         } else {
             segmentDisplay.setBrightness(0xFF / 10);
         }
-        segmentDisplay.showNumberDec(int(logic.nextResponse.myScoreDelta()));
+        segmentDisplay.showNumberDec(logic.nextResponse.myScoreDelta());
     }
 };
 

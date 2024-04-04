@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 using PlayerNumberT = int;
-using ScoreT = long;
+using ScoreT = int;
 using TurnNumberT = int;
 using TimestampT = decltype(millis());
 

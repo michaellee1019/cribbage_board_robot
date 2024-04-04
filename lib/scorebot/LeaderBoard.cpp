@@ -1,10 +1,11 @@
+// ReSharper disable CppDFAMemoryLeak
 #include "BoardTypes.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"
 #include "Utility.hpp"
 
-#include <Adafruit_FRAM_I2C.h>
-#include <TM1637Display.h>
+#include "Adafruit_FRAM_I2C.h"
+#include "TM1637Display.h"
 
 struct LeaderBoard::Impl {
     RadioHelper radio;
@@ -79,7 +80,7 @@ struct LeaderBoard::Impl {
                     display.showNumberHexEx(0xDEAD);
                     display.setBrightness(0x01);
                 } else {
-                    display.showNumberDec(int(nextRequest.getPlayerScore(i)));
+                    display.showNumberDec(nextRequest.getPlayerScore(i));
                     display.setBrightness(i == nextRequest.whosTurn() ? 0xFF : 0xFF / 10);
                 }
             });
