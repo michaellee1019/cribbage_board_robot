@@ -16,6 +16,7 @@ struct LeaderBoard::Impl {
         TM1637Display(6, 5),
         TM1637Display(8, 7),
         TM1637Display(4, 3),
+        TM1637Display(14, 2),
     };
 
     StateRefreshRequest nextRequest;

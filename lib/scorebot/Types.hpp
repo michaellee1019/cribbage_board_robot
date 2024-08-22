@@ -23,7 +23,7 @@ inline void println() {
 }
 
 // TODO: Make this configurable.
-static constexpr int MAX_DISPLAYS = 3;
+static constexpr int MAX_DISPLAYS = 4;
 static constexpr int MAX_PLAYERS = MAX_DISPLAYS;
 
 
