@@ -269,7 +269,10 @@ public:
 
 struct PlayerBoard::Impl {
     MyRadio radio;
-    OledDisplay oled;
+    // Currently (2024-08-25) the hardware OLED
+    // display is not connected since it seems
+    // to be unreliable.
+//    OledDisplay oled;
     RotaryEncoder rotaryEncoder;
     Keygrid keygrid;
     TurnLight turnLight;
@@ -278,7 +281,7 @@ struct PlayerBoard::Impl {
 
     explicit Impl(const IOConfig& config, TimestampT)
         : radio{config},
-          oled{config},
+//          oled{config},
           rotaryEncoder{config},
           keygrid{config},
           turnLight{config},
@@ -287,7 +290,7 @@ struct PlayerBoard::Impl {
 
     void setup() {
         radio.setup();
-        oled.setup();
+//        oled.setup();
         rotaryEncoder.setup();
         keygrid.setup();
         turnLight.setup();
@@ -309,7 +312,7 @@ struct PlayerBoard::Impl {
         this->rotaryEncoder.updateView(this->logic, stateUpdate, loopState);
         this->turnLight.updateView(this->logic, stateUpdate, loopState);
         this->segmentDisplay.updateView(this->logic, stateUpdate, loopState);
-        this->oled.updateView(this->logic, stateUpdate, loopState);
+//        this->oled.updateView(this->logic, stateUpdate, loopState);
 
         // Wind up to go again.
         this->logic.prepNextLoop(stateUpdate, loopState);
