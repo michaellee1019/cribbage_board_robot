@@ -1,4 +1,5 @@
 #include <Message.hpp>
+#include "ArduinoSTL.h"
 
 // PlayerBoard response updates in response to the request.
 void StateRefreshResponse::update(const StateRefreshRequest& lastReceived) {
@@ -44,6 +45,7 @@ void StateRefreshRequest::update(StateRefreshResponse const* responses,
     bool advanceTurn = false;
     for (PlayerNumberT i = 0; i < nResponses; ++i) {
         const StateRefreshResponse& response = responses[i];
+        std::cout << "Found response " << response << std::endl;
         if (response.readyToAddDelta()) {
             this->scores[i] += response.myScoreDelta();
         }

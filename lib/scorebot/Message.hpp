@@ -2,6 +2,7 @@
 #define MESSAGE_HPP
 
 #include <Types.hpp>
+#include "ArduinoSTL.h"
 
 class StateRefreshRequest {
     TurnNumberT turnNumber;
@@ -40,6 +41,9 @@ class StateRefreshResponse {
     ScoreT scoreDelta;
 
 public:
+    friend std::ostream&
+        operator<<(std::ostream& out, const StateRefreshResponse&);
+
     explicit StateRefreshResponse()
         : fromPlayer{BOARD_ID}, passTurn{false}, commit{false}, scoreDelta{0} {}
 
@@ -68,6 +72,18 @@ public:
     void setPassTurn(bool passTurn);
     bool readyToAddDelta() const;
 };
+
+inline std::ostream&
+operator<<(std::ostream& out, const StateRefreshResponse& self) {
+    out << "Refresh{fromPlayer="
+        << self.fromPlayer
+        << ",scoreDelta="
+        << self.scoreDelta
+        << ",passTurn="
+        << self.passTurn
+        << "}";
+    return out;
+}
 
 // I think this is a requirement of the NRF stack.
 static_assert(sizeof(StateRefreshRequest) <= 32, "StateRefreshRequest max struct size");

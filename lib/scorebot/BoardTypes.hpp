@@ -10,6 +10,7 @@ static constexpr const byte playerAddresses_[MAX_PLAYERS][5] = {
     {'R', 'x', 'A', 'A', 'A'},
     {'R', 'x', 'A', 'A', 'B'},
     {'R', 'x', 'A', 'A', 'C'},
+    {'R', 'x', 'A', 'A', 'D'},
 };
 
 inline static constexpr const byte* myBoardAddress() {

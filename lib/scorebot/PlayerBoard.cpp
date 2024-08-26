@@ -1,8 +1,8 @@
 #include "BoardTypes.hpp"
 #include "Message.hpp"
 #include "RadioHelper.hpp"
-#include "Types.hpp"
 #include "Utility.hpp"
+#include "ArduinoSTL.h"
 
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_seesaw.h>
@@ -248,6 +248,7 @@ public:
     void setup() {
         radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
+        std::cout << "Opened Pipe " << myBoardAddress() << std::endl;
         radio.startListening();
     }
 
