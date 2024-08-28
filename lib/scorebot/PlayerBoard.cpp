@@ -248,7 +248,6 @@ public:
     void setup() {
         radio.doRadioSetup();
         radio.openReadingPipe(1, myBoardAddress());
-        std::cout << "Opened Pipe " << myBoardAddress() << std::endl;
         radio.startListening();
     }
 
@@ -274,7 +273,7 @@ struct PlayerBoard::Impl {
     // display is not connected since it seems
     // to be unreliable.
 //    OledDisplay oled;
-    RotaryEncoder rotaryEncoder;
+//    RotaryEncoder rotaryEncoder;
     Keygrid keygrid;
     TurnLight turnLight;
     MySegmentDisplay segmentDisplay;
@@ -283,7 +282,7 @@ struct PlayerBoard::Impl {
     explicit Impl(const IOConfig& config, TimestampT)
         : radio{config},
 //          oled{config},
-          rotaryEncoder{config},
+//          rotaryEncoder{config},
           keygrid{config},
           turnLight{config},
           segmentDisplay{config},
@@ -292,7 +291,7 @@ struct PlayerBoard::Impl {
     void setup() {
         radio.setup();
 //        oled.setup();
-        rotaryEncoder.setup();
+//        rotaryEncoder.setup();
         keygrid.setup();
         turnLight.setup();
         segmentDisplay.setup();
@@ -307,10 +306,10 @@ struct PlayerBoard::Impl {
 
         // Check for inputs.
         this->keygrid.loop(this->logic, loopState);
-        this->rotaryEncoder.loop(this->logic, loopState);
+//        this->rotaryEncoder.loop(this->logic, loopState);
 
         // Update Views
-        this->rotaryEncoder.updateView(this->logic, stateUpdate, loopState);
+//        this->rotaryEncoder.updateView(this->logic, stateUpdate, loopState);
         this->turnLight.updateView(this->logic, stateUpdate, loopState);
         this->segmentDisplay.updateView(this->logic, stateUpdate, loopState);
 //        this->oled.updateView(this->logic, stateUpdate, loopState);
