@@ -47,8 +47,8 @@ inline static constexpr const byte* myBoardAddress() {
 
 
 
-inline static constexpr const byte* playerAddress(PlayerNumberT playerNumberT) {
-    return playerAddresses_[playerNumberT].value();
+inline static constexpr PlayerAddress playerAddress(PlayerNumberT playerNumberT) {
+    return playerAddresses_[playerNumberT];
 }
 
 struct IOConfig {

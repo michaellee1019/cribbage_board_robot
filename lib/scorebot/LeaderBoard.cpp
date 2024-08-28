@@ -67,10 +67,15 @@ struct LeaderBoard::Impl {
 
         everySecond.run(millis(), [&]() {
             for (PlayerNumberT i = 0; i < MAX_PLAYERS; ++i) {
+                const auto addr = playerAddress(i);
                 this->radio.stopListening();
-                this->radio.openWritingPipe(playerAddress(i));
-
-                if (this->send(&lastResponses[i])) {
+                this->radio.openWritingPipe(addr.value());
+                const auto recv = this->send(&lastResponses[i]);
+                std::cout << "Player " << i << addr
+                          << "=> " << lastResponses[i]
+                          << " ? " << (recv ? "T" : "F")
+                          << std::endl;
+                if (recv) {
                     this->maxActivePlayerIndex = max(this->maxActivePlayerIndex, i);
                 }
             }

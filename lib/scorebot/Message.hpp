@@ -26,6 +26,10 @@ public:
     }
 
     [[nodiscard]] auto getPlayerScore(const PlayerNumberT player) const {
+        if (player < 0 || player >= MAX_PLAYERS) {
+            std::cout << "Invalid player " << player << std::endl;
+            return ScoreT{0xDED};
+        }
         return this->scores[player];
     }
 
