@@ -4,25 +4,51 @@
 #include <RF24.h>
 
 #include <Types.hpp>
+#include "ArduinoSTL.h"
 
-static constexpr const byte playerAddresses_[MAX_PLAYERS][5] = {
+// Idk if this is actually valuable.
+class PlayerAddress {
+    byte _value[5];
+public:
+    explicit constexpr PlayerAddress(byte b0, byte b1, byte b2, byte b3, byte b4)
+    : _value{b0, b1, b2, b3, b4} {}
+
+    [[nodiscard]] constexpr const byte* value() const {
+        return _value;
+    }
+    friend std::ostream&
+    operator<<(std::ostream& out, const PlayerAddress& self);
+};
+
+inline std::ostream&
+operator<<(std::ostream& out, const PlayerAddress& self) {
+    out << "@";
+    for (unsigned char i : self._value) {
+        out << i;
+    }
+    return out;
+}
+
+static constexpr PlayerAddress playerAddresses_[MAX_PLAYERS] = {
     // TODO: make the last digit the board id / player number.
-    {'R', 'x', 'A', 'A', 'A'},
-    {'R', 'x', 'A', 'A', 'B'},
-    {'R', 'x', 'A', 'A', 'C'},
-//    {'R', 'x', 'A', 'A', 'D'},
+        PlayerAddress{'R', 'x', 'A', 'A', 'A'},
+        PlayerAddress{'R', 'x', 'A', 'A', 'B'},
+        PlayerAddress{'R', 'x', 'A', 'A', 'C'},
+//        PlayerAddress{'R', 'x', 'A', 'A', 'D'},
 };
 
 inline static constexpr const byte* myBoardAddress() {
     static_assert(BOARD_ID < MAX_PLAYERS);
     if constexpr (BOARD_ID == -1 || BOARD_ID == 0) {
-        return playerAddresses_[0];
+        return playerAddresses_[0].value();
     }
-    return playerAddresses_[BOARD_ID];
+    return playerAddresses_[BOARD_ID].value();
 }
 
+
+
 inline static constexpr const byte* playerAddress(PlayerNumberT playerNumberT) {
-    return playerAddresses_[playerNumberT];
+    return playerAddresses_[playerNumberT].value();
 }
 
 struct IOConfig {
