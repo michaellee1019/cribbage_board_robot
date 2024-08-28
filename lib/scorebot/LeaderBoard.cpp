@@ -50,7 +50,6 @@ struct LeaderBoard::Impl {
         this->displayStartup();
 
         radio.doRadioSetup();
-        radio.openWritingPipe(myBoardAddress());
         radio.printPrettyDetails();
 
         eachDisplay([&](TM1637Display& display, int i) { display.showNumberDec(i); });
@@ -61,7 +60,7 @@ struct LeaderBoard::Impl {
         return radio.doSend(&nextRequest, [&]() { return radio.doRead(outputResponse); });
     }
 
-    Periodically everySecond{500};
+    Periodically everySecond{1000};
     PlayerNumberT maxActivePlayerIndex = 0;
     void loop() {  // Leaderboard
 

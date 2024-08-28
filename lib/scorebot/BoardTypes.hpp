@@ -37,12 +37,12 @@ static constexpr PlayerAddress playerAddresses_[MAX_PLAYERS] = {
 //        PlayerAddress{'R', 'x', 'A', 'A', 'D'},
 };
 
-inline static constexpr const byte* myBoardAddress() {
+inline static constexpr PlayerAddress myBoardAddress() {
     static_assert(BOARD_ID < MAX_PLAYERS);
-    if constexpr (BOARD_ID == -1 || BOARD_ID == 0) {
-        return playerAddresses_[0].value();
+    if ( BOARD_ID == -1 ) {
+        return playerAddresses_[0];
     }
-    return playerAddresses_[BOARD_ID].value();
+    return playerAddresses_[BOARD_ID];
 }
 
 

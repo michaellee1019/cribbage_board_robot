@@ -247,7 +247,7 @@ public:
 
     void setup() {
         radio.doRadioSetup();
-        radio.openReadingPipe(1, myBoardAddress());
+        radio.openReadingPipe(1, myBoardAddress().value());
         radio.startListening();
     }
 
