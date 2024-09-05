@@ -1,14 +1,13 @@
 // ReSharper disable CppDFAMemoryLeak
+#include <iostream>
 #include "BoardTypes.hpp"
 #include "Message.hpp"
-#include "RadioHelper.hpp"
 #include "Utility.hpp"
 
 #include "Adafruit_FRAM_I2C.h"
 #include "TM1637Display.h"
 
 struct LeaderBoard::Impl {
-    RadioHelper radio;
     Adafruit_FRAM_I2C storage;
 
     TM1637Display displays[MAX_DISPLAYS]{
@@ -23,7 +22,7 @@ struct LeaderBoard::Impl {
     StateRefreshResponse lastResponses[MAX_PLAYERS];
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{{config.pinRadioCE, config.pinRadioCSN}}, nextRequest{} {}
+        : nextRequest{} {}
 
 
     template <typename F>
@@ -49,15 +48,16 @@ struct LeaderBoard::Impl {
 
         this->displayStartup();
 
-        radio.doRadioSetup();
-        radio.printPrettyDetails();
+//        radio.doRadioSetup();
+//        radio.printPrettyDetails();
 
         eachDisplay([&](TM1637Display& display, int i) { display.showNumberDec(i); });
     }
 
 
     bool send(StateRefreshResponse* outputResponse) {
-        return radio.doSend(&nextRequest, [&]() { return radio.doRead(outputResponse); });
+        return false;
+//        return radio.doSend(&nextRequest, [&]() { return radio.doRead(outputResponse); });
     }
 
     Periodically everySecond{1000};
@@ -67,8 +67,8 @@ struct LeaderBoard::Impl {
         everySecond.run(millis(), [&]() {
             for (PlayerNumberT i = 0; i < MAX_PLAYERS; ++i) {
                 const auto addr = playerAddress(i);
-                this->radio.stopListening();
-                this->radio.openWritingPipe(addr.value());
+//                this->radio.stopListening();
+//                this->radio.openWritingPipe(addr.value());
                 const auto recv = this->send(&lastResponses[i]);
                 std::cout << "Player " << i << addr
                           << "=> " << lastResponses[i]

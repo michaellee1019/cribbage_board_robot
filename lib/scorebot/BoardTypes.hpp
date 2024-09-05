@@ -1,10 +1,8 @@
 #ifndef BOARDTYPES_HPP
 #define BOARDTYPES_HPP
 
-#include <RF24.h>
-
 #include <Types.hpp>
-#include "ArduinoSTL.h"
+#include <iosfwd>
 
 // Idk if this is actually valuable.
 class PlayerAddress {
@@ -39,10 +37,7 @@ static constexpr PlayerAddress playerAddresses_[MAX_PLAYERS] = {
 
 inline static constexpr PlayerAddress myBoardAddress() {
     static_assert(BOARD_ID < MAX_PLAYERS);
-    if ( BOARD_ID == -1 ) {
-        return playerAddresses_[0];
-    }
-    return playerAddresses_[BOARD_ID];
+    return BOARD_ID == -1 ? playerAddresses_[0] :  playerAddresses_[BOARD_ID];
 }
 
 
@@ -60,9 +55,6 @@ struct IOConfig {
 
     int pinLedBuiltin;
     int pinTurnLed;
-
-    rf24_gpio_pin_t pinRadioCE;
-    rf24_gpio_pin_t pinRadioCSN;
 };
 
 class TabletopBoard {

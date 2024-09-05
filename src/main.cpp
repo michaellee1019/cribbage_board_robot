@@ -1,6 +1,5 @@
+#include <iostream>
 #include <Arduino.h>
-#include <ArduinoSTL.h>
-#include "printf.h"
 
 #include "BoardTypes.hpp"
 
@@ -12,12 +11,10 @@ void setup() {
                               .pinPlusFive = 4,
                               .pinPlusOne = 3,
                               .pinPassTurn = 6,
-                              .pinLedBuiltin = LED_BUILTIN,
-                              .pinTurnLed = 21,
-                              .pinRadioCE = 10,
-                              .pinRadioCSN = 9};
+                              .pinLedBuiltin = 16, // TODO
+                              .pinTurnLed = 21};
     Serial.begin(9600);
-    printf_begin();
+
     std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
 
     const TimestampT startupGeneration = millis();

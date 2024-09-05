@@ -1,8 +1,8 @@
+#include <iostream>
+
 #include "BoardTypes.hpp"
 #include "Message.hpp"
-#include "RadioHelper.hpp"
 #include "Utility.hpp"
-#include "ArduinoSTL.h"
 
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_seesaw.h>
@@ -238,37 +238,7 @@ public:
     }
 };
 
-class MyRadio {
-    RadioHelper radio;
-
-public:
-    explicit MyRadio(const IOConfig& config)
-        : radio{RadioHelper{RF24{config.pinRadioCE, config.pinRadioCSN}}} {}
-
-    void setup() {
-        radio.doRadioSetup();
-        radio.openReadingPipe(1, myBoardAddress().value());
-        radio.startListening();
-    }
-
-    // TODO: this needs to be more robust
-    // See https://www.deviceplus.com/arduino/nrf24l01-rf-module-tutorial/
-    [[nodiscard]] bool checkForMessages(StateAndLogic& logic, const LoopState&) {
-        if (!radio.available()) {
-            return false;
-        }
-        if (!radio.doRead(&logic.lastReceived)) {
-            return false;
-        }
-        if (!radio.doAck(1, &logic.nextResponse)) {
-            return false;
-        }
-        return true;
-    }
-};
-
 struct PlayerBoard::Impl {
-    MyRadio radio;
     // Currently (2024-08-25) the hardware OLED
     // display is not connected since it seems
     // to be unreliable.
@@ -280,7 +250,7 @@ struct PlayerBoard::Impl {
     StateAndLogic logic;
 
     explicit Impl(const IOConfig& config, TimestampT)
-        : radio{config},
+        :
 //          oled{config},
 //          rotaryEncoder{config},
           keygrid{config},
@@ -289,7 +259,7 @@ struct PlayerBoard::Impl {
           logic{} {}
 
     void setup() {
-        radio.setup();
+//        radio.setup();
 //        oled.setup();
 //        rotaryEncoder.setup();
         keygrid.setup();
@@ -302,7 +272,7 @@ struct PlayerBoard::Impl {
         loopState.advance();
 
         // Update from the outside world.
-        bool stateUpdate = radio.checkForMessages(this->logic, loopState);
+//        bool stateUpdate = radio.checkForMessages(this->logic, loopState);
 
         // Check for inputs.
         this->keygrid.loop(this->logic, loopState);
@@ -310,12 +280,12 @@ struct PlayerBoard::Impl {
 
         // Update Views
 //        this->rotaryEncoder.updateView(this->logic, stateUpdate, loopState);
-        this->turnLight.updateView(this->logic, stateUpdate, loopState);
-        this->segmentDisplay.updateView(this->logic, stateUpdate, loopState);
+//        this->turnLight.updateView(this->logic, stateUpdate, loopState);
+//        this->segmentDisplay.updateView(this->logic, stateUpdate, loopState);
 //        this->oled.updateView(this->logic, stateUpdate, loopState);
 
         // Wind up to go again.
-        this->logic.prepNextLoop(stateUpdate, loopState);
+//        this->logic.prepNextLoop(stateUpdate, loopState);
     }
 };
 

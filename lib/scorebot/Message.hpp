@@ -2,7 +2,6 @@
 #define MESSAGE_HPP
 
 #include <Types.hpp>
-#include "ArduinoSTL.h"
 
 class StateRefreshRequest {
     TurnNumberT turnNumber;

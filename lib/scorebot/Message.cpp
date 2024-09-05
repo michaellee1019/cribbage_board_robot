@@ -1,5 +1,5 @@
+#include <iostream>
 #include <Message.hpp>
-#include "ArduinoSTL.h"
 
 // PlayerBoard response updates in response to the request.
 void StateRefreshResponse::update(const StateRefreshRequest& lastReceived) {
