@@ -1,34 +1,44 @@
-#include <iostream>
-#include <Arduino.h>
-
-#include "BoardTypes.hpp"
-
-TabletopBoard* self;
-
-void setup() {
-    constexpr IOConfig config{.pinCommit = 2,
-                              .pinNegOne = 5,
-                              .pinPlusFive = 4,
-                              .pinPlusOne = 3,
-                              .pinPassTurn = 6,
-                              .pinLedBuiltin = 16, // TODO
-                              .pinTurnLed = 21};
-    Serial.begin(9600);
-
-    std::cout << "ScoreBotSetup BOARD_ID=" << BOARD_ID << std::endl;
-
-    const TimestampT startupGeneration = millis();
-
-    if constexpr (BOARD_ID == -1) {
-        self = new LeaderBoard(config, startupGeneration);
-    } else {
-        self = new PlayerBoard(config, startupGeneration);
+#include <stdio.h>
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_chip_info.h"
+const char *model_info(esp_chip_model_t model)
+{
+    switch (model)
+    {
+        case CHIP_ESP32:
+            return "ESP32";
+        case CHIP_ESP32S2:
+            return "ESP32S2";
+        case CHIP_ESP32S3:
+            return "ESP32S3";
+        case CHIP_ESP32C3:
+            return "ESP32C3";
+        case CHIP_ESP32H2:
+            return "ESP32H2";
+        default:
+            return "Unknown";
     }
-
-    self->setup();
 }
-
-
-void loop() {
-    self->loop();
+void print_chip_info()
+{
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    printf("Chip model %s with %d CPU core(s), WiFi%s%s, ",
+           model_info(chip_info.model),
+           chip_info.cores,
+           (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+           (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+    unsigned major_rev = chip_info.revision / 100;
+    unsigned minor_rev = chip_info.revision % 100;
+    printf("silicon revision v%d.%d\n", major_rev, minor_rev);
+}
+extern "C" void app_main()
+{
+    for (;;)
+    {
+        print_chip_info();
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    };
 }
