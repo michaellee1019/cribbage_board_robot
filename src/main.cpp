@@ -3,6 +3,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_chip_info.h"
+#include "Arduino.h"
+
 const char *model_info(esp_chip_model_t model)
 {
     switch (model)
@@ -34,11 +36,22 @@ void print_chip_info()
     unsigned minor_rev = chip_info.revision % 100;
     printf("silicon revision v%d.%d\n", major_rev, minor_rev);
 }
-extern "C" void app_main()
-{
-    for (;;)
-    {
-        print_chip_info();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    };
+void setup() {
+    pinMode(LED_BUILTIN, OUTPUT);
 }
+
+void loop() {
+    print_chip_info();
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+}
+//extern "C" void app_main()
+//{
+//    for (;;)
+//    {
+//        print_chip_info();
+//        vTaskDelay(1000 / portTICK_PERIOD_MS);
+//    };
+//}
