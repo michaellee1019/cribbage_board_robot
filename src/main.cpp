@@ -5,6 +5,7 @@
 #include "esp_chip_info.h"
 #include "Arduino.h"
 
+// https://tutoduino.fr/en/discover-freertos-on-an-esp32-with-platformio/
 const char *model_info(esp_chip_model_t model)
 {
     switch (model)
@@ -36,22 +37,40 @@ void print_chip_info()
     unsigned minor_rev = chip_info.revision % 100;
     printf("silicon revision v%d.%d\n", major_rev, minor_rev);
 }
-void setup() {
-    pinMode(LED_BUILTIN, OUTPUT);
+
+[[noreturn]]
+void toggleLED(void*){
+    for(;;){ // infinite loop
+        // Turn the LED on
+        digitalWrite(LED_BUILTIN, HIGH);
+        // Pause the task for 500ms
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+        // Turn the LED off
+        digitalWrite(LED_BUILTIN, LOW);
+        // Pause the task again for 500ms
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
 }
 
-void loop() {
-    print_chip_info();
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(100);
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(100);
+
+void setup(){
+    Serial.begin(115200);
+    while(!Serial){
+        // wait for serial port to connect
+    }
+
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    xTaskCreate(
+            toggleLED,    // Function that should be called
+            "Toggle LED",   // Name of the task (for debugging)
+            1000,            // Stack size (bytes)
+            nullptr,            // Parameter to pass
+            1,               // Task priority
+            nullptr             // Task handle
+    );
+
 }
-//extern "C" void app_main()
-//{
-//    for (;;)
-//    {
-//        print_chip_info();
-//        vTaskDelay(1000 / portTICK_PERIOD_MS);
-//    };
-//}
+
+void loop(){
+}
