@@ -8,6 +8,7 @@
 
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <esp_now.h>
 
 
 // https://randomnerdtutorials.com/esp-now-esp32-arduino-ide/
@@ -59,11 +60,6 @@ void serialSetup() {
     Serial.println("Serial setup");
 }
 
-void wifiSetup() {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin();
-}
-
 void buttonSetup() {
     // Initialize the LED and button pins
     pinMode(LED_PIN, OUTPUT);
@@ -81,6 +77,85 @@ void buttonSetup() {
     Serial.println("xTaskCreate'd LEDTask");
 }
 
+
+// REPLACE WITH YOUR RECEIVER MAC Address
+/*
+     // https://apple.stackexchange.com/a/467403
+     ioreg -r -c IOUSBHostDevice -x -l | perl -ne 'BEGIN {print "USB Serial Number,idProduct,idVendor,IOCalloutDevice\n"} /"USB Serial Number" = "(.+)"/ && ($sn=$1); /"idProduct" = (.+)/ && ($ip=$1); /"idVendor" = (.+)/ && ($iv=$1); /"IOCalloutDevice" = "(.+)"/ && print "$sn,$ip,$iv,$1\n"'
+*/
+// /dev/cu.usbmodem14401
+uint8_t senderAddress[] =   {0x30, 0x30, 0xF9, 0x33, 0xE9, 0x78};
+
+// /dev/cu.usbmodem14601
+uint8_t receiverAddress[] = {0x30, 0x30, 0xF9, 0x33, 0xEA, 0x20};
+
+
+// Structure example to send data
+// Must match the receiver structure
+typedef struct struct_message {
+    char a[32];
+    int b;
+    float c;
+    bool d;
+} struct_message;
+
+// Create a struct_message called myData
+struct_message myData;
+
+esp_now_peer_info_t peerInfo;
+
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    Serial.print("\r\nLast Packet Send Status:\t");
+    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+void wifiSetup() {
+    // Set device as a Wi-Fi Station
+    WiFi.mode(WIFI_STA);
+
+    // Init ESP-NOW
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        return;
+    }
+
+    // Once ESPNow is successfully Init, we will register for Send CB to
+    // get the status of Trasnmitted packet
+    esp_now_register_send_cb(OnDataSent);
+
+    // Register peer
+    memcpy(peerInfo.peer_addr, receiverAddress, 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
+
+    // Add peer
+    if (esp_now_add_peer(&peerInfo) != ESP_OK){
+        Serial.println("Failed to add peer");
+        return;
+    }
+}
+
+void wifiloop() {
+    // Set values to send
+    strcpy(myData.a, "THIS IS A CHAR");
+    myData.b = random(1,20);
+    myData.c = 1.2;
+    myData.d = false;
+
+    // Send message via ESP-NOW
+    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myData, sizeof(myData));
+
+    if (result == ESP_OK) {
+        Serial.println("Sent with success");
+    }
+    else {
+        Serial.println("Error sending the data");
+    }
+    delay(2000);
+}
+
+
 void setup() {
     serialSetup();
     wifiSetup();
@@ -92,4 +167,5 @@ void loop() {
     Serial.println(("Loop still running at tick " + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
     readMacAddress();
+    wifiloop();
 }
