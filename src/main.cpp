@@ -42,12 +42,13 @@ void print_chip_info()
 void toggleLED(void*){
     for(;;){ // infinite loop
         // Turn the LED on
-        digitalWrite(LED_BUILTIN, HIGH);
+        digitalWrite(LED_BUILTIN, digitalRead(D1) == HIGH ? HIGH : LOW);
+        digitalWrite(D0, digitalRead(D1) == HIGH ? HIGH : LOW);
         // Pause the task for 500ms
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-        // Turn the LED off
-        digitalWrite(LED_BUILTIN, LOW);
-        // Pause the task again for 500ms
+//        vTaskDelay(500 / portTICK_PERIOD_MS);
+//        // Turn the LED off
+//        digitalWrite(LED_BUILTIN, LOW);
+//        // Pause the task again for 500ms
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
@@ -60,6 +61,8 @@ void setup(){
     }
 
     pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(D1, INPUT); // Button
+    pinMode(D0, OUTPUT); // LED
 
     xTaskCreate(
             toggleLED,    // Function that should be called
