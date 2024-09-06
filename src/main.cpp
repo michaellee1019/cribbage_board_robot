@@ -201,14 +201,14 @@ void setup() {
     serialSetup();
     Serial.println((ROLE " Starting Setup " + std::to_string(xTaskGetTickCount())).c_str());
 
-//#ifdef ROLE_SENDER
-//    senderWifiSetup();
-//#endif
-//#ifdef ROLE_RECEIVER
-//    receiverWifiSetup();
-//#endif
+#ifdef ROLE_SENDER
+    senderWifiSetup();
+#endif
+#ifdef ROLE_RECEIVER
+    receiverWifiSetup();
+#endif
 
-//    buttonSetup();
+    buttonSetup();
     Serial.println((ROLE " Finished Setup " + std::to_string(xTaskGetTickCount())).c_str());
 }
 
@@ -216,10 +216,10 @@ void setup() {
 
 void loop() {
     // No need to do anything in the loop since the task and ISR are handling everything
-//    readMacAddress();
+    readMacAddress();
     Serial.println((ROLE " @ Tick" + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
-//#ifdef ROLE_SENDER
-//    senderWifiLoop();
-//#endif
+#ifdef ROLE_SENDER
+    senderWifiLoop();
+#endif
 }
