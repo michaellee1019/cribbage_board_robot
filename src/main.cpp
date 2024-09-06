@@ -99,8 +99,8 @@ typedef struct struct_message {
     bool d;
 } struct_message;
 
-// Create a struct_message called myData
-struct_message myData;
+// Create a struct_message called toSend
+struct_message toSend;
 
 esp_now_peer_info_t peerInfo;
 
@@ -110,7 +110,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
-void wifiSetup() {
+void senderWifiSetup() {
     // Set device as a Wi-Fi Station
     WiFi.mode(WIFI_STA);
 
@@ -136,15 +136,15 @@ void wifiSetup() {
     }
 }
 
-void wifiloop() {
+void senderWifiLoop() {
     // Set values to send
-    strcpy(myData.a, "THIS IS A CHAR");
-    myData.b = random(1,20);
-    myData.c = 1.2;
-    myData.d = false;
+    strcpy(toSend.a, "THIS IS A CHAR");
+    toSend.b = random(1, 20);
+    toSend.c = 1.2;
+    toSend.d = false;
 
     // Send message via ESP-NOW
-    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &myData, sizeof(myData));
+    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &toSend, sizeof(toSend));
 
     if (result == ESP_OK) {
         Serial.println("Sent with success");
@@ -158,7 +158,10 @@ void wifiloop() {
 
 void setup() {
     serialSetup();
-    wifiSetup();
+
+#ifdef ROLE_SENDER
+    senderWifiSetup();
+#endif
     buttonSetup();
 }
 
@@ -167,5 +170,7 @@ void loop() {
     Serial.println(("Loop still running at tick " + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
     readMacAddress();
-    wifiloop();
+#ifdef ROLE_RECEIVER
+    senderWifiLoop();
+#endif
 }
