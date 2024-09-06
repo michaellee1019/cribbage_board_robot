@@ -169,17 +169,8 @@ struct_message receivedData;
 // callback function that will be executed when data is received
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     memcpy(&receivedData, incomingData, sizeof(receivedData));
-    Serial.print("Bytes received: ");
-    Serial.println(len);
-    Serial.print("Char: ");
-    Serial.println(receivedData.a);
-    Serial.print("Int: b=");
+    Serial.print("Received: b=");
     Serial.println(receivedData.b);
-    Serial.print("Float: ");
-    Serial.println(receivedData.c);
-    Serial.print("Bool: ");
-    Serial.println(receivedData.d);
-    Serial.println();
 }
 
 void receiverWifiSetup() {
@@ -216,7 +207,7 @@ void setup() {
 
 void loop() {
     // No need to do anything in the loop since the task and ISR are handling everything
-    readMacAddress();
+//    readMacAddress();
     Serial.println((ROLE " @ Tick" + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
 #ifdef ROLE_SENDER
