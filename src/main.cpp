@@ -1,4 +1,5 @@
-#include <stdio.h>
+#include <cstdio>
+#include <string>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -38,42 +39,59 @@ void print_chip_info()
     printf("silicon revision v%d.%d\n", major_rev, minor_rev);
 }
 
-[[noreturn]]
-void toggleLED(void*){
-    for(;;){ // infinite loop
-        // Turn the LED on
-        digitalWrite(LED_BUILTIN, digitalRead(D1) == HIGH ? HIGH : LOW);
-        digitalWrite(D0, digitalRead(D1) == HIGH ? HIGH : LOW);
-        // Pause the task for 500ms
-//        vTaskDelay(500 / portTICK_PERIOD_MS);
-//        // Turn the LED off
-//        digitalWrite(LED_BUILTIN, LOW);
-//        // Pause the task again for 500ms
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+#define LED_PIN D0       // Define the pin for the LED
+#define BUTTON_PIN D1    // Define the pin for the button
+
+QueueHandle_t buttonQueue;  // Queue to communicate button press/release states
+
+void IRAM_ATTR buttonISR() {
+    // ISR is triggered on button press or release (change)
+    bool buttonState = digitalRead(BUTTON_PIN);
+    xQueueSendFromISR(buttonQueue, &buttonState, NULL);  // Send button state to the queue
+}
+
+void LEDTask(void *pvParameters) {
+    bool buttonState;
+
+    while (1) {
+        // Wait for the button state to be sent from the ISR
+        Serial.println("Check xQueueReceive'd");
+        if (xQueueReceive(buttonQueue, &buttonState, portMAX_DELAY)) {
+            digitalWrite(LED_PIN, buttonState ? HIGH : LOW);  // Set LED state
+            digitalWrite(LED_BUILTIN, buttonState ? HIGH : LOW);  // Set LED state
+        }
+        Serial.print("End xQueueReceive'd. buttonState=");
+        Serial.println(buttonState);
     }
 }
 
-
-void setup(){
+void setup() {
     Serial.begin(115200);
-    while(!Serial){
+    Serial.println("Serial setup begin.");
+    while (!Serial) {
         // wait for serial port to connect
     }
-
+    Serial.println("Serial setup");
+}
+void otherSetup() {
+    // Initialize the LED and button pins
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(BUTTON_PIN, INPUT);
     pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(D1, INPUT); // Button
-    pinMode(D0, OUTPUT); // LED
 
-    xTaskCreate(
-            toggleLED,    // Function that should be called
-            "Toggle LED",   // Name of the task (for debugging)
-            1000,            // Stack size (bytes)
-            nullptr,            // Parameter to pass
-            1,               // Task priority
-            nullptr             // Task handle
-    );
+    // Create a FreeRTOS queue with space for 10 boolean entries
+    buttonQueue = xQueueCreate(10, sizeof(bool));
 
+    // Attach the ISR to the button pin
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, CHANGE);
+
+    // Create the LED task
+    xTaskCreate(LEDTask, "LEDTask", 1024, NULL, 1, NULL);
+    Serial.println("xTaskCreate'd LEDTask");
 }
 
-void loop(){
+void loop() {
+    // No need to do anything in the loop since the task and ISR are handling everything
+    Serial.println(("Loop still running at tick " + std::to_string(xTaskGetTickCount())).c_str());
+    delay(1000);
 }
