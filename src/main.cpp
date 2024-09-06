@@ -10,6 +10,13 @@
 #include <esp_wifi.h>
 #include <esp_now.h>
 
+#ifdef ROLE_SENDER
+#define ROLE "SENDER"
+#endif
+
+#ifdef ROLE_RECEIVER
+#define ROLE "RECEIVER"
+#endif
 
 // https://randomnerdtutorials.com/esp-now-esp32-arduino-ide/
 
@@ -53,11 +60,11 @@ void LEDTask(void *pvParameters) {
 
 void serialSetup() {
     Serial.begin(115200);
-    Serial.println("Serial setup begin.");
+    Serial.println("Serial receiverSetup begin.");
     while (!Serial) {
         // wait for serial port to connect
     }
-    Serial.println("Serial setup");
+    Serial.println("Serial receiverSetup");
 }
 
 void buttonSetup() {
@@ -106,8 +113,8 @@ esp_now_peer_info_t peerInfo;
 
 // callback when data is sent
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    Serial.print("\r\nLast Packet Send Status:\t");
-    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+    Serial.print("OnSend:\t");
+    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
 
 void senderWifiSetup() {
@@ -147,7 +154,7 @@ void senderWifiLoop() {
     esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &toSend, sizeof(toSend));
 
     if (result == ESP_OK) {
-        Serial.println("Sent with success");
+        Serial.println((std::string{"Sent with success. b="} + std::to_string(toSend.b)).c_str());
     }
     else {
         Serial.println("Error sending the data");
@@ -156,21 +163,63 @@ void senderWifiLoop() {
 }
 
 
+// Create a struct_message called receivedData
+struct_message receivedData;
+
+// callback function that will be executed when data is received
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+    memcpy(&receivedData, incomingData, sizeof(receivedData));
+    Serial.print("Bytes received: ");
+    Serial.println(len);
+    Serial.print("Char: ");
+    Serial.println(receivedData.a);
+    Serial.print("Int: b=");
+    Serial.println(receivedData.b);
+    Serial.print("Float: ");
+    Serial.println(receivedData.c);
+    Serial.print("Bool: ");
+    Serial.println(receivedData.d);
+    Serial.println();
+}
+
+void receiverWifiSetup() {
+    // Set device as a Wi-Fi Station
+    WiFi.mode(WIFI_STA);
+
+    // Init ESP-NOW
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        return;
+    }
+
+    // Once ESPNow is successfully Init, we will register for recv CB to
+    // get recv packer info
+    esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+}
+
 void setup() {
     serialSetup();
+    Serial.println((ROLE " Starting Setup " + std::to_string(xTaskGetTickCount())).c_str());
 
-#ifdef ROLE_SENDER
-    senderWifiSetup();
-#endif
-    buttonSetup();
+//#ifdef ROLE_SENDER
+//    senderWifiSetup();
+//#endif
+//#ifdef ROLE_RECEIVER
+//    receiverWifiSetup();
+//#endif
+
+//    buttonSetup();
+    Serial.println((ROLE " Finished Setup " + std::to_string(xTaskGetTickCount())).c_str());
 }
+
+
 
 void loop() {
     // No need to do anything in the loop since the task and ISR are handling everything
-    Serial.println(("Loop still running at tick " + std::to_string(xTaskGetTickCount())).c_str());
+//    readMacAddress();
+    Serial.println((ROLE " @ Tick" + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
-    readMacAddress();
-#ifdef ROLE_RECEIVER
-    senderWifiLoop();
-#endif
+//#ifdef ROLE_SENDER
+//    senderWifiLoop();
+//#endif
 }
