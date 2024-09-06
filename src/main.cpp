@@ -6,6 +6,31 @@
 #include "esp_chip_info.h"
 #include "Arduino.h"
 
+
+// https://randomnerdtutorials.com/esp-now-esp32-arduino-ide/
+
+/*
+  Rui Santos & Sara Santos - Random Nerd Tutorials
+  Complete project details at https://RandomNerdTutorials.com/get-change-esp32-esp8266-mac-address-arduino/
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+*/
+#include <WiFi.h>
+#include <esp_wifi.h>
+
+void readMacAddress(){
+    uint8_t baseMac[6];
+    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac);
+    if (ret == ESP_OK) {
+        Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                      baseMac[0], baseMac[1], baseMac[2],
+                      baseMac[3], baseMac[4], baseMac[5]);
+    } else {
+        Serial.println("Failed to read MAC address");
+    }
+}
+
+
 // https://tutoduino.fr/en/discover-freertos-on-an-esp32-with-platformio/
 const char *model_info(esp_chip_model_t model)
 {
@@ -72,8 +97,10 @@ void setup() {
         // wait for serial port to connect
     }
     Serial.println("Serial setup");
-}
-void otherSetup() {
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+
     // Initialize the LED and button pins
     pinMode(LED_PIN, OUTPUT);
     pinMode(BUTTON_PIN, INPUT);
@@ -94,4 +121,5 @@ void loop() {
     // No need to do anything in the loop since the task and ISR are handling everything
     Serial.println(("Loop still running at tick " + std::to_string(xTaskGetTickCount())).c_str());
     delay(1000);
+    readMacAddress();
 }
