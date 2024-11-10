@@ -1,215 +1,114 @@
-#include <cstdio>
-#include <string>
-#include <iosfwd>
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_chip_info.h"
-#include "Arduino.h"
+#include <Arduino.h>
 
-#include <WiFi.h>
-#include <esp_wifi.h>
-#include <esp_now.h>
-#include <iostream>
+// define two tasks for Blink & AnalogRead
+void TaskBlink( void *pvParameters );
+void TaskAnalogRead( void *pvParameters );
 
-#ifdef ROLE_SENDER
-#define ROLE "SENDER"
-#endif
-
-#ifdef ROLE_RECEIVER
-#define ROLE "RECEIVER"
-#endif
-
-static const char* TAG = "M";
-
-// https://randomnerdtutorials.com/esp-now-esp32-arduino-ide/
-
-void readMacAddress(){
-    uint8_t baseMac[6];
-    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac);
-    if (ret == ESP_OK) {
-        Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-                      baseMac[0], baseMac[1], baseMac[2],
-                      baseMac[3], baseMac[4], baseMac[5]);
-    } else {
-        Serial.println("Failed to read MAC address");
-    }
-}
-
-#define LED_PIN D0       // Define the pin for the LED
-#define BUTTON_PIN D1    // Define the pin for the button
-
-QueueHandle_t buttonQueue;  // Queue to communicate button press/release states
-
-void IRAM_ATTR buttonISR() {
-    // ISR is triggered on button press or release (change)
-    bool buttonState = digitalRead(BUTTON_PIN);
-    xQueueSendFromISR(buttonQueue, &buttonState, NULL);  // Send button state to the queue
-}
-
-void LEDTask(void *pvParameters) {
-    bool buttonState;
-
-    while (1) {
-        // Wait for the button state to be sent from the ISR
-        Serial.println("Check xQueueReceive'd");
-        if (xQueueReceive(buttonQueue, &buttonState, portMAX_DELAY)) {
-            digitalWrite(LED_PIN, buttonState ? HIGH : LOW);  // Set LED state
-            digitalWrite(LED_BUILTIN, buttonState ? HIGH : LOW);  // Set LED state
-        }
-        Serial.print("End xQueueReceive'd. buttonState=");
-        Serial.println(buttonState);
-    }
-}
-
-void serialSetup() {
-    Serial.begin(115200);
-    while (!Serial) {
-        delay(10);
-    }
-    delay(1000);
-    std::cout << "Serial receiverSetup" << std::endl;
-}
-
-void buttonSetup() {
-    // Initialize the LED and button pins
-    pinMode(LED_PIN, OUTPUT);
-    pinMode(BUTTON_PIN, INPUT);
-    pinMode(LED_BUILTIN, OUTPUT);
-
-    // Create a FreeRTOS queue with space for 10 boolean entries
-    buttonQueue = xQueueCreate(10, sizeof(bool));
-
-    // Attach the ISR to the button pin
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, CHANGE);
-
-    // Create the LED task
-    xTaskCreate(LEDTask, "LEDTask", 1024, NULL, 1, NULL);
-    Serial.println("xTaskCreate'd LEDTask");
-}
-
-
-// REPLACE WITH YOUR RECEIVER MAC Address
-/*
-     // https://apple.stackexchange.com/a/467403
-     ioreg -r -c IOUSBHostDevice -x -l | perl -ne 'BEGIN {print "USB Serial Number,idProduct,idVendor,IOCalloutDevice\n"} /"USB Serial Number" = "(.+)"/ && ($sn=$1); /"idProduct" = (.+)/ && ($ip=$1); /"idVendor" = (.+)/ && ($iv=$1); /"IOCalloutDevice" = "(.+)"/ && print "$sn,$ip,$iv,$1\n"'
-*/
-// /dev/cu.usbmodem14401
-uint8_t senderAddress[] =   {0x30, 0x30, 0xF9, 0x33, 0xE9, 0x78};
-
-// /dev/cu.usbmodem14601
-uint8_t receiverAddress[] = {0x30, 0x30, 0xF9, 0x33, 0xEA, 0x20};
-
-
-// Structure example to send data
-// Must match the receiver structure
-typedef struct struct_message {
-    char a[32];
-    int b;
-    float c;
-    bool d;
-} struct_message;
-
-// Create a struct_message called toSend
-struct_message toSend;
-
-esp_now_peer_info_t peerInfo;
-
-// callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    std::cout << TAG
-              << "OnSend:" << (status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail")
-              << std::endl;
-}
-
-void senderWifiSetup() {
-    // Set device as a Wi-Fi Station
-    WiFi.mode(WIFI_STA);
-
-    std::cout << TAG << "Wifi Mode Set" << WIFI_STA << std::endl;
-    // Init ESP-NOW
-    if (const auto out = esp_now_init(); out != ESP_OK) {
-        std::cout << TAG << "Error initializing ESP-NOW" << out << std::endl;
-        return;
-    }
-
-    // Once ESPNow is successfully Init, we will register for Send CB to
-    // get the status of Trasnmitted packet
-    esp_now_register_send_cb(OnDataSent);
-
-    // Register peer
-    memcpy(peerInfo.peer_addr, receiverAddress, 6);
-    peerInfo.channel = 0;
-    peerInfo.encrypt = false;
-
-    // Add peer
-    if (esp_now_add_peer(&peerInfo) != ESP_OK){
-        std::cout << "Failed to add peer" << std::endl;
-        return;
-    }
-}
-
-void senderWifiLoop() {
-    // Set values to send
-    strcpy(toSend.a, "THIS IS A CHAR");
-    toSend.b = random(1, 20);
-    toSend.c = 1.2;
-    toSend.d = false;
-
-    // Send message via ESP-NOW
-    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &toSend, sizeof(toSend));
-    std::cout << TAG << "Sent result=" << result << ",b=" << toSend.b << std::endl;
-    delay(100);
-}
-
-
-// Create a struct_message called receivedData
-struct_message receivedData;
-
-// callback function that will be executed when data is received
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-    memcpy(&receivedData, incomingData, sizeof(receivedData));
-    std::cout << TAG << "Received b=" << receivedData.b << std::endl;
-}
-
-void receiverWifiSetup() {
-    // Set device as a Wi-Fi Station
-    WiFi.mode(WIFI_STA);
-
-    // Init ESP-NOW
-    if (esp_now_init() != ESP_OK) {
-        Serial.println("Error initializing ESP-NOW");
-        return;
-    }
-
-    // Once ESPNow is successfully Init, we will register for recv CB to
-    // get recv packer info
-    esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
-}
-
+// the setup function runs once when you press reset or power the board
 void setup() {
-    serialSetup();
-    std::cout << ROLE << "Starting Setup @" << xTaskGetTickCount() << std::endl;
 
-#ifdef ROLE_SENDER
-    senderWifiSetup();
-#endif
-#ifdef ROLE_RECEIVER
-    receiverWifiSetup();
-#endif
+  // initialize serial communication at 9600 bits per second:
+  Serial.begin(9600);
 
-    buttonSetup();
-    std::cout << ROLE << "Finished Setup @" << xTaskGetTickCount() << std::endl;
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and other 32u4 based boards.
+  }
+  Serial.println("setup");
+
+  // Now set up two tasks to run independently.
+  xTaskCreatePinnedToCore(
+    TaskBlink
+    ,  "Blink"   // A name just for humans
+    ,  2048  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  NULL
+    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+    ,  NULL
+    , 1); // You don't even have a core
+
+  xTaskCreatePinnedToCore(
+    TaskAnalogRead
+    ,  "AnalogRead"
+    ,  2048  // Stack size
+    ,  NULL
+    ,  1  // Priority
+    ,  NULL
+    , 1); // You don't even have a core
+
+    Serial.println("tasks started");
+
+  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
+void loop()
+{
+      Serial.println("looped");
 
-//int its = 0;
-void loop() {
-//    its++;
-    // No need to do anything in the loop since the task and ISR are handling everything
-//    readMacAddress();
-//    std::cout << ROLE << its << "@" << xTaskGetTickCount() << std::endl;
-#ifdef ROLE_SENDER
-    senderWifiLoop();
-#endif
+  // Empty. Things are done in Tasks.
+}
+
+/*--------------------------------------------------*/
+/*---------------------- Tasks ---------------------*/
+/*--------------------------------------------------*/
+
+void TaskBlink(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+/*
+  Blink
+  Turns on an LED on for one second, then off for one second, repeatedly.
+
+  Most Arduinos have an on-board LED you can control. On the UNO, LEONARDO, MEGA, and ZERO
+  it is attached to digital pin 13, on MKR1000 on pin 6. LED_BUILTIN takes care
+  of use the correct LED pin whatever is the board used.
+
+  The MICRO does not have a LED_BUILTIN available. For the MICRO board please substitute
+  the LED_BUILTIN definition with either LED_BUILTIN_RX or LED_BUILTIN_TX.
+  e.g. pinMode(LED_BUILTIN_RX, OUTPUT); etc.
+
+  If you want to know what pin the on-board LED is connected to on your Arduino model, check
+  the Technical Specs of your board  at https://www.arduino.cc/en/Main/Products
+
+  This example code is in the public domain.
+
+  modified 8 May 2014
+  by Scott Fitzgerald
+
+  modified 2 Sep 2016
+  by Arturo Guadalupi
+*/
+
+  // initialize digital LED_BUILTIN on pin 13 as an output.
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  for (;;) // A Task shall never return or exit.
+  {
+    digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+    digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
+    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+  }
+}
+
+void TaskAnalogRead(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+/*
+  AnalogReadSerial
+  Reads an analog input on pin 0, prints the result to the serial monitor.
+  Graphical representation is available using serial plotter (Tools > Serial Plotter menu)
+  Attach the center pin of a potentiometer to pin A0, and the outside pins to +5V and ground.
+
+  This example code is in the public domain.
+*/
+
+  for (;;)
+  {
+    // read the input on analog pin 0:
+    int sensorValue = analogRead(A0);
+    // print out the value you read:
+    Serial.println(sensorValue);
+    vTaskDelay(1);  // one tick delay (15ms) in between reads for stability
+  }
 }
