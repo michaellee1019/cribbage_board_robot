@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <iosfwd>
+#include <iostream>
 
 // define two tasks for Blink & AnalogRead
 void TaskBlink( void *pvParameters );
@@ -79,14 +81,18 @@ void TaskBlink(void *pvParameters)  // This is a task.
   // initialize digital LED_BUILTIN on pin 13 as an output.
 //  pinMode(LED_BUILTIN, OUTPUT);
 
+size_t count = 0;
+
   for (;;) // A Task shall never return or exit.
   {
+      ++count;
 //    digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    Serial.println("BLINK HIGH");
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+    std::cout << "Count " << count << std::endl;
+    auto delay = 1000 / portTICK_PERIOD_MS;
+    vTaskDelay( delay ); // wait for one second
       Serial.println("BLINK LOW");
 //    digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+    vTaskDelay( delay ); // wait for one second
   }
 }
 
