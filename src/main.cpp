@@ -1,97 +1,108 @@
-/*
-  Rui Santos & Sara Santos - Random Nerd Tutorials
-  Complete project details at https://RandomNerdTutorials.com/esp-now-esp32-arduino-ide/
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
-  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
+#include <Arduino.h>
 #include <WiFi.h>
-#include <esp_wifi.h>
 #include <esp_now.h>
+#include <rom/rtc.h>
+#include <HardwareSerial.h>
+#include "utils.hpp"
+
+const int MODULE_SIZE = 2;
+RTC_DATA_ATTR static int rebootCount = -1;
 
 
-void readMacAddress(){
-    uint8_t baseMac[6];
-    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac);
-    if (ret == ESP_OK) {
-        Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-                      baseMac[0], baseMac[1], baseMac[2],
-                      baseMac[3], baseMac[4], baseMac[5]);
-    } else {
-        Serial.println("Failed to read MAC address");
-    }
-}
+/* function headers */
+void appTask(void * parameter);
+void initEspnow();
 
 
-// REPLACE WITH YOUR RECEIVER MAC Address
-uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
-// Structure example to send data
-// Must match the receiver structure
-typedef struct struct_message {
-  char a[32];
-  int b;
-  float c;
-  bool d;
-} struct_message;
-
-// Create a struct_message called myData
-struct_message myData;
-
-esp_now_peer_info_t peerInfo;
-
-// callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-}
-
+/* espnow */
+static char sta_mac[18];
+static char softap_mac[18];
+uint8_t peerCount = 0;
+uint32_t msAfterESPNowRecv = 0;
+uint32_t counter = 0;
 
 void setup() {
-  // Init Serial Monitor
+  /* Stack size in bytes. */ /* Parameter passed as input of the task */ /* Priority of the task. */
+  // xTaskCreate(appTask, "appTask", 10000, NULL, 2, NULL);
+
+  rebootCount++;
   Serial.begin(115200);
+    while (!Serial) {
+        // Serial.print("!Serial");
+    }
+    Serial.println("Serial.begin()!");
 
-  // Set device as a Wi-Fi Station
-  WiFi.mode(WIFI_STA);
+  print_reset_reason(rtc_get_reset_reason(0));
+  verbose_print_reset_reason(rtc_get_reset_reason(0));
 
-  // Init ESP-NOW
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
+  WiFi.disconnect();
+  initEspnow();
+}
+
+esp_now_peer_info_t slave;
+
+void send_cb(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    // sentCnt++;
+    Serial.println("SENT!");
+};
+
+void recv_cb(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+    Serial.println("RECV!");
+    memcpy(&slave.peer_addr, mac_addr, 6);
+    esp_err_t addStatus = esp_now_add_peer(&slave);
+    if (addStatus == ESP_OK) {
+        peerCount++;
+        printf("\n=====================");
+        printf("\nADD PEER status=0x%02x", ESP_OK);
+        printf("\n=====================\n");
+    }
+    else {
+        printf("\n=====================");
+        printf("\nADD PEER [FAILED] status=0x%02x", addStatus - ESP_ERR_ESPNOW_BASE);
+        printf("\n=====================\n");
+    }
+
+    uint8_t time = 1;
+    esp_err_t result = esp_now_send(mac_addr, &time, 1);
+    if (result == ESP_OK)   {
+        Serial.println("esp_now_send [ESP_OK]");
+    }
+    counter++;
+    msAfterESPNowRecv = millis();
+}
+
+void registerCallbacks() {
+  esp_now_register_send_cb(send_cb);
+  esp_now_register_recv_cb(recv_cb);
+}
+void initEspnow() {
+  bzero(&slave, sizeof(slave));
+  WiFi.mode(WIFI_AP_STA);
+  delay(10);
+  strcpy(sta_mac, WiFi.macAddress().c_str());
+  strcpy(softap_mac, WiFi.softAPmacAddress().c_str());
+  Serial.printf("STA MAC: %s\r\n", sta_mac);
+  Serial.printf(" AP MAC: %s\r\n", softap_mac);
+  if (esp_now_init() == ESP_OK) {
+    Serial.printf("ESPNow Init Success\n");
+    registerCallbacks();
   }
-
-  // Once ESPNow is successfully Init, we will register for Send CB to
-  // get the status of Trasnmitted packet
-  esp_now_register_send_cb(OnDataSent);
-
-  // Register peer
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
-
-  // Add peer
-  if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
-    return;
+  else {
+    Serial.printf("ESPNow Init Failed\n");
+    ESP.restart();
   }
 }
 
 void loop() {
-  // Set values to send
-  strcpy(myData.a, "THIS IS A CHAR");
-  myData.b = random(1,20);
-  myData.c = 1.2;
-  myData.d = false;
+  yield();
+}
 
-    readMacAddress();
-
-  // Send message via ESP-NOW
-  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
-
-  if (result == ESP_OK) {
-    Serial.println("Sent with success");
-  }
-  else {
-    Serial.println("Error sending the data");
-  }
-  delay(2000);
+void appTask(void * parameter)
+{
+    // rtc->setup();
+    // pinMode(EXT_WDT_PIN, OUTPUT);
+    while (1) {
+      // rtc->loop();
+      // lcd->loop();
+    }
 }
