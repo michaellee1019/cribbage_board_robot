@@ -1,114 +1,97 @@
-#include <Arduino.h>
+/*
+  Rui Santos & Sara Santos - Random Nerd Tutorials
+  Complete project details at https://RandomNerdTutorials.com/esp-now-esp32-arduino-ide/
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+*/
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_now.h>
 
-// define two tasks for Blink & AnalogRead
-void TaskBlink( void *pvParameters );
-void TaskAnalogRead( void *pvParameters );
 
-// the setup function runs once when you press reset or power the board
+void readMacAddress(){
+    uint8_t baseMac[6];
+    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac);
+    if (ret == ESP_OK) {
+        Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                      baseMac[0], baseMac[1], baseMac[2],
+                      baseMac[3], baseMac[4], baseMac[5]);
+    } else {
+        Serial.println("Failed to read MAC address");
+    }
+}
+
+
+// REPLACE WITH YOUR RECEIVER MAC Address
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+// Structure example to send data
+// Must match the receiver structure
+typedef struct struct_message {
+  char a[32];
+  int b;
+  float c;
+  bool d;
+} struct_message;
+
+// Create a struct_message called myData
+struct_message myData;
+
+esp_now_peer_info_t peerInfo;
+
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+
 void setup() {
+  // Init Serial Monitor
+  Serial.begin(115200);
 
-  // initialize serial communication at 9600 bits per second:
-  Serial.begin(9600);
+  // Set device as a Wi-Fi Station
+  WiFi.mode(WIFI_STA);
 
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and other 32u4 based boards.
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
   }
-  Serial.println("setup");
 
-  // Now set up two tasks to run independently.
-  xTaskCreatePinnedToCore(
-    TaskBlink
-    ,  "Blink"   // A name just for humans
-    ,  2048  // This stack size can be checked & adjusted by reading the Stack Highwater
-    ,  NULL
-    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL
-    , 1); // You don't even have a core
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Trasnmitted packet
+  esp_now_register_send_cb(OnDataSent);
 
-  xTaskCreatePinnedToCore(
-    TaskAnalogRead
-    ,  "AnalogRead"
-    ,  2048  // Stack size
-    ,  NULL
-    ,  1  // Priority
-    ,  NULL
-    , 1); // You don't even have a core
+  // Register peer
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
 
-    Serial.println("tasks started");
-
-  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
-}
-
-void loop()
-{
-      Serial.println("looped");
-
-  // Empty. Things are done in Tasks.
-}
-
-/*--------------------------------------------------*/
-/*---------------------- Tasks ---------------------*/
-/*--------------------------------------------------*/
-
-void TaskBlink(void *pvParameters)  // This is a task.
-{
-  (void) pvParameters;
-
-/*
-  Blink
-  Turns on an LED on for one second, then off for one second, repeatedly.
-
-  Most Arduinos have an on-board LED you can control. On the UNO, LEONARDO, MEGA, and ZERO
-  it is attached to digital pin 13, on MKR1000 on pin 6. LED_BUILTIN takes care
-  of use the correct LED pin whatever is the board used.
-
-  The MICRO does not have a LED_BUILTIN available. For the MICRO board please substitute
-  the LED_BUILTIN definition with either LED_BUILTIN_RX or LED_BUILTIN_TX.
-  e.g. pinMode(LED_BUILTIN_RX, OUTPUT); etc.
-
-  If you want to know what pin the on-board LED is connected to on your Arduino model, check
-  the Technical Specs of your board  at https://www.arduino.cc/en/Main/Products
-
-  This example code is in the public domain.
-
-  modified 8 May 2014
-  by Scott Fitzgerald
-
-  modified 2 Sep 2016
-  by Arturo Guadalupi
-*/
-
-  // initialize digital LED_BUILTIN on pin 13 as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  for (;;) // A Task shall never return or exit.
-  {
-    digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
-    digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+  // Add peer
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
   }
 }
 
-void TaskAnalogRead(void *pvParameters)  // This is a task.
-{
-  (void) pvParameters;
+void loop() {
+  // Set values to send
+  strcpy(myData.a, "THIS IS A CHAR");
+  myData.b = random(1,20);
+  myData.c = 1.2;
+  myData.d = false;
 
-/*
-  AnalogReadSerial
-  Reads an analog input on pin 0, prints the result to the serial monitor.
-  Graphical representation is available using serial plotter (Tools > Serial Plotter menu)
-  Attach the center pin of a potentiometer to pin A0, and the outside pins to +5V and ground.
+    readMacAddress();
 
-  This example code is in the public domain.
-*/
+  // Send message via ESP-NOW
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
 
-  for (;;)
-  {
-    // read the input on analog pin 0:
-    int sensorValue = analogRead(A0);
-    // print out the value you read:
-    Serial.println(sensorValue);
-    vTaskDelay(1);  // one tick delay (15ms) in between reads for stability
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
   }
+  else {
+    Serial.println("Error sending the data");
+  }
+  delay(2000);
 }
