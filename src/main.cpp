@@ -151,6 +151,8 @@ void setup() {
 void loop()
 {
   // Empty. Things are done in Tasks.
+    Serial.println("loop");
+    sleep(1);
 }
 
 /*--------------------------------------------------*/
