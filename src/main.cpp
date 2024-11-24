@@ -48,14 +48,17 @@ void setup() {
     }
     esp_now_register_recv_cb(onDataRecv); // Register receive callback
 
-    // Register broadcast peer
+    // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
     esp_now_peer_info_t peerInfo = {};
     memset(&peerInfo, 0, sizeof(peerInfo));
-    peerInfo.channel = 1;  // Same channel as WiFi
+    peerInfo.channel = 1;  // Must match your channel
     peerInfo.encrypt = false;
-    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add peer");
-        return;
+    uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+    if (!esp_now_is_peer_exist(broadcastAddress)) {
+        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+            Serial.println("Failed to add broadcast peer");
+        }
     }
 
     // Create FreeRTOS task for sending messages
