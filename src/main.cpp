@@ -47,6 +47,14 @@ void setup() {
 
     WiFi.disconnect();
     initEspnow();
+
+    xTaskCreatePinnedToCore(
+      appTask
+      ,  "AppTask"   // A name just for humans
+      ,  2048  // This stack size can be checked & adjusted by reading the Stack Highwater
+      ,  NULL
+      ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+      ,  NULL , 1); // You don't even have a core
 }
 
 esp_now_peer_info_t slave;
@@ -126,14 +134,31 @@ void initEspnow() {
 }
 
 
+void appTask(void* pvParameters) {
+    (void)pvParameters;
 
-void appTask(void* parameter) {
-    // rtc->setup();
-    // pinMode(EXT_WDT_PIN, OUTPUT);
-    while (1) {
-        yield();
-        // rtc->loop();
-        // lcd->loop();
+    // initialize digital LED_BUILTIN on pin 13 as an output.
+    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(4, INPUT_PULLUP);  // Back
+    pinMode(3, INPUT_PULLUP);  // Next
+
+    pinMode(1, OUTPUT);  // LED Top
+    pinMode(2, OUTPUT);  // LED bottom
+
+    int32_t iters = 0;
+    for (;;)  // A Task shall never return or exit.
+    {
+            esp_err_t result = esp_now_send(mac_addr, &time, 1);
+
+
+        digitalWrite(1, HIGH);  // turn the LED on (HIGH is the voltage level)
+        digitalWrite(2, LOW);
+        Serial.println("1HI 2LO");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  // wait for one second
+        digitalWrite(2, HIGH);                  // turn the LED on (HIGH is the voltage level)
+        digitalWrite(1, LOW);
+        Serial.println("1LO 2HI");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  // wait for one second
     }
 }
 
