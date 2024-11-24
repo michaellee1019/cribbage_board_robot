@@ -1,6 +1,6 @@
+#include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
-#include <WiFi.h>
 
 // Counter to send
 volatile int counter = 0;
@@ -9,21 +9,27 @@ volatile int counter = 0;
 TaskHandle_t sendTaskHandle;
 
 // Callback for received data
-void onDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
     char macStr[18];
-    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-             mac_addr[0], mac_addr[1], mac_addr[2],
-             mac_addr[3], mac_addr[4], mac_addr[5]);
-    Serial.printf("Received message from %s: %d\n", macStr, *(int *)data);
+    snprintf(macStr,
+             sizeof(macStr),
+             "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac_addr[0],
+             mac_addr[1],
+             mac_addr[2],
+             mac_addr[3],
+             mac_addr[4],
+             mac_addr[5]);
+    Serial.printf("Received message from %s: %d\n", macStr, *(int*)data);
 }
 
 // Function to send broadcast messages
-void sendBroadcast(void *param) {
+void sendBroadcast(void* param) {
     for (;;) {
         counter++;
-        esp_now_send(NULL, (uint8_t *)&counter, sizeof(counter)); // NULL sends to all peers
+        esp_now_send(NULL, (uint8_t*)&counter, sizeof(counter));  // NULL sends to all peers
         Serial.printf("Sent counter: %d\n", counter);
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Send every 1 second
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Send every 1 second
     }
 }
 
@@ -41,12 +47,18 @@ void setup() {
         Serial.println("Failed to set channel");
     }
 
+    // Get the MAC address of the ESP32
+    String macAddress = WiFi.macAddress();
+
+    // Print the MAC address to the Serial Monitor
+    Serial.println("ESP32 MAC Address: " + macAddress);
+
     // Initialize ESP-NOW
     if (esp_now_init() != ESP_OK) {
         Serial.println("ESP-NOW initialization failed");
         return;
     }
-    esp_now_register_recv_cb(onDataRecv); // Register receive callback
+    esp_now_register_recv_cb(onDataRecv);  // Register receive callback
 
     // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
     esp_now_peer_info_t peerInfo = {};
