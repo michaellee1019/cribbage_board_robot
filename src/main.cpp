@@ -21,6 +21,14 @@ uint8_t peerCount = 0;
 uint32_t msAfterESPNowRecv = 0;
 uint32_t counter = 0;
 
+
+
+uint32_t counter2 = 0;
+void loop() {
+    Serial.printf("loop %i", counter2++);
+    sleep(1);
+}
+
 void setup() {
     /* Stack size in bytes. */ /* Parameter passed as input of the task */ /* Priority of the task.
                                                                             */
@@ -31,6 +39,7 @@ void setup() {
     while (!Serial) {
         // Serial.print("!Serial");
     }
+    sleep(3);
     Serial.println("Serial.begin()!");
 
     print_reset_reason(rtc_get_reset_reason(0));
@@ -115,6 +124,8 @@ void initEspnow() {
         ESP.restart();
     }
 }
+
+
 
 void appTask(void* parameter) {
     // rtc->setup();
