@@ -1,3 +1,7 @@
+Check out this for esp32 / espnow inspriation:
+
+- https://github.com/statico/imposter-attack-2024 via https://blog.langworth.com/imposter-attack via https://news.ycombinator.com/item?id=42410229
+
 
 Setup:
 
