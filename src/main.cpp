@@ -2,6 +2,12 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 
+// RED
+uint8_t redAddress[] = {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C };
+
+// BLUE
+uint8_t blueAddress[] = {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08 };
+
 // Counter to send
 volatile int counter = 0;
 
@@ -27,14 +33,18 @@ void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
 void sendBroadcast(void* param) {
     for (;;) {
         counter++;
-        esp_now_send(NULL, (uint8_t*)&counter, sizeof(counter));  // NULL sends to all peers
-        Serial.printf("Sent counter: %d\n", counter);
+
+        auto resp = esp_now_send(NULL, (uint8_t*)&counter, sizeof(counter));  // NULL sends to all peers
+        Serial.printf("Status: %d", resp);
+        Serial.printf(" Sent counter: %d\n", counter);
         vTaskDelay(1000 / portTICK_PERIOD_MS);  // Send every 1 second
     }
 }
 
 
 // pio run -t monitor -e sender
+
+
 
 void setup() {
     Serial.begin(115200);
@@ -43,6 +53,8 @@ void setup() {
 
     // Initialize WiFi in station mode
     WiFi.mode(WIFI_STA);
+    esp_wifi_start();
+    WiFi.disconnect();
     if (esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
         Serial.println("Failed to set channel");
     }
@@ -58,22 +70,27 @@ void setup() {
         Serial.println("ESP-NOW initialization failed");
         return;
     }
-    esp_now_register_recv_cb(onDataRecv);  // Register receive callback
+    if (esp_now_register_recv_cb(onDataRecv) != ESP_OK) {  // Register receive callback
+        Serial.println("ESP-NOW callback register failed");
+        return;
+    }
 
     // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
     esp_now_peer_info_t peerInfo = {};
     memset(&peerInfo, 0, sizeof(peerInfo));
     peerInfo.channel = 1;  // Must match your channel
     peerInfo.encrypt = false;
-    uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    // Red
-    // {0x64, 0xE8, 0x33, 0x4B, 0x6D, 0x20};
-    memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-    if (!esp_now_is_peer_exist(broadcastAddress)) {
-        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-            Serial.println("Failed to add broadcast peer");
-        }
+    if constexpr (COLOR == 1) {
+        memcpy(peerInfo.peer_addr, blueAddress, 6);
     }
+    if constexpr (COLOR == 2) {
+        memcpy(peerInfo.peer_addr, redAddress, 6);
+    }
+    // if (!esp_now_is_peer_exist(broadcastAddress)) {
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("Failed to add broadcast peer");
+    }
+    //}
 
     // Create FreeRTOS task for sending messages
     xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, NULL, 1, &sendTaskHandle, 1);
