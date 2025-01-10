@@ -66,6 +66,8 @@ void setup() {
     peerInfo.channel = 1;  // Must match your channel
     peerInfo.encrypt = false;
     uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    // Red
+    // {0x64, 0xE8, 0x33, 0x4B, 0x6D, 0x20};
     memcpy(peerInfo.peer_addr, broadcastAddress, 6);
     if (!esp_now_is_peer_exist(broadcastAddress)) {
         if (esp_now_add_peer(&peerInfo) != ESP_OK) {
