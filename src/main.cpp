@@ -8,6 +8,9 @@ uint8_t redAddress[] = {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C };
 // BLUE
 uint8_t blueAddress[] = {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08 };
 
+uint8_t LED_PIN = 33;
+uint8_t BUTTON_PIN = 14;
+
 // Counter to send
 volatile int counter = 0;
 
@@ -27,6 +30,9 @@ void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
              mac_addr[4],
              mac_addr[5]);
     Serial.printf("Received message from %s: %d\n", macStr, *(int*)data);
+    digitalWrite(LED_PIN, HIGH);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    digitalWrite(LED_PIN, LOW);
 }
 
 // Function to send broadcast messages
@@ -47,6 +53,9 @@ void sendBroadcast(void* param) {
 
 
 void setup() {
+    pinMode(LED_PIN,OUTPUT);
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+
     Serial.begin(115200);
     sleep(3);
     Serial.println("Hello. Starting wifi.");
@@ -97,5 +106,7 @@ void setup() {
 }
 
 void loop() {
-    // Nothing to do in loop; tasks run in the background
+    if(digitalRead(BUTTON_PIN)==LOW) {
+        Serial.println("BUTTON PRESSED");
+    }
 }
