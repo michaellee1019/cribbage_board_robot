@@ -5,7 +5,7 @@
 
 
 #define LED_PIN         33
-#define BUTTON_PIN      14
+#define BUTTON_PIN      27
 
 static const uint8_t address_RED[] =
     {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C};
