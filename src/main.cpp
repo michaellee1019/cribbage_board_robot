@@ -65,7 +65,7 @@ void setup() {
     Serial.println("Hello. Starting wifi.");
 
     // Initialize WiFi in station mode
-    WiFi.mode(WIFI_STA);
+    WiFiClass::mode(WIFI_STA);
     esp_wifi_start();
     WiFi.disconnect();
     if (esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
@@ -106,7 +106,7 @@ void setup() {
     //}
 
     // Create FreeRTOS task for sending messages
-    xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, NULL, 1, &sendTaskHandle, 1);
+    xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
 }
 
 void loop() {
