@@ -36,20 +36,24 @@ void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
 }
 
 // Function to send broadcast messages
-void sendBroadcast(void* param) {
+[[noreturn]] void
+sendBroadcast(void* param) {
     for (;;) {
         counter++;
 
-        auto resp = esp_now_send(NULL, (uint8_t*)&counter, sizeof(counter));  // NULL sends to all peers
+        const auto resp = esp_now_send(
+            // nullptr sends to all peers
+            nullptr,
+            // const_cast<int*>(&counter) removes volatile (reinterpret_cast cannot handle volatile)
+            redAddress,
+            sizeof(counter)
+        );
+
         Serial.printf("Status: %d", resp);
         Serial.printf(" Sent counter: %d\n", counter);
         vTaskDelay(1000 / portTICK_PERIOD_MS);  // Send every 1 second
     }
 }
-
-
-// pio run -t monitor -e sender
-
 
 
 void setup() {
@@ -89,12 +93,12 @@ void setup() {
     memset(&peerInfo, 0, sizeof(peerInfo));
     peerInfo.channel = 1;  // Must match your channel
     peerInfo.encrypt = false;
-    if constexpr (COLOR == 1) {
-        memcpy(peerInfo.peer_addr, blueAddress, 6);
-    }
-    if constexpr (COLOR == 2) {
-        memcpy(peerInfo.peer_addr, redAddress, 6);
-    }
+#if (COLOR==1)
+    memcpy(peerInfo.peer_addr, blueAddress, 6);
+#elif (COLOR==2)
+    memcpy(peerInfo.peer_addr, redAddress, 6);
+#endif
+
     // if (!esp_now_is_peer_exist(broadcastAddress)) {
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
         Serial.println("Failed to add broadcast peer");
