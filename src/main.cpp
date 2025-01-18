@@ -2,19 +2,23 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 
-// RED
-uint8_t redAddress[] = {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C };
 
-// BLUE
-uint8_t blueAddress[] = {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08 };
 
-uint8_t LED_PIN = 33;
-uint8_t BUTTON_PIN = 14;
+#define LED_PIN         33
+#define BUTTON_PIN      14
+
+static const uint8_t address_RED[] =
+    {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C};
+static const uint8_t address_BLUE[] =
+    {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08};
+
+
 
 // Counter to send
 volatile int counter = 0;
 
 // Task Handles
+// TODO: can we just kill this; it's a void* and appears to only be here so we can delete the task
 TaskHandle_t sendTaskHandle;
 
 // Callback for received data
@@ -45,7 +49,7 @@ sendBroadcast(void* param) {
             // nullptr sends to all peers
             nullptr,
             // const_cast<int*>(&counter) removes volatile (reinterpret_cast cannot handle volatile)
-            redAddress,
+            address_RED,
             sizeof(counter)
         );
 
@@ -96,7 +100,7 @@ void setup() {
 #if (COLOR==1)
     memcpy(peerInfo.peer_addr, blueAddress, 6);
 #elif (COLOR==2)
-    memcpy(peerInfo.peer_addr, redAddress, 6);
+    memcpy(peerInfo.peer_addr, address_RED, 6);
 #endif
 
     // if (!esp_now_is_peer_exist(broadcastAddress)) {
