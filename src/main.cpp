@@ -13,6 +13,22 @@ static const uint8_t address_BLUE[] =
     {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08};
 
 
+struct MacAddress {
+    const uint8_t* mac_addr;
+    static constexpr size_t macSize = 18;
+    void print(char macStr[macSize]) const {
+        snprintf(macStr,
+                 macSize,
+                 "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac_addr[0],
+                 mac_addr[1],
+                 mac_addr[2],
+                 mac_addr[3],
+                 mac_addr[4],
+                 mac_addr[5]);
+    }
+};
+
 
 // Counter to send
 volatile int counter = 0;
@@ -24,15 +40,8 @@ TaskHandle_t sendTaskHandle;
 // Callback for received data
 void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
     char macStr[18];
-    snprintf(macStr,
-             sizeof(macStr),
-             "%02X:%02X:%02X:%02X:%02X:%02X",
-             mac_addr[0],
-             mac_addr[1],
-             mac_addr[2],
-             mac_addr[3],
-             mac_addr[4],
-             mac_addr[5]);
+    const MacAddress mac{mac_addr};
+    mac.print(macStr);
     Serial.printf("Received message from %s: %d\n", macStr, *(int*)data);
     digitalWrite(LED_PIN, HIGH);
     vTaskDelay(100 / portTICK_PERIOD_MS);
