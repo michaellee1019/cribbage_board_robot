@@ -73,30 +73,90 @@ sendBroadcast(void* param) {
 
 
 volatile bool buttonPressed = false; // A flag set by the ISR
+volatile int clickCount = 0;          // Count of consecutive clicks
+volatile bool isDoubleClick = false;  // Flag to indicate double-click
+
 SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
 TimerHandle_t debounceTimer;         // Timer for debouncing
-static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
+TimerHandle_t doubleClickTimer;       // Timer for detecting double-clicks
 
-void IRAM_ATTR buttonISR() {
-    // Start or reset the debounce timer
-    xTimerResetFromISR(debounceTimer, NULL);
+static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
+static constexpr int doubleClickThresholdMs = 400; // Max time between clicks for a double-click
+
+
+// Callback Functions
+void onPress() {
+    Serial.println("Button Pressed");
 }
 
+void onRelease() {
+    Serial.println("Button Released");
+}
+
+void onSingleClick() {
+    Serial.println("Single Click Detected");
+}
+
+void onDoubleClick() {
+    Serial.println("Double Click Detected");
+}
+
+
+// ISR for Button Pin
+void IRAM_ATTR buttonISR() {
+    static unsigned long lastInterruptTime = 0;
+    unsigned long interruptTime = millis();
+
+    // Debounce logic (ignore interrupts within debounce delay)
+    if (interruptTime - lastInterruptTime > debounceDelayMs) {
+        xTimerResetFromISR(debounceTimer, NULL);
+    }
+
+    lastInterruptTime = interruptTime;
+}
+
+// Debounce Timer Callback
 void debounceCallback(TimerHandle_t xTimer) {
-    if (digitalRead(BUTTON_PIN) == LOW) { // Confirm the button is still pressed
+    if (digitalRead(BUTTON_PIN) == LOW) {
+        // Button pressed
         buttonPressed = true;
-        xSemaphoreGive(buttonSemaphore); // Signal the task
+        xSemaphoreGive(buttonSemaphore);
+    } else {
+        // Button released
+        buttonPressed = false;
+        xSemaphoreGive(buttonSemaphore);
     }
 }
 
+// Double-Click Timer Callback
+void doubleClickCallback(TimerHandle_t xTimer) {
+    if (clickCount == 1) {
+        onSingleClick();
+    } else if (clickCount == 2) {
+        isDoubleClick = true;
+        onDoubleClick();
+    }
+    clickCount = 0; // Reset click count
+}
+
+
+// Button Task
 void buttonTask(void *pvParameters) {
     while (true) {
         if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
-            buttonPressed = false;
-            Serial.println("Button pressed! Updating state...");
+            if (buttonPressed) {
+                onPress();
+                clickCount++;
+
+                // Start or reset the double-click timer
+                xTimerStart(doubleClickTimer, 0);
+            } else {
+                onRelease();
+            }
         }
     }
 }
+
 
 void setup() {
     pinMode(LED_PIN,OUTPUT);
@@ -154,7 +214,7 @@ void setup() {
     buttonSemaphore = xSemaphoreCreateBinary();
 
     // Attach the interrupt
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, CHANGE);
 
     // Create the task to handle button presses
     xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, NULL);
@@ -167,6 +227,17 @@ void setup() {
         (void *)0,                              // Timer ID (not used)
         debounceCallback                        // Callback function
     );
+
+    // Create the double-click timer
+    doubleClickTimer = xTimerCreate(
+        "Double-Click Timer",
+        pdMS_TO_TICKS(doubleClickThresholdMs),
+        pdFALSE, // One-shot timer
+        (void *)0,
+        doubleClickCallback
+    );
+
 }
 
 void loop() {}
+
