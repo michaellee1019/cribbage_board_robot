@@ -42,12 +42,8 @@ TaskHandle_t sendTaskHandle;
 
 // Callback for received data
 void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
-    char macStr[18];
-    const MacAddress mac{mac_addr};
-    mac.print(macStr);
-    Serial.printf("Received message from %s: %d\n", macStr, *(int*)data);
     digitalWrite(LED_PIN, HIGH);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(100));
     digitalWrite(LED_PIN, LOW);
 }
 
@@ -72,103 +68,164 @@ sendBroadcast(void* param) {
 }
 
 
-struct RTButton {
-    volatile bool buttonPressed = false; // A flag set by the ISR
-    volatile int clickCount = 0;          // Count of consecutive clicks
-    volatile bool isDoubleClick = false;  // Flag to indicate double-click
+class RTButton {
+public:
+    RTButton(int pin, int debounceDelay, int doubleClickThreshold)
+        : buttonPin(pin), debounceDelayMs(debounceDelay), doubleClickThresholdMs(doubleClickThreshold), lastInterruptTime(0) {
+        buttonSemaphore = xSemaphoreCreateBinary();
 
-    SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
-    TimerHandle_t debounceTimer;         // Timer for debouncing
-    TimerHandle_t doubleClickTimer;       // Timer for detecting double-clicks
+        debounceTimer = xTimerCreate(
+            "Debounce Timer",
+            pdMS_TO_TICKS(debounceDelayMs),
+            pdFALSE, // One-shot timer
+            this,
+            [](TimerHandle_t xTimer) {
+                auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
+                if (button) button->debounceCallback();
+            }
+        );
 
-    static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
-    static constexpr int doubleClickThresholdMs = 400; // Max time between clicks for a double-click
-};
+        doubleClickTimer = xTimerCreate(
+            "Double-Click Timer",
+            pdMS_TO_TICKS(doubleClickThresholdMs),
+            pdFALSE, // One-shot timer
+            this,
+            [](TimerHandle_t xTimer) {
+                auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
+                if (button) button->doubleClickCallback();
+            }
+        );
 
-
-RTButton rbut;
-
-
-
-
-
-// Callback Functions
-void onPress() {
-    Serial.println("Button Pressed");
-}
-
-void onRelease() {
-    Serial.println("Button Released");
-}
-
-void onSingleClick() {
-    Serial.println("Single Click Detected");
-}
-
-void onDoubleClick() {
-    Serial.println("Double Click Detected");
-}
-
-
-// ISR for Button Pin
-void IRAM_ATTR buttonISR() {
-    static unsigned long lastInterruptTime = 0;
-    unsigned long interruptTime = millis();
-
-    // Debounce logic (ignore interrupts within debounce delay)
-    if (interruptTime - lastInterruptTime > RTButton::debounceDelayMs) {
-        xTimerResetFromISR(rbut.debounceTimer, NULL);
+        if (debounceTimer == NULL || doubleClickTimer == NULL) {
+            Serial.println("Failed to create timers");
+            while (true); // Halt execution if timers fail
+        }
     }
 
-    lastInterruptTime = interruptTime;
-}
 
-// Debounce Timer Callback
-void debounceCallback(TimerHandle_t xTimer) {
-    if (digitalRead(BUTTON_PIN) == LOW) {
-        // Button pressed
-        rbut.buttonPressed = true;
-        xSemaphoreGive(rbut.buttonSemaphore);
-    } else {
-        // Button released
-        rbut.buttonPressed = false;
-        xSemaphoreGive(rbut.buttonSemaphore);
+    virtual ~RTButton() {
+        if (debounceTimer != NULL) {
+            xTimerDelete(debounceTimer, portMAX_DELAY);
+        }
+        if (doubleClickTimer != NULL) {
+            xTimerDelete(doubleClickTimer, portMAX_DELAY);
+        }
+        if (buttonSemaphore != NULL) {
+            vSemaphoreDelete(buttonSemaphore);
+        }
     }
-}
 
-// Double-Click Timer Callback
-void doubleClickCallback(TimerHandle_t xTimer) {
-    if (rbut.clickCount == 1) {
-        onSingleClick();
-    } else if (rbut.clickCount == 2) {
-        rbut.isDoubleClick = true;
-        onDoubleClick();
+    void init() {
+        pinMode(buttonPin, INPUT_PULLUP);
+        attachInterruptArg(digitalPinToInterrupt(buttonPin), ISRHandler, this, CHANGE);
+
+        BaseType_t taskCreated = xTaskCreate(
+            [](void* param) {
+                auto* button = static_cast<RTButton*>(param);
+                if (button) button->buttonTask();
+            },
+            "Button Task", 2048, this, 1, NULL);
+
+        if (taskCreated != pdPASS) {
+            Serial.println("Failed to create button task");
+            while (true); // Halt execution if task creation fails
+        }
     }
-    rbut.clickCount = 0; // Reset click count
-}
 
+protected:
+    virtual void onPress() {
+        Serial.println("Button Pressed");
+    }
 
-// Button Task
-void buttonTask(void *pvParameters) {
-    while (true) {
-        if (xSemaphoreTake(rbut.buttonSemaphore, portMAX_DELAY) == pdTRUE) {
-            if (rbut.buttonPressed) {
-                onPress();
-                rbut.clickCount++;
+    virtual void onRelease() {
+        Serial.println("Button Released");
+    }
 
-                // Start or reset the double-click timer
-                xTimerStart(rbut.doubleClickTimer, 0);
-            } else {
-                onRelease();
+    virtual void onSingleClick() {
+        Serial.println("Single Click Detected");
+    }
+
+    virtual void onDoubleClick() {
+        Serial.println("Double Click Detected");
+        esp_now_send(
+            // nullptr sends to all peers
+            nullptr,
+            // const_cast<int*>(&counter) removes volatile (reinterpret_cast cannot handle volatile)
+            address_RED,
+            sizeof(counter)
+        );
+    }
+
+private:
+    int buttonPin;
+    int debounceDelayMs;
+    int doubleClickThresholdMs;
+
+    SemaphoreHandle_t buttonSemaphore;
+    TimerHandle_t debounceTimer;
+    TimerHandle_t doubleClickTimer;
+
+    volatile bool buttonPressed = false;
+    volatile bool isDoubleClick = false;
+    volatile int clickCount = 0;
+    volatile TickType_t lastInterruptTime = 0;
+
+    static void IRAM_ATTR ISRHandler(void* arg) {
+        auto* button = static_cast<RTButton*>(arg);
+        if (button) button->handleInterrupt();
+    }
+
+    void handleInterrupt() {
+        TickType_t interruptTime = xTaskGetTickCountFromISR();
+
+        if ((interruptTime - lastInterruptTime) * portTICK_PERIOD_MS > debounceDelayMs) {
+            BaseType_t higherPriorityTaskWoken = pdFALSE;
+            xTimerResetFromISR(debounceTimer, &higherPriorityTaskWoken);
+            portYIELD_FROM_ISR(higherPriorityTaskWoken);
+        }
+
+        lastInterruptTime = interruptTime;
+    }
+
+    void debounceCallback() {
+        if (digitalRead(buttonPin) == LOW) {
+            buttonPressed = true;
+            xSemaphoreGive(buttonSemaphore);
+        } else {
+            buttonPressed = false;
+            xSemaphoreGive(buttonSemaphore);
+        }
+    }
+
+    void doubleClickCallback() {
+        if (clickCount == 1) {
+            onSingleClick();
+        } else if (clickCount == 2) {
+            isDoubleClick = true;
+            onDoubleClick();
+        }
+        clickCount = 0;
+    }
+
+    void buttonTask() {
+        while (true) {
+            if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
+                if (buttonPressed) {
+                    onPress();
+                    clickCount++;
+                    xTimerStart(doubleClickTimer, 0);
+                } else {
+                    onRelease();
+                }
             }
         }
     }
-}
+};
 
+RTButton button(BUTTON_PIN, 50, 500);
 
 void setup() {
     pinMode(LED_PIN,OUTPUT);
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
 
     Serial.begin(115200);
     sleep(3);
@@ -218,33 +275,7 @@ void setup() {
     // Create FreeRTOS task for sending messages
     // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
 
-    // Create the semaphore
-    rbut.buttonSemaphore = xSemaphoreCreateBinary();
-
-    // Attach the interrupt
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, CHANGE);
-
-    // Create the task to handle button presses
-    xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, NULL);
-
-    // Create the debounce timer
-    rbut.debounceTimer = xTimerCreate(
-        "Debounce Timer",                        // Name
-        pdMS_TO_TICKS(RTButton::debounceDelayMs),         // Period in ticks
-        pdFALSE,                                // One-shot timer
-        (void *)0,                              // Timer ID (not used)
-        debounceCallback                        // Callback function
-    );
-
-    // Create the double-click timer
-    rbut.doubleClickTimer = xTimerCreate(
-        "Double-Click Timer",
-        pdMS_TO_TICKS(RTButton::doubleClickThresholdMs),
-        pdFALSE, // One-shot timer
-        (void *)0,
-        doubleClickCallback
-    );
-
+    button.init();
 }
 
 void loop() {}
