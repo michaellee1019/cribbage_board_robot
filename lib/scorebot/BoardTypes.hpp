@@ -36,8 +36,8 @@ static constexpr PlayerAddress playerAddresses_[MAX_PLAYERS] = {
 };
 
 inline static constexpr PlayerAddress myBoardAddress() {
-    static_assert(BOARD_ID < MAX_PLAYERS);
-    return BOARD_ID == -1 ? playerAddresses_[0] :  playerAddresses_[BOARD_ID];
+    static_assert(COLOR < MAX_PLAYERS);
+    return COLOR == -1 ? playerAddresses_[0] :  playerAddresses_[COLOR];
 }
 
 

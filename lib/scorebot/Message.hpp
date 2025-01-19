@@ -1,7 +1,11 @@
 #ifndef MESSAGE_HPP
 #define MESSAGE_HPP
 
+#include <iostream>
+
 #include <Types.hpp>
+
+
 
 class StateRefreshRequest {
     TurnNumberT turnNumber;
@@ -17,7 +21,7 @@ public:
     explicit StateRefreshRequest() : turnNumber{-1}, whosTurnV{-1}, scores{} {}
 
     [[nodiscard]] bool myTurn() const {
-        return this->whosTurnV == BOARD_ID;
+        return this->whosTurnV == COLOR;
     }
 
     [[nodiscard]] PlayerNumberT whosTurn() const {
@@ -48,7 +52,7 @@ public:
         operator<<(std::ostream& out, const StateRefreshResponse&);
 
     explicit StateRefreshResponse()
-        : fromPlayer{BOARD_ID}, passTurn{false}, commit{false}, scoreDelta{0} {}
+        : fromPlayer{COLOR}, passTurn{false}, commit{false}, scoreDelta{0} {}
 
     void resetScoreDelta() {
         this->scoreDelta = 0;

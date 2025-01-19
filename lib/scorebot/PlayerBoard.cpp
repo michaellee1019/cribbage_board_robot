@@ -164,7 +164,8 @@ public:
         if (!ss.digitalRead(SS_SWITCH)) {
             logic.nextResponse.setCommit(true);
         }
-        if (auto newPosition = ScoreT(ss.getEncoderPosition() / 2); oldPosition != newPosition) {
+        auto newPosition = ScoreT(ss.getEncoderPosition() / 2);
+        if (oldPosition != newPosition) {
             logic.nextResponse.addScore(newPosition - oldPosition);
             oldPosition = newPosition;
         }
