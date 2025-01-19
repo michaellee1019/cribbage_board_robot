@@ -72,16 +72,24 @@ sendBroadcast(void* param) {
 }
 
 
-volatile bool buttonPressed = false; // A flag set by the ISR
-volatile int clickCount = 0;          // Count of consecutive clicks
-volatile bool isDoubleClick = false;  // Flag to indicate double-click
+struct RTButton {
+    volatile bool buttonPressed = false; // A flag set by the ISR
+    volatile int clickCount = 0;          // Count of consecutive clicks
+    volatile bool isDoubleClick = false;  // Flag to indicate double-click
 
-SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
-TimerHandle_t debounceTimer;         // Timer for debouncing
-TimerHandle_t doubleClickTimer;       // Timer for detecting double-clicks
+    SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
+    TimerHandle_t debounceTimer;         // Timer for debouncing
+    TimerHandle_t doubleClickTimer;       // Timer for detecting double-clicks
 
-static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
-static constexpr int doubleClickThresholdMs = 400; // Max time between clicks for a double-click
+    static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
+    static constexpr int doubleClickThresholdMs = 400; // Max time between clicks for a double-click
+};
+
+
+RTButton rbut;
+
+
+
 
 
 // Callback Functions
@@ -108,8 +116,8 @@ void IRAM_ATTR buttonISR() {
     unsigned long interruptTime = millis();
 
     // Debounce logic (ignore interrupts within debounce delay)
-    if (interruptTime - lastInterruptTime > debounceDelayMs) {
-        xTimerResetFromISR(debounceTimer, NULL);
+    if (interruptTime - lastInterruptTime > RTButton::debounceDelayMs) {
+        xTimerResetFromISR(rbut.debounceTimer, NULL);
     }
 
     lastInterruptTime = interruptTime;
@@ -119,37 +127,37 @@ void IRAM_ATTR buttonISR() {
 void debounceCallback(TimerHandle_t xTimer) {
     if (digitalRead(BUTTON_PIN) == LOW) {
         // Button pressed
-        buttonPressed = true;
-        xSemaphoreGive(buttonSemaphore);
+        rbut.buttonPressed = true;
+        xSemaphoreGive(rbut.buttonSemaphore);
     } else {
         // Button released
-        buttonPressed = false;
-        xSemaphoreGive(buttonSemaphore);
+        rbut.buttonPressed = false;
+        xSemaphoreGive(rbut.buttonSemaphore);
     }
 }
 
 // Double-Click Timer Callback
 void doubleClickCallback(TimerHandle_t xTimer) {
-    if (clickCount == 1) {
+    if (rbut.clickCount == 1) {
         onSingleClick();
-    } else if (clickCount == 2) {
-        isDoubleClick = true;
+    } else if (rbut.clickCount == 2) {
+        rbut.isDoubleClick = true;
         onDoubleClick();
     }
-    clickCount = 0; // Reset click count
+    rbut.clickCount = 0; // Reset click count
 }
 
 
 // Button Task
 void buttonTask(void *pvParameters) {
     while (true) {
-        if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
-            if (buttonPressed) {
+        if (xSemaphoreTake(rbut.buttonSemaphore, portMAX_DELAY) == pdTRUE) {
+            if (rbut.buttonPressed) {
                 onPress();
-                clickCount++;
+                rbut.clickCount++;
 
                 // Start or reset the double-click timer
-                xTimerStart(doubleClickTimer, 0);
+                xTimerStart(rbut.doubleClickTimer, 0);
             } else {
                 onRelease();
             }
@@ -211,7 +219,7 @@ void setup() {
     // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
 
     // Create the semaphore
-    buttonSemaphore = xSemaphoreCreateBinary();
+    rbut.buttonSemaphore = xSemaphoreCreateBinary();
 
     // Attach the interrupt
     attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, CHANGE);
@@ -220,18 +228,18 @@ void setup() {
     xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, NULL);
 
     // Create the debounce timer
-    debounceTimer = xTimerCreate(
+    rbut.debounceTimer = xTimerCreate(
         "Debounce Timer",                        // Name
-        pdMS_TO_TICKS(debounceDelayMs),         // Period in ticks
+        pdMS_TO_TICKS(RTButton::debounceDelayMs),         // Period in ticks
         pdFALSE,                                // One-shot timer
         (void *)0,                              // Timer ID (not used)
         debounceCallback                        // Callback function
     );
 
     // Create the double-click timer
-    doubleClickTimer = xTimerCreate(
+    rbut.doubleClickTimer = xTimerCreate(
         "Double-Click Timer",
-        pdMS_TO_TICKS(doubleClickThresholdMs),
+        pdMS_TO_TICKS(RTButton::doubleClickThresholdMs),
         pdFALSE, // One-shot timer
         (void *)0,
         doubleClickCallback
