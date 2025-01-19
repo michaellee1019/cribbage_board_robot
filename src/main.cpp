@@ -2,6 +2,9 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
 #include <Message.hpp>
 
 #define LED_PIN         33
@@ -69,6 +72,35 @@ sendBroadcast(void* param) {
 }
 
 
+volatile bool buttonPressed = false; // A flag set by the ISR
+SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
+
+void IRAM_ATTR buttonISR() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Set the flag or directly signal the semaphore
+    buttonPressed = true;
+
+    // Give the semaphore to wake up the task
+    xSemaphoreGiveFromISR(buttonSemaphore, &xHigherPriorityTaskWoken);
+
+    // Request a context switch if a higher-priority task was woken
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void buttonTask(void *pvParameters) {
+    while (true) {
+        // Wait for the semaphore
+        if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
+            // Clear the flag (optional, depending on your logic)
+            buttonPressed = false;
+
+            // Handle the button press (update state, etc.)
+            Serial.println("Button pressed! Updating state...");
+        }
+    }
+}
+
 void setup() {
     pinMode(LED_PIN,OUTPUT);
     pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -120,10 +152,15 @@ void setup() {
 
     // Create FreeRTOS task for sending messages
     xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
+
+    // Create the semaphore
+    buttonSemaphore = xSemaphoreCreateBinary();
+
+    // Attach the interrupt
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+
+    // Create the task to handle button presses
+    xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, NULL);
 }
 
-void loop() {
-    if(digitalRead(BUTTON_PIN)==LOW) {
-        Serial.println("BUTTON PRESSED");
-    }
-}
+void loop() {}
