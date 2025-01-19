@@ -10,11 +10,14 @@
 #define LED_PIN         33
 #define BUTTON_PIN      27
 
+// #define COLOR_RED       1
+// #define COLOR_BLUE      2
+// #define IS_COLOR(x)     (COLOR == X)
+
 static const uint8_t address_RED[] =
     {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C};
 static const uint8_t address_BLUE[] =
     {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08};
-
 
 struct MacAddress {
     const uint8_t* mac_addr;
@@ -90,7 +93,7 @@ public:
             pdMS_TO_TICKS(doubleClickThresholdMs),
             pdFALSE, // One-shot timer
             this,
-            [](TimerHandle_t xTimer) {
+            [](const TimerHandle_t xTimer) {
                 auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
                 if (button) button->doubleClickCallback();
             }
@@ -104,13 +107,13 @@ public:
 
 
     virtual ~RTButton() {
-        if (debounceTimer != NULL) {
+        if (debounceTimer != nullptr) {
             xTimerDelete(debounceTimer, portMAX_DELAY);
         }
-        if (doubleClickTimer != NULL) {
+        if (doubleClickTimer != nullptr) {
             xTimerDelete(doubleClickTimer, portMAX_DELAY);
         }
-        if (buttonSemaphore != NULL) {
+        if (buttonSemaphore != nullptr) {
             vSemaphoreDelete(buttonSemaphore);
         }
     }
@@ -157,9 +160,9 @@ protected:
     }
 
 private:
-    int buttonPin;
-    int debounceDelayMs;
-    int doubleClickThresholdMs;
+    const unsigned short buttonPin;
+    const unsigned short debounceDelayMs;
+    const unsigned short doubleClickThresholdMs;
 
     SemaphoreHandle_t buttonSemaphore;
     TimerHandle_t debounceTimer;
@@ -167,7 +170,7 @@ private:
 
     volatile bool buttonPressed = false;
     volatile bool isDoubleClick = false;
-    volatile int clickCount = 0;
+    volatile size_t clickCount = 0;
     volatile TickType_t lastInterruptTime = 0;
 
     static void IRAM_ATTR ISRHandler(void* arg) {
@@ -207,6 +210,7 @@ private:
         clickCount = 0;
     }
 
+    [[noreturn]]
     void buttonTask() {
         while (true) {
             if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
