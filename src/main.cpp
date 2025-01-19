@@ -98,7 +98,7 @@ void setup() {
     peerInfo.channel = 1;  // Must match your channel
     peerInfo.encrypt = false;
 #if (COLOR==1)
-    memcpy(peerInfo.peer_addr, blueAddress, 6);
+    memcpy(peerInfo.peer_addr, address_BLUE, 6);
 #elif (COLOR==2)
     memcpy(peerInfo.peer_addr, address_RED, 6);
 #endif
