@@ -74,28 +74,25 @@ sendBroadcast(void* param) {
 
 volatile bool buttonPressed = false; // A flag set by the ISR
 SemaphoreHandle_t buttonSemaphore;   // A semaphore to synchronize the task
+TimerHandle_t debounceTimer;         // Timer for debouncing
+static constexpr int debounceDelayMs = 50;      // Debounce time (milliseconds)
 
 void IRAM_ATTR buttonISR() {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    // Start or reset the debounce timer
+    xTimerResetFromISR(debounceTimer, NULL);
+}
 
-    // Set the flag or directly signal the semaphore
-    buttonPressed = true;
-
-    // Give the semaphore to wake up the task
-    xSemaphoreGiveFromISR(buttonSemaphore, &xHigherPriorityTaskWoken);
-
-    // Request a context switch if a higher-priority task was woken
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+void debounceCallback(TimerHandle_t xTimer) {
+    if (digitalRead(BUTTON_PIN) == LOW) { // Confirm the button is still pressed
+        buttonPressed = true;
+        xSemaphoreGive(buttonSemaphore); // Signal the task
+    }
 }
 
 void buttonTask(void *pvParameters) {
     while (true) {
-        // Wait for the semaphore
         if (xSemaphoreTake(buttonSemaphore, portMAX_DELAY) == pdTRUE) {
-            // Clear the flag (optional, depending on your logic)
             buttonPressed = false;
-
-            // Handle the button press (update state, etc.)
             Serial.println("Button pressed! Updating state...");
         }
     }
@@ -151,7 +148,7 @@ void setup() {
     //}
 
     // Create FreeRTOS task for sending messages
-    xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
+    // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
 
     // Create the semaphore
     buttonSemaphore = xSemaphoreCreateBinary();
@@ -161,6 +158,15 @@ void setup() {
 
     // Create the task to handle button presses
     xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, NULL);
+
+    // Create the debounce timer
+    debounceTimer = xTimerCreate(
+        "Debounce Timer",                        // Name
+        pdMS_TO_TICKS(debounceDelayMs),         // Period in ticks
+        pdFALSE,                                // One-shot timer
+        (void *)0,                              // Timer ID (not used)
+        debounceCallback                        // Callback function
+    );
 }
 
 void loop() {}
