@@ -36,19 +36,68 @@ struct MacAddress {
 };
 
 
+struct ESPNowHandler {
+    // Task Handles
+    // TODO: can we just kill this; it's a void* and appears to only be here so we can delete the task
+    TaskHandle_t sendTaskHandle;
+
+    // Callback for received data
+    static void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
+        digitalWrite(LED_PIN, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        digitalWrite(LED_PIN, LOW);
+    }
+
+
+    void espSetup() {
+        Serial.println("Hello. Starting wifi.");
+
+        // Initialize WiFi in station mode
+        WiFiClass::mode(WIFI_STA);
+        esp_wifi_start();
+        WiFi.disconnect();
+        if (esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
+            Serial.println("Failed to set channel");
+        }
+
+        // Get the MAC address of the ESP32
+        String macAddress = WiFi.macAddress();
+
+        // Print the MAC address to the Serial Monitor
+        Serial.println("ESP32 MAC Address: " + macAddress);
+
+        // Initialize ESP-NOW
+        if (esp_now_init() != ESP_OK) {
+            Serial.println("ESP-NOW initialization failed");
+            return;
+        }
+        if (esp_now_register_recv_cb(onDataRecv) != ESP_OK) {  // Register receive callback
+            Serial.println("ESP-NOW callback register failed");
+            return;
+        }
+
+        // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
+        esp_now_peer_info_t peerInfo = {};
+        memset(&peerInfo, 0, sizeof(peerInfo));
+        peerInfo.channel = 1;  // Must match your channel
+        peerInfo.encrypt = false;
+#if (COLOR==1)
+        memcpy(peerInfo.peer_addr, address_BLUE, 6);
+#elif (COLOR==2)
+        memcpy(peerInfo.peer_addr, address_RED, 6);
+#endif
+
+        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+            Serial.println("Failed to add broadcast peer");
+        }}
+};
+ESPNowHandler espNow;
+
 // Counter to send
 volatile int counter = 0;
 
-// Task Handles
-// TODO: can we just kill this; it's a void* and appears to only be here so we can delete the task
-TaskHandle_t sendTaskHandle;
 
-// Callback for received data
-void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
-    digitalWrite(LED_PIN, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    digitalWrite(LED_PIN, LOW);
-}
+
 
 // Function to send broadcast messages
 [[noreturn]] void
@@ -228,56 +277,18 @@ private:
 
 RTButton button(BUTTON_PIN, 50, 500);
 
+
+
 void setup() {
     pinMode(LED_PIN,OUTPUT);
 
     Serial.begin(115200);
     sleep(3);
-    Serial.println("Hello. Starting wifi.");
 
-    // Initialize WiFi in station mode
-    WiFiClass::mode(WIFI_STA);
-    esp_wifi_start();
-    WiFi.disconnect();
-    if (esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
-        Serial.println("Failed to set channel");
-    }
-
-    // Get the MAC address of the ESP32
-    String macAddress = WiFi.macAddress();
-
-    // Print the MAC address to the Serial Monitor
-    Serial.println("ESP32 MAC Address: " + macAddress);
-
-    // Initialize ESP-NOW
-    if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW initialization failed");
-        return;
-    }
-    if (esp_now_register_recv_cb(onDataRecv) != ESP_OK) {  // Register receive callback
-        Serial.println("ESP-NOW callback register failed");
-        return;
-    }
-
-    // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
-    esp_now_peer_info_t peerInfo = {};
-    memset(&peerInfo, 0, sizeof(peerInfo));
-    peerInfo.channel = 1;  // Must match your channel
-    peerInfo.encrypt = false;
-#if (COLOR==1)
-    memcpy(peerInfo.peer_addr, address_BLUE, 6);
-#elif (COLOR==2)
-    memcpy(peerInfo.peer_addr, address_RED, 6);
-#endif
-
-    // if (!esp_now_is_peer_exist(broadcastAddress)) {
-    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add broadcast peer");
-    }
-    //}
+    espNow.espSetup();
 
     // Create FreeRTOS task for sending messages
-    // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &sendTaskHandle, 1);
+    // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &espNow.sendTaskHandle, 1);
 
     button.init();
 }
