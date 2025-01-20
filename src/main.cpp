@@ -93,15 +93,15 @@ public:
             pdMS_TO_TICKS(doubleClickThresholdMs),
             pdFALSE, // One-shot timer
             this,
-            [](const TimerHandle_t xTimer) {
+            [](TimerHandle_t xTimer) {
                 auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
                 if (button) button->doubleClickCallback();
             }
         );
 
-        if (debounceTimer == NULL || doubleClickTimer == NULL) {
+        if (debounceTimer == nullptr || doubleClickTimer == nullptr) {
             Serial.println("Failed to create timers");
-            while (true); // Halt execution if timers fail
+            // TODO: have a failure mode
         }
     }
 
@@ -127,11 +127,11 @@ public:
                 auto* button = static_cast<RTButton*>(param);
                 if (button) button->buttonTask();
             },
-            "Button Task", 2048, this, 1, NULL);
+            "Button Task", 2048, this, 1, nullptr);
 
         if (taskCreated != pdPASS) {
             Serial.println("Failed to create button task");
-            while (true); // Halt execution if task creation fails
+            // TODO: handle failure modes
         }
     }
 
