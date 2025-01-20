@@ -1,124 +1,13 @@
 #include <WiFi.h>
-#include <esp_now.h>
-#include <esp_wifi.h>
+#include <painlessMesh.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-#include <Message.hpp>
+// #include <Message.hpp>
 
 #define LED_PIN         33
 #define BUTTON_PIN      27
-
-// #define COLOR_RED       1
-// #define COLOR_BLUE      2
-// #define IS_COLOR(x)     (COLOR == X)
-
-static const uint8_t address_RED[] =
-    {0xC8, 0x2E, 0x18, 0xF0, 0x2E, 0x6C};
-static const uint8_t address_BLUE[] =
-    {0x08, 0xB6, 0x1F, 0xB8, 0xAA, 0x08};
-
-struct MacAddress {
-    const uint8_t* mac_addr;
-    static constexpr size_t macSize = 18;
-    void print(char macStr[macSize]) const {
-        snprintf(macStr,
-                 macSize,
-                 "%02X:%02X:%02X:%02X:%02X:%02X",
-                 mac_addr[0],
-                 mac_addr[1],
-                 mac_addr[2],
-                 mac_addr[3],
-                 mac_addr[4],
-                 mac_addr[5]);
-    }
-};
-
-
-struct ESPNowHandler {
-    // Task Handles
-    // TODO: can we just kill this; it's a void* and appears to only be here so we can delete the task
-    TaskHandle_t sendTaskHandle;
-
-    // Callback for received data
-    static void onDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
-        digitalWrite(LED_PIN, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        digitalWrite(LED_PIN, LOW);
-    }
-
-
-    void espSetup() {
-        Serial.println("Hello. Starting wifi.");
-
-        // Initialize WiFi in station mode
-        WiFiClass::mode(WIFI_STA);
-        esp_wifi_start();
-        WiFi.disconnect();
-        if (esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
-            Serial.println("Failed to set channel");
-        }
-
-        // Get the MAC address of the ESP32
-        String macAddress = WiFi.macAddress();
-
-        // Print the MAC address to the Serial Monitor
-        Serial.println("ESP32 MAC Address: " + macAddress);
-
-        // Initialize ESP-NOW
-        if (esp_now_init() != ESP_OK) {
-            Serial.println("ESP-NOW initialization failed");
-            return;
-        }
-        if (esp_now_register_recv_cb(onDataRecv) != ESP_OK) {  // Register receive callback
-            Serial.println("ESP-NOW callback register failed");
-            return;
-        }
-
-        // Add broadcast peer manually (FF:FF:FF:FF:FF:FF for broadcast)
-        esp_now_peer_info_t peerInfo = {};
-        memset(&peerInfo, 0, sizeof(peerInfo));
-        peerInfo.channel = 1;  // Must match your channel
-        peerInfo.encrypt = false;
-#if (COLOR==1)
-        memcpy(peerInfo.peer_addr, address_BLUE, 6);
-#elif (COLOR==2)
-        memcpy(peerInfo.peer_addr, address_RED, 6);
-#endif
-
-        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-            Serial.println("Failed to add broadcast peer");
-        }}
-};
-ESPNowHandler espNow;
-
-// Counter to send
-volatile int counter = 0;
-
-
-
-
-// Function to send broadcast messages
-[[noreturn]] void
-sendBroadcast(void* param) {
-    for (;;) {
-        counter++;
-
-        const auto resp = esp_now_send(
-            // nullptr sends to all peers
-            nullptr,
-            // const_cast<int*>(&counter) removes volatile (reinterpret_cast cannot handle volatile)
-            address_RED,
-            sizeof(counter)
-        );
-
-        Serial.printf("Status: %d", resp);
-        Serial.printf(" Sent counter: %d\n", counter);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Send every 1 second
-    }
-}
-
 
 class RTButton {
 public:
@@ -199,13 +88,7 @@ protected:
 
     virtual void onDoubleClick() {
         Serial.println("Double Click Detected");
-        esp_now_send(
-            // nullptr sends to all peers
-            nullptr,
-            // const_cast<int*>(&counter) removes volatile (reinterpret_cast cannot handle volatile)
-            address_RED,
-            sizeof(counter)
-        );
+        // TODO: send
     }
 
 private:
@@ -275,23 +158,231 @@ private:
     }
 };
 
-RTButton button(BUTTON_PIN, 50, 500);
+// RTButton button(BUTTON_PIN, 50, 500);
 
 
+#define MESH_PREFIX     "mesh_network"
+#define MESH_PASSWORD   "mesh_password"
+#define MESH_PORT       5555
 
-void setup() {
-    pinMode(LED_PIN,OUTPUT);
+painlessMesh mesh;
 
-    Serial.begin(115200);
-    sleep(3);
+// “Global” turn data
+// For simplicity, we’ll keep track of the turn number
+// and which node has the current turn in a broadcast structure.
+int  turnNumber = 0;       // e.g., how many times the button has been pressed
+uint32_t currentTurnNode = 0;  // nodeId of the device whose turn it currently is
 
-    espNow.espSetup();
+// We’ll track the order of node IDs discovered in a vector,
+// and we’ll figure out “who’s next” by index in this list.
+std::vector<uint32_t> knownNodes;
 
-    // Create FreeRTOS task for sending messages
-    // xTaskCreatePinnedToCore(sendBroadcast, "SendBroadcast", 2048, nullptr, 1, &espNow.sendTaskHandle, 1);
+/*************************************************************
+   Forward Declarations
+*************************************************************/
+void sendTurnUpdate();
+void setDisplay(int number);
+bool isOurTurn();
+void nextTurn();
 
-    button.init();
+/*************************************************************
+   FreeRTOS Tasks
+*************************************************************/
+// Task to periodically check button state.
+void buttonTask(void *parameter) {
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  bool lastButtonState = HIGH;
+  while (true) {
+    bool buttonState = digitalRead(BUTTON_PIN);
+
+    // Simple falling-edge check:
+    if (lastButtonState == HIGH && buttonState == LOW) {
+      // If it’s our turn, pressing the button increments the turn
+      // and passes to next node
+        Serial.println("Button Pressed");
+      if (isOurTurn()) {
+        turnNumber++;
+        nextTurn();
+        sendTurnUpdate();
+      }
+    }
+    lastButtonState = buttonState;
+
+    // Debounce-ish delay
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+  }
 }
 
-void loop() {}
+// Task to update the LED/display based on the shared turn data.
+void updateTask(void *parameter) {
+  pinMode(LED_PIN, OUTPUT);
+
+  while (true) {
+    // LED on if it’s our turn, off otherwise
+    if (isOurTurn()) {
+      digitalWrite(LED_PIN, HIGH);
+    } else {
+      digitalWrite(LED_PIN, LOW);
+    }
+
+    // Update the numeric display with the current turn count
+    setDisplay(turnNumber);
+
+    // Let’s not hammer the CPU
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
+
+/*************************************************************
+   Mesh Callbacks
+*************************************************************/
+
+// Called whenever a new node connects
+void newConnectionCallback(uint32_t nodeId) {
+  Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
+
+  // Keep track of known nodes
+  // (avoid duplicates; just for demonstration)
+  bool found = false;
+  for (auto n : knownNodes) {
+    if (n == nodeId) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    knownNodes.push_back(nodeId);
+  }
+
+  // Optionally broadcast the current state so the new node
+  // can sync immediately
+  sendTurnUpdate();
+}
+
+// Called whenever a node goes offline
+void lostConnectionCallback(uint32_t nodeId) {
+  Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
+
+  // Remove from the knownNodes list
+  for (auto it = knownNodes.begin(); it != knownNodes.end(); ) {
+    if (*it == nodeId) {
+      it = knownNodes.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// Called when a message arrives
+void receivedCallback(uint32_t from, String &msg) {
+  Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
+  // For simplicity, let’s assume the message is formatted like: "TURN:<turnNumber>:<currentTurnNode>"
+  // We’ll parse it out.
+  // In real code, you might want JSON or a more robust approach.
+
+  if (msg.startsWith("TURN:")) {
+    int firstColon = msg.indexOf(':', 5);
+    int secondColon = msg.indexOf(':', firstColon + 1);
+    if (firstColon > 0 && secondColon > 0) {
+      String turnStr = msg.substring(5, firstColon);
+      String nodeStr = msg.substring(firstColon + 1, secondColon);
+
+      turnNumber = turnStr.toInt();
+      currentTurnNode = (uint32_t) nodeStr.toInt();
+    }
+  }
+}
+
+/*************************************************************
+   Helper Functions
+*************************************************************/
+
+bool isOurTurn() {
+  // If the currentTurnNode matches our nodeId, it’s our turn
+  return (currentTurnNode == mesh.getNodeId());
+}
+
+void nextTurn() {
+  // We have a vector of knownNodes plus ourselves. Let’s unify them:
+  // If the list doesn’t contain ourselves, we add it.
+  bool haveSelf = false;
+  for (auto n : knownNodes) {
+    if (n == mesh.getNodeId()) {
+      haveSelf = true;
+      break;
+    }
+  }
+  if (!haveSelf) {
+    knownNodes.push_back(mesh.getNodeId());
+  }
+
+  // Make sure the node vector is sorted, so that the "turn order" is consistent
+  // Or some other stable ordering
+  std::sort(knownNodes.begin(), knownNodes.end());
+
+  // Find our position in the sorted list
+  int idx = -1;
+  for (int i = 0; i < (int)knownNodes.size(); i++) {
+    if (knownNodes[i] == mesh.getNodeId()) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx >= 0) {
+    // Next index
+    int nextIdx = (idx + 1) % knownNodes.size();
+    currentTurnNode = knownNodes[nextIdx];
+  }
+}
+
+// Broadcast the current turn data to the entire mesh
+void sendTurnUpdate() {
+  // Example format: "TURN:<turnNumber>:<currentTurnNode>:"
+  String msg = "TURN:" + String(turnNumber) + ":" + String(currentTurnNode) + ":";
+  mesh.sendBroadcast(msg);
+}
+
+int lastDisplay = -1;
+void setDisplay(int number) {
+  // Stub for your actual display library code, e.g.:
+  // display.setNumber(number);
+  // or something similar
+    if (number != lastDisplay) {
+        Serial.printf("[Display] %d\n", number);
+        lastDisplay = number;
+    }
+
+}
+
+/*************************************************************
+   setup() and loop()
+*************************************************************/
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  // Initialize the mesh
+  mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+  mesh.onNewConnection(&newConnectionCallback);
+  mesh.onDroppedConnection(&lostConnectionCallback);
+  mesh.onReceive(&receivedCallback);
+
+  // For demonstration, we’ll say the first device to power up
+  // decides it’s the first turn holder:
+  currentTurnNode = mesh.getNodeId();
+
+  // Create FreeRTOS tasks
+  xTaskCreate(buttonTask, "ButtonTask", 2048, NULL, 1, NULL);
+  xTaskCreate(updateTask, "UpdateTask", 2048, NULL, 1, NULL);
+}
+
+void loop() {
+  // Let painlessMesh handle its background tasks
+  mesh.update();
+
+  // Other background tasks or logic can go here if needed
+}
+
 
