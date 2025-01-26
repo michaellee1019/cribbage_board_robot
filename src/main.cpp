@@ -1,4 +1,4 @@
-#include "SparkFun_Alphanumeric_Display.h"
+#include <SparkFun_Alphanumeric_Display.h>
 #include <Adafruit_MCP23X17.h>
 #include <Arduino.h>
 #include <Adafruit_seesaw.h>
