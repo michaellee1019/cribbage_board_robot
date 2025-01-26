@@ -60,7 +60,7 @@ public:
     }
 
     void loop() {
-        Serial.println("Button grid loop");
+        // Serial.println("Button grid loop");
         if (!buttonGpio.digitalRead(okPin)) {
             Serial.println("Button OK Pressed!");
             display->print("OK");
@@ -90,10 +90,16 @@ public:
     }
 };
 
+volatile bool interrupted = false;
+static void seesawInterrupt() {
+    interrupted = true;
+}
+
 class RotaryEncoder {
     #define SS_SWITCH 24
     #define SS_NEOPIX 6
     #define SEESAW_ADDR 0x36
+    #define SEESAW_INTERRUPT 7
 
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
@@ -107,14 +113,26 @@ class RotaryEncoder {
             sspixel.setPixelColor(0, 0xFF0000);
             sspixel.show();
 
+            // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
             ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+            static constexpr uint32_t mask = static_cast<uint32_t>(0b1) << SS_SWITCH;
+
+            pinMode(SEESAW_INTERRUPT, INPUT_PULLUP);
+            ss.pinModeBulk(mask, INPUT_PULLUP); // Probably don't need this with the ss.pinMode above
+            ss.setGPIOInterrupts(mask, true);
+            ss.enableEncoderInterrupt();
+
+            attachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT), seesawInterrupt, CHANGE);
         }
 
         void loop() {
-            Serial.println("Encoder position: " + String(ss.getEncoderPosition()));
-
-            if (!ss.digitalRead(SS_SWITCH)) {
-                Serial.println("Switch pressed");
+            if (interrupted) {
+                auto pressed = ss.digitalRead(SS_SWITCH);
+                auto val = ss.getEncoderPosition();
+                Serial.printf("Interrupted %d && %d \n", pressed, val);
+                interrupted = false;
+                delay(100);
             }
         }
 };
