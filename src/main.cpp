@@ -25,12 +25,63 @@ public:
     }
 };
 
-Adafruit_MCP23X17 buttonGpio;
-u32_t okPin = 4;
-u32_t plusone = 3;
-u32_t plusfive = 2;
-u32_t negone = 1;
-u32_t add = 0;
+class ButtonGrid {
+    HT16Display* const display;
+    Adafruit_MCP23X17 buttonGpio;
+    u32_t okPin = 4;
+    u32_t plusone = 3;
+    u32_t plusfive = 2;
+    u32_t negone = 1;
+    u32_t add = 0;
+public:
+    ButtonGrid(HT16Display* const display)
+        : display{display} {}
+
+    void setup() {
+        if (!buttonGpio.begin_I2C(0x20, &Wire)) {
+            Serial.println("Error initializing MCP.");
+        } else {
+            Serial.println("MCP Found!");
+        }
+
+        buttonGpio.pinMode(okPin, INPUT_PULLUP);
+        buttonGpio.pinMode(plusone, INPUT_PULLUP);
+        buttonGpio.pinMode(plusfive, INPUT_PULLUP);
+        buttonGpio.pinMode(negone, INPUT_PULLUP);
+        buttonGpio.pinMode(add, INPUT_PULLUP);
+    }
+
+    void loop() {
+        if (!buttonGpio.digitalRead(okPin)) {
+            Serial.println("Button OK Pressed!");
+            display->print("OK");
+            delay(100);
+        }
+        if (!buttonGpio.digitalRead(plusone)) {
+            Serial.println("Button +1 Pressed!");
+            display->print("+1");
+            delay(100);
+        }
+
+        if (!buttonGpio.digitalRead(plusfive)) {
+            Serial.println("Button +5 Pressed!");
+            display->print("+5");
+            delay(100);
+        }
+        if (!buttonGpio.digitalRead(negone)) {
+            Serial.println("Button -1 Pressed!");
+            display->print("-1");
+            delay(100);
+        }
+        if (!buttonGpio.digitalRead(add)) {
+            Serial.println("Button ADD Pressed!");
+            display->print("ADD");
+            delay(100);
+        }
+    }
+};
+
+
 
 class RotaryEncoder {
     #define SS_SWITCH 24
@@ -63,36 +114,18 @@ class RotaryEncoder {
 
 RotaryEncoder encoder;
 HT16Display display;
+ButtonGrid buttonGrid(&display);
 
 // the setup function runs once when you press reset or power the board
 void setup() {
-    // initialize serial communication at 9600 bits per second:
     Serial.begin(115200);
-    Serial.println("I just began.");
-
-    encoder.setup();
-
-    // Don't do this unless you really need to, won't work unless connected to serial monitor
-    while (!Serial) {
-        // ; // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and
-        // other 32u4 based boards.
-    }
-    delay(1000);
+    // TODO: do we need this Wire.begin?
     Wire.begin(5, 6);
 
+    encoder.setup();
     display.setup();
+    buttonGrid.setup();
 
-    if (!buttonGpio.begin_I2C(0x20, &Wire)) {
-        Serial.println("Error initializing MCP.");
-    } else {
-        Serial.println("MCP Found!");
-    }
-
-    buttonGpio.pinMode(okPin, INPUT_PULLUP);
-    buttonGpio.pinMode(plusone, INPUT_PULLUP);
-    buttonGpio.pinMode(plusfive, INPUT_PULLUP);
-    buttonGpio.pinMode(negone, INPUT_PULLUP);
-    buttonGpio.pinMode(add, INPUT_PULLUP);
 
 
 }
@@ -100,32 +133,7 @@ void setup() {
 bool buttonPressed = false;
 
 void loop() {
-    if (!buttonGpio.digitalRead(okPin)) {
-        Serial.println("Button OK Pressed!");
-        display.print("OK");
-        delay(100);
-    }
-    if (!buttonGpio.digitalRead(plusone)) {
-        Serial.println("Button +1 Pressed!");
-        display.print("+1");
-        delay(100);
-    }
-
-    if (!buttonGpio.digitalRead(plusfive)) {
-        Serial.println("Button +5 Pressed!");
-        display.print("+5");
-        delay(100);
-    }
-    if (!buttonGpio.digitalRead(negone)) {
-        Serial.println("Button -1 Pressed!");
-        display.print("-1");
-        delay(100);
-    }
-    if (!buttonGpio.digitalRead(add)) {
-        Serial.println("Button ADD Pressed!");
-        display.print("ADD");
-        delay(100);
-    }
+    buttonGrid.loop();
     encoder.loop();
 }
 
