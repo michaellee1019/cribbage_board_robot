@@ -1,8 +1,21 @@
-#include <SparkFun_Alphanumeric_Display.h>
-#include <Adafruit_MCP23X17.h>
 #include <Arduino.h>
+
+#include <SparkFun_Alphanumeric_Display.h>
+
+#include <Adafruit_MCP23X17.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
+
+#include <WiFi.h>
+#include <painlessMesh.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+
+#define MESH_PREFIX     "mesh_network"
+#define MESH_PASSWORD   "mesh_password"
+#define MESH_PORT       5555
 
 
 class HT16Display {
@@ -15,7 +28,7 @@ public:
         }
         Serial.println("Display acknowledged.");
 
-        driver.print("BEEF");
+        driver.print("RYAN");
     }
 
     // Talks like a duck!
@@ -77,8 +90,6 @@ public:
     }
 };
 
-
-
 class RotaryEncoder {
     #define SS_SWITCH 24
     #define SS_NEOPIX 6
@@ -88,7 +99,7 @@ class RotaryEncoder {
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
     public:
-        explicit RotaryEncoder() {}
+        explicit RotaryEncoder() = default;
         void setup() {
             ss.begin(SEESAW_ADDR);
             sspixel.begin(SEESAW_ADDR);
@@ -107,22 +118,6 @@ class RotaryEncoder {
             }
         }
 };
-
-RotaryEncoder encoder;
-HT16Display display;
-ButtonGrid buttonGrid(&display);
-
-
-#include <WiFi.h>
-#include <painlessMesh.h>
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-
-// #include <Message.hpp>
-
-#define LED_PIN         33
-#define BUTTON_PIN      27
 
 class RTButton {
 public:
@@ -273,145 +268,28 @@ private:
     }
 };
 
-// RTButton button(BUTTON_PIN, 50, 500);
+void newConnectionCallback(uint32_t nodeId) {
+  Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
+}
 
+void lostConnectionCallback(uint32_t nodeId) {
+  Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
+}
 
-#define MESH_PREFIX     "mesh_network"
-#define MESH_PASSWORD   "mesh_password"
-#define MESH_PORT       5555
+void receivedCallback(uint32_t from, String &msg) {
+    Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
+}
+
+RotaryEncoder encoder;
+HT16Display display;
+ButtonGrid buttonGrid(&display);
 
 painlessMesh mesh;
 
-// We’ll track the order of node IDs discovered in a vector,
-// and we’ll figure out “who’s next” by index in this list.
-std::vector<uint32_t> knownNodes;
-
-
-// Called whenever a new node connects
-void newConnectionCallback(uint32_t nodeId) {
-  Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
-
-  // Keep track of known nodes
-  // (avoid duplicates; just for demonstration)
-  bool found = false;
-  for (auto n : knownNodes) {
-    if (n == nodeId) {
-      found = true;
-      break;
-    }
-  }
-  if (!found) {
-    knownNodes.push_back(nodeId);
-  }
-
-  // Optionally broadcast the current state so the new node
-  // can sync immediately
-  // sendTurnUpdate();
-}
-
-// Called whenever a node goes offline
-void lostConnectionCallback(uint32_t nodeId) {
-  Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
-
-  // Remove from the knownNodes list
-  for (auto it = knownNodes.begin(); it != knownNodes.end(); ) {
-    if (*it == nodeId) {
-      it = knownNodes.erase(it);
-    } else {
-      ++it;
-    }
-  }
-}
-
-// Called when a message arrives
-void receivedCallback(uint32_t from, String &msg) {
-  Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
-  // For simplicity, let’s assume the message is formatted like: "TURN:<turnNumber>:<currentTurnNode>"
-  // We’ll parse it out.
-  // In real code, you might want JSON or a more robust approach.
-
-  if (msg.startsWith("TURN:")) {
-    int firstColon = msg.indexOf(':', 5);
-    int secondColon = msg.indexOf(':', firstColon + 1);
-    if (firstColon > 0 && secondColon > 0) {
-      String turnStr = msg.substring(5, firstColon);
-      String nodeStr = msg.substring(firstColon + 1, secondColon);
-      //
-      // turnNumber = turnStr.toInt();
-      // currentTurnNode = (uint32_t) nodeStr.toInt();
-    }
-  }
-}
-
-/*************************************************************
-   Helper Functions
-*************************************************************/
-//
-// bool isOurTurn() {
-//   // If the currentTurnNode matches our nodeId, it’s our turn
-//   return (currentTurnNode == mesh.getNodeId());
-// }
-
-void nextTurn() {
-  // We have a vector of knownNodes plus ourselves. Let’s unify them:
-  // If the list doesn’t contain ourselves, we add it.
-  bool haveSelf = false;
-  for (auto n : knownNodes) {
-    if (n == mesh.getNodeId()) {
-      haveSelf = true;
-      break;
-    }
-  }
-  if (!haveSelf) {
-    knownNodes.push_back(mesh.getNodeId());
-  }
-
-  // Make sure the node vector is sorted, so that the "turn order" is consistent
-  // Or some other stable ordering
-  std::sort(knownNodes.begin(), knownNodes.end());
-
-  // Find our position in the sorted list
-  int idx = -1;
-  for (int i = 0; i < (int)knownNodes.size(); i++) {
-    if (knownNodes[i] == mesh.getNodeId()) {
-      idx = i;
-      break;
-    }
-  }
-  if (idx >= 0) {
-    // Next index
-    int nextIdx = (idx + 1) % knownNodes.size();
-    // currentTurnNode = knownNodes[nextIdx];
-  }
-}
-
-// Broadcast the current turn data to the entire mesh
-void sendTurnUpdate() {
-  // Example format: "TURN:<turnNumber>:<currentTurnNode>:"
-  // String msg = "TURN:" + String(turnNumber) + ":" + String(currentTurnNode) + ":";
-    String msg = "Hello";
-  mesh.sendBroadcast(msg);
-}
-
-int lastDisplay = -1;
-void setDisplay(int number) {
-  // Stub for your actual display library code, e.g.:
-  // display.setNumber(number);
-  // or something similar
-    if (number != lastDisplay) {
-        Serial.printf("[Display] %d\n", number);
-        lastDisplay = number;
-    }
-
-}
-
-/*************************************************************
-   setup() and loop()
-*************************************************************/
 void setup() {
   Serial.begin(115200);
   delay(2000);
-    Serial.println("Starting up");
+  Serial.println("Starting up");
 
   // TODO: do we need this Wire.begin?
   Wire.begin(5, 6);
@@ -420,7 +298,6 @@ void setup() {
   display.setup();
   buttonGrid.setup();
 
-
   // Initialize the mesh
   // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
   mesh.setDebugMsgTypes(ERROR);  // set before init()
@@ -428,24 +305,10 @@ void setup() {
   mesh.onNewConnection(&newConnectionCallback);
   mesh.onDroppedConnection(&lostConnectionCallback);
   mesh.onReceive(&receivedCallback);
-
-  // For demonstration, we’ll say the first device to power up
-  // decides it’s the first turn holder:
-  // currentTurnNode = mesh.getNodeId();
-
-  // Create FreeRTOS tasks
-  // xTaskCreate(buttonTask, "ButtonTask", 2048, NULL, 1, NULL);
-  // xTaskCreate(updateTask, "UpdateTask", 2048, NULL, 1, NULL);
 }
 
 void loop() {
-  // Let painlessMesh handle its background tasks
   mesh.update();
-
-    buttonGrid.loop();
-    encoder.loop();
-
-  // Other background tasks or logic can go here if needed
+  buttonGrid.loop();
+  encoder.loop();
 }
-
-
