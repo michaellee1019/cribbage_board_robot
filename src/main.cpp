@@ -13,13 +13,14 @@
 #include <freertos/semphr.h>
 
 
-#define MESH_PREFIX     "mesh_network"
-#define MESH_PASSWORD   "mesh_password"
-#define MESH_PORT       5555
+#define MESH_PREFIX "mesh_network"
+#define MESH_PASSWORD "mesh_password"
+#define MESH_PORT 5555
 
 
 class HT16Display {
     HT16K33 driver;
+
 public:
     HT16Display() = default;
     void setup() {
@@ -32,7 +33,7 @@ public:
     }
 
     // Talks like a duck!
-    template<typename... Args>
+    template <typename... Args>
     auto print(Args&&... args) {
         return driver.print(std::forward<Args>(args)...);
     }
@@ -56,9 +57,9 @@ class ButtonGrid {
     static constexpr u32_t negone = 1;
     static constexpr u32_t add = 0;
     static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
+
 public:
-    explicit ButtonGrid(HT16Display* const display)
-        : display{display} {}
+    explicit ButtonGrid(HT16Display* const display) : display{display} {}
 
     void setup() {
         buttonGpio.begin_I2C(0x20, &Wire);
@@ -78,7 +79,7 @@ public:
         }
 
         uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
-        uint8_t intVal = buttonGpio.getCapturedInterrupt(); // What was the level?
+        uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
 
         String msg = String(intPin) + " " + String(intVal);
         display->print(msg);
@@ -93,79 +94,81 @@ static void seesawInterrupt() {
 }
 
 class RotaryEncoder {
-    #define SS_SWITCH 24
-    #define SS_NEOPIX 6
-    #define SEESAW_ADDR 0x36
-    #define SEESAW_INTERRUPT 7
+#define SS_SWITCH 24
+#define SS_NEOPIX 6
+#define SEESAW_ADDR 0x36
+#define SEESAW_INTERRUPT 7
 
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
     HT16Display* const display;
 
-    public:
-        explicit RotaryEncoder(HT16Display* const display)
-            : display{display} {}
+public:
+    explicit RotaryEncoder(HT16Display* const display) : display{display} {}
 
-        void setup() {
-            ss.begin(SEESAW_ADDR);
-            sspixel.begin(SEESAW_ADDR);
-            sspixel.setBrightness(20);
-            sspixel.setPixelColor(0, 0xFF0000);
-            sspixel.show();
+    void setup() {
+        ss.begin(SEESAW_ADDR);
+        sspixel.begin(SEESAW_ADDR);
+        sspixel.setBrightness(20);
+        sspixel.setPixelColor(0, 0xFF0000);
+        sspixel.show();
 
-            // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
-            ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+        // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
+        ss.pinMode(SS_SWITCH, INPUT_PULLUP);
 
-            static constexpr uint32_t mask = static_cast<uint32_t>(0b1) << SS_SWITCH;
+        static constexpr uint32_t mask = static_cast<uint32_t>(0b1) << SS_SWITCH;
 
-            pinMode(SEESAW_INTERRUPT, INPUT_PULLUP);
-            ss.pinModeBulk(mask, INPUT_PULLUP); // Probably don't need this with the ss.pinMode above
-            ss.setGPIOInterrupts(mask, true);
-            ss.enableEncoderInterrupt();
+        pinMode(SEESAW_INTERRUPT, INPUT_PULLUP);
+        ss.pinModeBulk(mask, INPUT_PULLUP);  // Probably don't need this with the ss.pinMode above
+        ss.setGPIOInterrupts(mask, true);
+        ss.enableEncoderInterrupt();
 
-            attachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT), seesawInterrupt, CHANGE);
+        attachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT), seesawInterrupt, CHANGE);
+    }
+
+    void loop() {
+        if (!interrupted) {
+            return;
         }
-
-        void loop() {
-            if (!interrupted) {
-                return;
-            }
-            auto pressed = ss.digitalRead(SS_SWITCH);
-            auto val = ss.getEncoderPosition();
-            String msg = String(val) + " " + String(pressed);
-            display->print(msg);
-            interrupted = false;
-        }
+        auto pressed = ss.digitalRead(SS_SWITCH);
+        auto val = ss.getEncoderPosition();
+        String msg = String(val) + " " + String(pressed);
+        display->print(msg);
+        interrupted = false;
+    }
 };
 
 class RTButton {
 public:
     RTButton(int pin, int debounceDelay, int doubleClickThreshold)
-        : buttonPin(pin), debounceDelayMs(debounceDelay), doubleClickThresholdMs(doubleClickThreshold), lastInterruptTime(0) {
+        : buttonPin(pin),
+          debounceDelayMs(debounceDelay),
+          doubleClickThresholdMs(doubleClickThreshold),
+          lastInterruptTime(0) {
         buttonSemaphore = xSemaphoreCreateBinary();
 
-        debounceTimer = xTimerCreate(
-            "Debounce Timer",
-            pdMS_TO_TICKS(debounceDelayMs),
-            pdFALSE, // One-shot timer
-            this,
-            [](TimerHandle_t xTimer) {
-                auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
-                if (button) button->debounceCallback();
-            }
-        );
+        debounceTimer = xTimerCreate("Debounce Timer",
+                                     pdMS_TO_TICKS(debounceDelayMs),
+                                     pdFALSE,  // One-shot timer
+                                     this,
+                                     [](TimerHandle_t xTimer) {
+                                         auto* button =
+                                             static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
+                                         if (button)
+                                             button->debounceCallback();
+                                     });
 
-        doubleClickTimer = xTimerCreate(
-            "Double-Click Timer",
-            pdMS_TO_TICKS(doubleClickThresholdMs),
-            pdFALSE, // One-shot timer
-            this,
-            [](TimerHandle_t xTimer) {
-                auto* button = static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
-                if (button) button->doubleClickCallback();
-            }
-        );
+        doubleClickTimer = xTimerCreate("Double-Click Timer",
+                                        pdMS_TO_TICKS(doubleClickThresholdMs),
+                                        pdFALSE,  // One-shot timer
+                                        this,
+                                        [](TimerHandle_t xTimer) {
+                                            auto* button =
+                                                static_cast<RTButton*>(pvTimerGetTimerID(xTimer));
+                                            if (button)
+                                                button->doubleClickCallback();
+                                        });
 
         if (debounceTimer == nullptr || doubleClickTimer == nullptr) {
             Serial.println("Failed to create timers");
@@ -193,9 +196,14 @@ public:
         BaseType_t taskCreated = xTaskCreate(
             [](void* param) {
                 auto* button = static_cast<RTButton*>(param);
-                if (button) button->buttonTask();
+                if (button)
+                    button->buttonTask();
             },
-            "Button Task", 2048, this, 1, nullptr);
+            "Button Task",
+            2048,
+            this,
+            1,
+            nullptr);
 
         if (taskCreated != pdPASS) {
             Serial.println("Failed to create button task");
@@ -237,7 +245,8 @@ private:
 
     static void IRAM_ATTR ISRHandler(void* arg) {
         auto* button = static_cast<RTButton*>(arg);
-        if (button) button->handleInterrupt();
+        if (button)
+            button->handleInterrupt();
     }
 
     void handleInterrupt() {
@@ -289,14 +298,14 @@ private:
 };
 
 void newConnectionCallback(uint32_t nodeId) {
-  Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
+    Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
 }
 
 void lostConnectionCallback(uint32_t nodeId) {
-  Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
+    Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
 }
 
-void receivedCallback(uint32_t from, String &msg) {
+void receivedCallback(uint32_t from, String& msg) {
     Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
 }
 
@@ -308,28 +317,28 @@ ButtonGrid buttonGrid(&display);
 painlessMesh mesh;
 
 void setup() {
-  Serial.begin(115200);
-  delay(2000);
-  Serial.println("Starting up");
+    Serial.begin(115200);
+    delay(2000);
+    Serial.println("Starting up");
 
-  // TODO: do we need this Wire.begin?
-  Wire.begin(5, 6);
+    // TODO: do we need this Wire.begin?
+    Wire.begin(5, 6);
 
-  encoder.setup();
-  display.setup();
-  buttonGrid.setup();
+    encoder.setup();
+    display.setup();
+    buttonGrid.setup();
 
-  // Initialize the mesh
-  // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
-  mesh.setDebugMsgTypes(ERROR);  // set before init()
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
-  mesh.onNewConnection(&newConnectionCallback);
-  mesh.onDroppedConnection(&lostConnectionCallback);
-  mesh.onReceive(&receivedCallback);
+    // Initialize the mesh
+    // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+    mesh.setDebugMsgTypes(ERROR);  // set before init()
+    mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+    mesh.onNewConnection(&newConnectionCallback);
+    mesh.onDroppedConnection(&lostConnectionCallback);
+    mesh.onReceive(&receivedCallback);
 }
 
 void loop() {
-  mesh.update();
-  buttonGrid.loop();
-  encoder.loop();
+    mesh.update();
+    buttonGrid.loop();
+    encoder.loop();
 }
