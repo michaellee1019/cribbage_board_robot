@@ -4,11 +4,27 @@
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 
-// define two tasks for Blink & AnalogRead
-void TaskBlink(void* pvParameters);
-void TaskAnalogRead(void* pvParameters);
 
-HT16K33 display;
+class HT16Display {
+    HT16K33 driver;
+public:
+    HT16Display() = default;
+    void setup() {
+        while (!driver.begin()) {
+            Serial.println("Device did not acknowledge!");
+        }
+        Serial.println("Display acknowledged.");
+
+        driver.print("BEEF");
+    }
+
+    // Talks like a duck!
+    template<typename... Args>
+    auto print(Args&&... args) {
+        return driver.print(std::forward<Args>(args)...);
+    }
+};
+
 Adafruit_MCP23X17 buttonGpio;
 u32_t okPin = 4;
 u32_t plusone = 3;
@@ -46,6 +62,7 @@ class RotaryEncoder {
 };
 
 RotaryEncoder encoder;
+HT16Display display;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -63,6 +80,8 @@ void setup() {
     delay(1000);
     Wire.begin(5, 6);
 
+    display.setup();
+
     if (!buttonGpio.begin_I2C(0x20, &Wire)) {
         Serial.println("Error initializing MCP.");
     } else {
@@ -75,12 +94,7 @@ void setup() {
     buttonGpio.pinMode(negone, INPUT_PULLUP);
     buttonGpio.pinMode(add, INPUT_PULLUP);
 
-    while (display.begin() == false) {
-        Serial.println("Device did not acknowledge!");
-    }
-    Serial.println("Display acknowledged.");
 
-    display.print("BEEF");
 }
 
 bool buttonPressed = false;
