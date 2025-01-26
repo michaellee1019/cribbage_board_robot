@@ -38,9 +38,17 @@ public:
     }
 };
 
+volatile bool buttonPressed = false;
+static void buttonISR() {
+    buttonPressed = true;
+}
+
+
 class ButtonGrid {
     HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
+
+    static constexpr u32_t interruptPin = 8;
 
     static constexpr u32_t okPin = 4;
     static constexpr u32_t plusone = 3;
@@ -54,39 +62,28 @@ public:
 
     void setup() {
         buttonGpio.begin_I2C(0x20, &Wire);
+        buttonGpio.setupInterrupts(true, false, LOW);
         for (auto&& pin : pins) {
             buttonGpio.pinMode(pin, INPUT_PULLUP);
+            buttonGpio.setupInterruptPin(pin, LOW);
         }
+        pinMode(interruptPin, INPUT_PULLUP);
+        attachInterrupt(digitalPinToInterrupt(interruptPin), buttonISR, CHANGE);
+        buttonGpio.clearInterrupts();
     }
 
     void loop() {
-        // Serial.println("Button grid loop");
-        if (!buttonGpio.digitalRead(okPin)) {
-            Serial.println("Button OK Pressed!");
-            display->print("OK");
-            delay(100);
-        }
-        if (!buttonGpio.digitalRead(plusone)) {
-            Serial.println("Button +1 Pressed!");
-            display->print("+1");
-            delay(100);
+        if (!buttonPressed) {
+            return;
         }
 
-        if (!buttonGpio.digitalRead(plusfive)) {
-            Serial.println("Button +5 Pressed!");
-            display->print("+5");
-            delay(100);
-        }
-        if (!buttonGpio.digitalRead(negone)) {
-            Serial.println("Button -1 Pressed!");
-            display->print("-1");
-            delay(100);
-        }
-        if (!buttonGpio.digitalRead(add)) {
-            Serial.println("Button ADD Pressed!");
-            display->print("ADD");
-            delay(100);
-        }
+        uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
+        uint8_t intVal = buttonGpio.getCapturedInterrupt(); // What was the level?
+
+        String msg = String(intPin) + " " + String(intVal);
+        display->print(msg);
+        buttonPressed = false;
+        buttonGpio.clearInterrupts();
     }
 };
 
@@ -104,8 +101,12 @@ class RotaryEncoder {
     Adafruit_seesaw ss;
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
+    HT16Display* const display;
+
     public:
-        explicit RotaryEncoder() = default;
+        explicit RotaryEncoder(HT16Display* const display)
+            : display{display} {}
+
         void setup() {
             ss.begin(SEESAW_ADDR);
             sspixel.begin(SEESAW_ADDR);
@@ -127,13 +128,14 @@ class RotaryEncoder {
         }
 
         void loop() {
-            if (interrupted) {
-                auto pressed = ss.digitalRead(SS_SWITCH);
-                auto val = ss.getEncoderPosition();
-                Serial.printf("Interrupted %d && %d \n", pressed, val);
-                interrupted = false;
-                delay(100);
+            if (!interrupted) {
+                return;
             }
+            auto pressed = ss.digitalRead(SS_SWITCH);
+            auto val = ss.getEncoderPosition();
+            String msg = String(val) + " " + String(pressed);
+            display->print(msg);
+            interrupted = false;
         }
 };
 
@@ -298,8 +300,9 @@ void receivedCallback(uint32_t from, String &msg) {
     Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
 }
 
-RotaryEncoder encoder;
+
 HT16Display display;
+RotaryEncoder encoder{&display};
 ButtonGrid buttonGrid(&display);
 
 painlessMesh mesh;
