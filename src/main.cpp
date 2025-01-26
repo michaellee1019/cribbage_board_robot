@@ -25,7 +25,6 @@ public:
     }
 };
 
-
 class ButtonGrid {
     HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
@@ -43,11 +42,12 @@ public:
     void setup() {
         buttonGpio.begin_I2C(0x20, &Wire);
         for (auto&& pin : pins) {
-            pinMode(pin, INPUT_PULLUP);
+            buttonGpio.pinMode(pin, INPUT_PULLUP);
         }
     }
 
     void loop() {
+        Serial.println("Button grid loop");
         if (!buttonGpio.digitalRead(okPin)) {
             Serial.println("Button OK Pressed!");
             display->print("OK");
@@ -111,29 +111,6 @@ class RotaryEncoder {
 RotaryEncoder encoder;
 HT16Display display;
 ButtonGrid buttonGrid(&display);
-
-// the setup function runs once when you press reset or power the board
-void setup() {
-    Serial.begin(115200);
-    // TODO: do we need this Wire.begin?
-    Wire.begin(5, 6);
-
-    encoder.setup();
-    display.setup();
-    buttonGrid.setup();
-
-
-
-}
-
-bool buttonPressed = false;
-
-void loop() {
-    buttonGrid.loop();
-    encoder.loop();
-}
-
-
 
 
 #include <WiFi.h>
@@ -305,76 +282,10 @@ private:
 
 painlessMesh mesh;
 
-// “Global” turn data
-// For simplicity, we’ll keep track of the turn number
-// and which node has the current turn in a broadcast structure.
-int  turnNumber = 0;       // e.g., how many times the button has been pressed
-uint32_t currentTurnNode = 0;  // nodeId of the device whose turn it currently is
-
 // We’ll track the order of node IDs discovered in a vector,
 // and we’ll figure out “who’s next” by index in this list.
 std::vector<uint32_t> knownNodes;
 
-/*************************************************************
-   Forward Declarations
-*************************************************************/
-void sendTurnUpdate();
-void setDisplay(int number);
-bool isOurTurn();
-void nextTurn();
-
-/*************************************************************
-   FreeRTOS Tasks
-*************************************************************/
-// Task to periodically check button state.
-void buttonTask(void *parameter) {
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-
-  bool lastButtonState = HIGH;
-  while (true) {
-    bool buttonState = digitalRead(BUTTON_PIN);
-
-    // Simple falling-edge check:
-    if (lastButtonState == HIGH && buttonState == LOW) {
-      // If it’s our turn, pressing the button increments the turn
-      // and passes to next node
-        Serial.println("Button Pressed");
-      if (isOurTurn()) {
-        turnNumber++;
-        nextTurn();
-        sendTurnUpdate();
-      }
-    }
-    lastButtonState = buttonState;
-
-    // Debounce-ish delay
-    vTaskDelay(50 / portTICK_PERIOD_MS);
-  }
-}
-
-// Task to update the LED/display based on the shared turn data.
-void updateTask(void *parameter) {
-  pinMode(LED_PIN, OUTPUT);
-
-  while (true) {
-    // LED on if it’s our turn, off otherwise
-    if (isOurTurn()) {
-      digitalWrite(LED_PIN, HIGH);
-    } else {
-      digitalWrite(LED_PIN, LOW);
-    }
-
-    // Update the numeric display with the current turn count
-    setDisplay(turnNumber);
-
-    // Let’s not hammer the CPU
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
-}
-
-/*************************************************************
-   Mesh Callbacks
-*************************************************************/
 
 // Called whenever a new node connects
 void newConnectionCallback(uint32_t nodeId) {
@@ -395,7 +306,7 @@ void newConnectionCallback(uint32_t nodeId) {
 
   // Optionally broadcast the current state so the new node
   // can sync immediately
-  sendTurnUpdate();
+  // sendTurnUpdate();
 }
 
 // Called whenever a node goes offline
@@ -425,9 +336,9 @@ void receivedCallback(uint32_t from, String &msg) {
     if (firstColon > 0 && secondColon > 0) {
       String turnStr = msg.substring(5, firstColon);
       String nodeStr = msg.substring(firstColon + 1, secondColon);
-
-      turnNumber = turnStr.toInt();
-      currentTurnNode = (uint32_t) nodeStr.toInt();
+      //
+      // turnNumber = turnStr.toInt();
+      // currentTurnNode = (uint32_t) nodeStr.toInt();
     }
   }
 }
@@ -435,11 +346,11 @@ void receivedCallback(uint32_t from, String &msg) {
 /*************************************************************
    Helper Functions
 *************************************************************/
-
-bool isOurTurn() {
-  // If the currentTurnNode matches our nodeId, it’s our turn
-  return (currentTurnNode == mesh.getNodeId());
-}
+//
+// bool isOurTurn() {
+//   // If the currentTurnNode matches our nodeId, it’s our turn
+//   return (currentTurnNode == mesh.getNodeId());
+// }
 
 void nextTurn() {
   // We have a vector of knownNodes plus ourselves. Let’s unify them:
@@ -470,14 +381,15 @@ void nextTurn() {
   if (idx >= 0) {
     // Next index
     int nextIdx = (idx + 1) % knownNodes.size();
-    currentTurnNode = knownNodes[nextIdx];
+    // currentTurnNode = knownNodes[nextIdx];
   }
 }
 
 // Broadcast the current turn data to the entire mesh
 void sendTurnUpdate() {
   // Example format: "TURN:<turnNumber>:<currentTurnNode>:"
-  String msg = "TURN:" + String(turnNumber) + ":" + String(currentTurnNode) + ":";
+  // String msg = "TURN:" + String(turnNumber) + ":" + String(currentTurnNode) + ":";
+    String msg = "Hello";
   mesh.sendBroadcast(msg);
 }
 
@@ -496,12 +408,22 @@ void setDisplay(int number) {
 /*************************************************************
    setup() and loop()
 *************************************************************/
-void setupOld() {
+void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(2000);
+    Serial.println("Starting up");
+
+  // TODO: do we need this Wire.begin?
+  Wire.begin(5, 6);
+
+  encoder.setup();
+  display.setup();
+  buttonGrid.setup();
+
 
   // Initialize the mesh
-  mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+  // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+  mesh.setDebugMsgTypes(ERROR);  // set before init()
   mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
   mesh.onNewConnection(&newConnectionCallback);
   mesh.onDroppedConnection(&lostConnectionCallback);
@@ -509,16 +431,19 @@ void setupOld() {
 
   // For demonstration, we’ll say the first device to power up
   // decides it’s the first turn holder:
-  currentTurnNode = mesh.getNodeId();
+  // currentTurnNode = mesh.getNodeId();
 
   // Create FreeRTOS tasks
-  xTaskCreate(buttonTask, "ButtonTask", 2048, NULL, 1, NULL);
-  xTaskCreate(updateTask, "UpdateTask", 2048, NULL, 1, NULL);
+  // xTaskCreate(buttonTask, "ButtonTask", 2048, NULL, 1, NULL);
+  // xTaskCreate(updateTask, "UpdateTask", 2048, NULL, 1, NULL);
 }
 
-void loopOld() {
+void loop() {
   // Let painlessMesh handle its background tasks
   mesh.update();
+
+    buttonGrid.loop();
+    encoder.loop();
 
   // Other background tasks or logic can go here if needed
 }
