@@ -25,30 +25,26 @@ public:
     }
 };
 
+
 class ButtonGrid {
     HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
-    u32_t okPin = 4;
-    u32_t plusone = 3;
-    u32_t plusfive = 2;
-    u32_t negone = 1;
-    u32_t add = 0;
+
+    static constexpr u32_t okPin = 4;
+    static constexpr u32_t plusone = 3;
+    static constexpr u32_t plusfive = 2;
+    static constexpr u32_t negone = 1;
+    static constexpr u32_t add = 0;
+    static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
 public:
-    ButtonGrid(HT16Display* const display)
+    explicit ButtonGrid(HT16Display* const display)
         : display{display} {}
 
     void setup() {
-        if (!buttonGpio.begin_I2C(0x20, &Wire)) {
-            Serial.println("Error initializing MCP.");
-        } else {
-            Serial.println("MCP Found!");
+        buttonGpio.begin_I2C(0x20, &Wire);
+        for (auto&& pin : pins) {
+            pinMode(pin, INPUT_PULLUP);
         }
-
-        buttonGpio.pinMode(okPin, INPUT_PULLUP);
-        buttonGpio.pinMode(plusone, INPUT_PULLUP);
-        buttonGpio.pinMode(plusfive, INPUT_PULLUP);
-        buttonGpio.pinMode(negone, INPUT_PULLUP);
-        buttonGpio.pinMode(add, INPUT_PULLUP);
     }
 
     void loop() {
