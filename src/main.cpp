@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <set>
 
 #include <SparkFun_Alphanumeric_Display.h>
 
@@ -17,6 +18,16 @@
 #define MESH_PASSWORD "mesh_password"
 #define MESH_PORT 5555
 
+painlessMesh mesh;
+
+std::set<uint32_t> peers;
+
+template<typename... Args>
+String strFormat(const char* const format, Args...args) {
+    char buffer[10];
+    std::snprintf(buffer, sizeof(buffer), format, args...);
+    return {buffer};
+}
 
 class HT16Display {
     HT16K33 driver;
@@ -24,12 +35,7 @@ class HT16Display {
 public:
     HT16Display() = default;
     void setup() {
-        while (!driver.begin()) {
-            Serial.println("Device did not acknowledge!");
-        }
-        Serial.println("Display acknowledged.");
-
-        driver.print("RYAN");
+        while (!driver.begin()) {}
     }
 
     // Talks like a duck!
@@ -66,7 +72,7 @@ public:
         buttonGpio.setupInterrupts(true, false, LOW);
         for (auto&& pin : pins) {
             buttonGpio.pinMode(pin, INPUT_PULLUP);
-            buttonGpio.setupInterruptPin(pin, LOW);
+            buttonGpio.setupInterruptPin(pin, CHANGE);
         }
         pinMode(interruptPin, INPUT_PULLUP);
         attachInterrupt(digitalPinToInterrupt(interruptPin), buttonISR, CHANGE);
@@ -80,9 +86,11 @@ public:
 
         uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
         uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
-
-        String msg = String(intPin) + " " + String(intVal);
-        display->print(msg);
+        if (intPin != MCP23XXX_INT_ERR) {
+            display->print(strFormat("%d %2x", intPin, intVal));
+        } else {
+            display->print("Sad");
+        }
         buttonPressed = false;
         buttonGpio.clearInterrupts();
     }
@@ -134,6 +142,7 @@ public:
         auto pressed = ss.digitalRead(SS_SWITCH);
         auto val = ss.getEncoderPosition();
         String msg = String(val) + " " + String(pressed);
+        mesh.sendBroadcast(msg, false);
         display->print(msg);
         interrupted = false;
     }
@@ -226,7 +235,6 @@ protected:
 
     virtual void onDoubleClick() {
         Serial.println("Double Click Detected");
-        // TODO: send
     }
 
 private:
@@ -297,30 +305,33 @@ private:
     }
 };
 
-void newConnectionCallback(uint32_t nodeId) {
-    Serial.printf("[Mesh] New Connection, nodeId = %u\n", nodeId);
-}
-
-void lostConnectionCallback(uint32_t nodeId) {
-    Serial.printf("[Mesh] Lost Connection, nodeId = %u\n", nodeId);
-}
-
-void receivedCallback(uint32_t from, String& msg) {
-    Serial.printf("[Mesh] Received from %u: %s\n", from, msg.c_str());
-}
-
 
 HT16Display display;
 RotaryEncoder encoder{&display};
 ButtonGrid buttonGrid(&display);
 
-painlessMesh mesh;
+
+
+void newConnectionCallback(uint32_t nodeId) {
+    peers.emplace(nodeId);
+    String msg = "con " + String(nodeId);
+    display.print(msg);
+}
+
+void lostConnectionCallback(uint32_t nodeId) {
+    peers.erase(nodeId);
+    String msg = "dis " + String(nodeId);
+    display.print(msg);
+}
+
+void receivedCallback(uint32_t from, String& msg) {
+    String toSend = String(from) + " " + msg;
+    display.print(toSend);
+}
 
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println("Starting up");
-
     // TODO: do we need this Wire.begin?
     Wire.begin(5, 6);
 
@@ -330,11 +341,16 @@ void setup() {
 
     // Initialize the mesh
     // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
-    mesh.setDebugMsgTypes(ERROR);  // set before init()
+    // mesh.setDebugMsgTypes(ERROR);  // set before init()
     mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+
     mesh.onNewConnection(&newConnectionCallback);
     mesh.onDroppedConnection(&lostConnectionCallback);
     mesh.onReceive(&receivedCallback);
+    peers.emplace(mesh.getNodeId());
+
+
+    display.print(strFormat("n=%d", peers.size()));
 }
 
 void loop() {
