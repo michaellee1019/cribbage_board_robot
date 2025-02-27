@@ -18,6 +18,7 @@
 #define MESH_PASSWORD "mesh_password"
 #define MESH_PORT 5555
 
+Scheduler userScheduler;  // Required for custom scheduled tasks
 painlessMesh mesh;
 
 std::set<uint32_t> peers;
@@ -88,9 +89,10 @@ public:
         uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
         if (intPin != MCP23XXX_INT_ERR) {
             display->print(strFormat("%d %2x", intPin, intVal));
-        } else {
-            display->print("Sad");
         }
+        // } else {
+        //     display->print("Sad");
+        // }
         buttonPressed = false;
         buttonGpio.clearInterrupts();
     }
@@ -119,7 +121,7 @@ public:
         ss.begin(SEESAW_ADDR);
         sspixel.begin(SEESAW_ADDR);
         sspixel.setBrightness(20);
-        sspixel.setPixelColor(0, 0xFF0000);
+        sspixel.setPixelColor(0, 0xFAEDED);
         sspixel.show();
 
         // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
@@ -142,7 +144,8 @@ public:
         auto pressed = ss.digitalRead(SS_SWITCH);
         auto val = ss.getEncoderPosition();
         String msg = String(val) + " " + String(pressed);
-        mesh.sendBroadcast(msg, false);
+        const auto sent = mesh.sendBroadcast(msg, false);
+        Serial.printf("send message [%s], result [%i]\n", msg.c_str(), sent);
         display->print(msg);
         interrupted = false;
     }
@@ -311,46 +314,83 @@ RotaryEncoder encoder{&display};
 ButtonGrid buttonGrid(&display);
 
 
-
 void newConnectionCallback(uint32_t nodeId) {
     peers.emplace(nodeId);
     String msg = "con " + String(nodeId);
-    display.print(msg);
+    Serial.println(msg);
 }
 
 void lostConnectionCallback(uint32_t nodeId) {
     peers.erase(nodeId);
     String msg = "dis " + String(nodeId);
-    display.print(msg);
+    Serial.println(msg);
 }
 
 void receivedCallback(uint32_t from, String& msg) {
     String toSend = String(from) + " " + msg;
-    display.print(toSend);
+    display.print(msg);
 }
+
+void printConnectedNodes() {
+    SimpleList<uint32_t> nodes = mesh.getNodeList();
+    Serial.printf("Found %d nodes:\n", nodes.size());
+
+    for (auto node : nodes) {
+        Serial.printf(" - Node ID: %u\n", node);
+    }
+}
+
+Task printTask(5000, TASK_FOREVER, []() { printConnectedNodes(); });
 
 void setup() {
     Serial.begin(115200);
+
+    // while (!Serial) {
+    //     ;  // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and
+    //        // other 32u4 based boards.
+    // }
+
+    Serial.println(WiFi.macAddress());
+
     delay(2000);
     // TODO: do we need this Wire.begin?
     Wire.begin(5, 6);
+
+    // Initialize the mesh
+    mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+    // mesh.setDebugMsgTypes(ERROR);  // set before init()
+   // mesh.setDebugMsgTypes(
+  //   ERROR
+  // | STARTUP
+  // | MESH_STATUS
+  // | CONNECTION
+  // | SYNC
+  // | S_TIME
+  // | COMMUNICATION
+  // | GENERAL
+  // | MSG_TYPES
+  // | REMOTE
+  // | APPLICATION
+  // | DEBUG
+  //   );
+
+    mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
+    mesh.onNewConnection(&newConnectionCallback);
+    mesh.onDroppedConnection(&lostConnectionCallback);
+    mesh.onReceive(&receivedCallback);
+    mesh.onChangedConnections([]() {
+        Serial.println("onChangedConnections");
+    });
+    peers.emplace(mesh.getNodeId());
 
     encoder.setup();
     display.setup();
     buttonGrid.setup();
 
-    // Initialize the mesh
-    // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
-    // mesh.setDebugMsgTypes(ERROR);  // set before init()
-    mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
-
-    mesh.onNewConnection(&newConnectionCallback);
-    mesh.onDroppedConnection(&lostConnectionCallback);
-    mesh.onReceive(&receivedCallback);
-    peers.emplace(mesh.getNodeId());
-
-
     display.print(strFormat("n=%d", peers.size()));
+
+    //userScheduler.addTask(printTask);
+    printTask.enable();
 }
 
 void loop() {
