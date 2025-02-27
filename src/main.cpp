@@ -35,8 +35,8 @@ class HT16Display {
 
 public:
     HT16Display() = default;
-    void setup() {
-        while (!driver.begin()) {}
+    void setup(uint8_t address, TwoWire* wire) {
+        while (!driver.begin(0x70, 0x)) {}
     }
 
     // Talks like a duck!
@@ -308,11 +308,26 @@ private:
     }
 };
 
+int numI2c(TwoWire wire) {
+    byte count = 0;
 
-HT16Display display;
-RotaryEncoder encoder{&display};
-ButtonGrid buttonGrid(&display);
+    for (byte i = 8; i < 120; i++) {
+        wire.beginTransmission(i);        // Begin I2C transmission Address (i)
+        if (wire.endTransmission() == 0)  // Receive 0 = success (ACK response)
+        {
+            count++;
+        }
+    }
+    return count;
+}
 
+HT16Display primaryDisplay;
+HT16Display display2;
+HT16Display display3;
+HT16Display display4;
+
+RotaryEncoder encoder{&primaryDisplay};
+ButtonGrid buttonGrid(&primaryDisplay);
 
 void newConnectionCallback(uint32_t nodeId) {
     peers.emplace(nodeId);
@@ -328,19 +343,10 @@ void lostConnectionCallback(uint32_t nodeId) {
 
 void receivedCallback(uint32_t from, String& msg) {
     String toSend = String(from) + " " + msg;
-    display.print(msg);
+    primaryDisplay.print(msg);
 }
 
-void printConnectedNodes() {
-    SimpleList<uint32_t> nodes = mesh.getNodeList();
-    Serial.printf("Found %d nodes:\n", nodes.size());
-
-    for (auto node : nodes) {
-        Serial.printf(" - Node ID: %u\n", node);
-    }
-}
-
-Task printTask(5000, TASK_FOREVER, []() { printConnectedNodes(); });
+bool isLeaderboard = false;
 
 void setup() {
     Serial.begin(115200);
@@ -350,47 +356,46 @@ void setup() {
     //        // other 32u4 based boards.
     // }
 
-    Serial.println(WiFi.macAddress());
-
     delay(2000);
-    // TODO: do we need this Wire.begin?
-    Wire.begin(5, 6);
-
+    // Initialize I2C
+    while (!Wire.begin(5, 6)) {
+        Serial.println("Failed to initialize I2C");
+    }
+    // while (!Wire.available()) {
+    //     Serial.println("Waiting for I2C");
+    // }
     // Initialize the mesh
-    mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
-    // mesh.setDebugMsgTypes(ERROR);  // set before init()
-   // mesh.setDebugMsgTypes(
-  //   ERROR
-  // | STARTUP
-  // | MESH_STATUS
-  // | CONNECTION
-  // | SYNC
-  // | S_TIME
-  // | COMMUNICATION
-  // | GENERAL
-  // | MSG_TYPES
-  // | REMOTE
-  // | APPLICATION
-  // | DEBUG
-  //   );
+    // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
     mesh.onNewConnection(&newConnectionCallback);
     mesh.onDroppedConnection(&lostConnectionCallback);
     mesh.onReceive(&receivedCallback);
-    mesh.onChangedConnections([]() {
-        Serial.println("onChangedConnections");
-    });
+    // mesh.onChangedConnections([]() {
+    //     Serial.println("onChangedConnections");
+    // });
     peers.emplace(mesh.getNodeId());
 
+    if (numI2c(Wire) > 2) {
+        isLeaderboard = true;
+    }
+
+    primaryDisplay.setup(0x70, &Wire);
+    primaryDisplay.print("RED");
+
+    if (isLeaderboard) {
+        display2.setup(0x71, &Wire);
+        display2.print("BLUE");
+        display3.setup(0x72, &Wire);
+        display3.print("GREEN");
+        display4.setup(0x73, &Wire);
+        display4.print("YELLOW");
+    }
+
     encoder.setup();
-    display.setup();
     buttonGrid.setup();
 
-    display.print(strFormat("n=%d", peers.size()));
-
-    //userScheduler.addTask(printTask);
-    printTask.enable();
+    primaryDisplay.print(strFormat("n=%d", peers.size()));
 }
 
 void loop() {
