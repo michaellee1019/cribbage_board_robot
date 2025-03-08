@@ -18,13 +18,16 @@
 #define MESH_PASSWORD "mesh_password"
 #define MESH_PORT 5555
 
-Scheduler userScheduler;  // Required for custom scheduled tasks
-painlessMesh mesh;
+struct State {
+    Scheduler userScheduler;  // Required for custom scheduled tasks
+    painlessMesh mesh;
 
-std::set<uint32_t> peers;
+    std::set<uint32_t> peers;
 
-bool isLeaderboard = false;
-int playerNumber = 0;
+    bool isLeaderboard = false;
+    int playerNumber = 0;
+};
+
 std::map<int, String> playerNumberMap = {
     {1, "RED"},
     {2, "BLUE"},
@@ -147,26 +150,26 @@ public:
         attachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT), seesawInterrupt, CHANGE);
     }
 
-    void loop() {
+    void loop(State* const state) {
         if (!interrupted) {
             return;
         }
         auto pressed = !ss.digitalRead(SS_SWITCH);
         auto val = ss.getEncoderPosition();
 
-        Serial.printf("playerNumber: %d\n", playerNumber);
-        Serial.printf("playerColor: %s\n", playerNumberMap[playerNumber].c_str());
+        Serial.printf("playerNumber: %d\n", state->playerNumber);
+        Serial.printf("playerColor: %s\n", playerNumberMap[state->playerNumber].c_str());
         Serial.printf("encoder val: %d\n", val);
 
         // initialize player selection
-        if (!isLeaderboard && playerNumber == 0) {
+        if (!state->isLeaderboard && state->playerNumber == 0) {
             if (val > -1) {
                 display->print(playerNumberMap[val]);
             }
 
             if (pressed) {
-                playerNumber = val;
-                Serial.printf("Player set to: %s\n", playerNumberMap[playerNumber].c_str());
+                state->playerNumber = val;
+                Serial.printf("Player set to: %s\n", playerNumberMap[state->playerNumber].c_str());
             }
         }
         // String msg = String(val) + " " + String(pressed);
@@ -355,14 +358,16 @@ HT16Display display4;
 RotaryEncoder encoder{&primaryDisplay};
 ButtonGrid buttonGrid(&primaryDisplay);
 
+State state{};
+
 void newConnectionCallback(uint32_t nodeId) {
-    peers.emplace(nodeId);
+    state.peers.emplace(nodeId);
     String msg = "con " + String(nodeId);
     Serial.println(msg);
 }
 
 void lostConnectionCallback(uint32_t nodeId) {
-    peers.erase(nodeId);
+    state.peers.erase(nodeId);
     String msg = "dis " + String(nodeId);
     Serial.println(msg);
 }
@@ -387,25 +392,25 @@ void setup() {
     Wire.begin(5, 6);
 
     if (numI2C() > 3) {
-        isLeaderboard = true;
+        state.isLeaderboard = true;
     }
     // Initialize the mesh
-    mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
-                          COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
+    state.mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
+                                COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
 
-    mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
-    mesh.onNewConnection(&newConnectionCallback);
-    mesh.onDroppedConnection(&lostConnectionCallback);
-    mesh.onReceive(&receivedCallback);
+    state.mesh.init(MESH_PREFIX, MESH_PASSWORD, &state.userScheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
+    state.mesh.onNewConnection(&newConnectionCallback);
+    state.mesh.onDroppedConnection(&lostConnectionCallback);
+    state.mesh.onReceive(&receivedCallback);
     // mesh.onChangedConnections([]() {
     //     Serial.println("onChangedConnections");
     // });
-    peers.emplace(mesh.getNodeId());
+    state.peers.emplace(state.mesh.getNodeId());
 
     primaryDisplay.setup(0x70);
     primaryDisplay.print("RED");
 
-    if (isLeaderboard) {
+    if (state.isLeaderboard) {
         display2.setup(0x71);
         display2.print("BLUE");
         display3.setup(0x72);
@@ -418,7 +423,7 @@ void setup() {
 
     primaryDisplay.setup(0x70);
 
-    if (isLeaderboard) {
+    if (state.isLeaderboard) {
         primaryDisplay.print("RED");
 
         display2.setup(0x71);
@@ -436,9 +441,9 @@ void setup() {
 
 void loop() {
     // Serial.println("loop started");
-    mesh.update();
+    state.mesh.update();
     buttonGrid.loop();
-    encoder.loop();
+    encoder.loop(&state);
 
 
     //   Serial.println("scan start");
