@@ -159,7 +159,7 @@ public:
         Serial.printf("encoder val: %d\n", val);
 
         // initialize player selection
-        if (playerNumber == 0) {
+        if (!isLeaderboard && playerNumber == 0) {
             if (val > -1) {
                 display->print(playerNumberMap[val]);
             }
@@ -334,12 +334,12 @@ private:
     }
 };
 
-int numI2c(TwoWire wire) {
+int numI2C() {
     byte count = 0;
 
     for (byte i = 8; i < 120; i++) {
-        wire.beginTransmission(i);        // Begin I2C transmission Address (i)
-        if (wire.endTransmission() == 0)  // Receive 0 = success (ACK response)
+        Wire.beginTransmission(i);        // Begin I2C transmission Address (i)
+        if (Wire.endTransmission() == 0)  // Receive 0 = success (ACK response)
         {
             count++;
         }
@@ -373,8 +373,6 @@ void receivedCallback(uint32_t from, String& msg) {
     primaryDisplay.print(msg);
 }
 
-bool isLeaderboard = false;
-
 void setup() {
     Serial.begin(115200);
 
@@ -404,28 +402,25 @@ void setup() {
     // });
     peers.emplace(mesh.getNodeId());
 
-    if (numI2c(Wire) > 2) {
-        isLeaderboard = true;
-    }
-
-    primaryDisplay.setup(0x70, &Wire);
+    primaryDisplay.setup(0x70);
     primaryDisplay.print("RED");
 
     if (isLeaderboard) {
-        display2.setup(0x71, &Wire);
+        display2.setup(0x71);
         display2.print("BLUE");
-        display3.setup(0x72, &Wire);
+        display3.setup(0x72);
         display3.print("GREEN");
-        display4.setup(0x73, &Wire);
+        display4.setup(0x73);
         display4.print("YELLOW");
     }
 
     Serial.println("hardware setup started");
 
-    display.setup(0x70);
-    // display.print("RED");
+    primaryDisplay.setup(0x70);
 
     if (isLeaderboard) {
+        primaryDisplay.print("RED");
+
         display2.setup(0x71);
         display2.print("BLUE");
         display3.setup(0x72);
