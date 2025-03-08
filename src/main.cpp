@@ -23,8 +23,17 @@ painlessMesh mesh;
 
 std::set<uint32_t> peers;
 
-template<typename... Args>
-String strFormat(const char* const format, Args...args) {
+bool isLeaderboard = false;
+int playerNumber = 0;
+std::map<int, String> playerNumberMap = {
+    {1, "RED"},
+    {2, "BLUE"},
+    {3, "GREN"},
+    {4, "WHIT"},
+};
+
+template <typename... Args>
+String strFormat(const char* const format, Args... args) {
     char buffer[10];
     std::snprintf(buffer, sizeof(buffer), format, args...);
     return {buffer};
@@ -35,8 +44,9 @@ class HT16Display {
 
 public:
     HT16Display() = default;
-    void setup(uint8_t address, TwoWire* wire) {
-        while (!driver.begin(0x70, 0x)) {}
+    void setup(uint8_t address) {
+        while (!driver.begin(address)) {
+        }
     }
 
     // Talks like a duck!
@@ -141,12 +151,28 @@ public:
         if (!interrupted) {
             return;
         }
-        auto pressed = ss.digitalRead(SS_SWITCH);
+        auto pressed = !ss.digitalRead(SS_SWITCH);
         auto val = ss.getEncoderPosition();
-        String msg = String(val) + " " + String(pressed);
-        const auto sent = mesh.sendBroadcast(msg, false);
-        Serial.printf("send message [%s], result [%i]\n", msg.c_str(), sent);
-        display->print(msg);
+
+        Serial.printf("playerNumber: %d\n", playerNumber);
+        Serial.printf("playerColor: %s\n", playerNumberMap[playerNumber].c_str());
+        Serial.printf("encoder val: %d\n", val);
+
+        // initialize player selection
+        if (playerNumber == 0) {
+            if (val > -1) {
+                display->print(playerNumberMap[val]);
+            }
+
+            if (pressed) {
+                playerNumber = val;
+                Serial.printf("Player set to: %s\n", playerNumberMap[playerNumber].c_str());
+            }
+        }
+        // String msg = String(val) + " " + String(pressed);
+        // const auto sent = mesh.sendBroadcast(msg, false);
+        // Serial.printf("send message [%s], result [%i]\n", msg.c_str(), sent);
+        // display->print(msg);
         interrupted = false;
     }
 };
@@ -342,6 +368,7 @@ void lostConnectionCallback(uint32_t nodeId) {
 }
 
 void receivedCallback(uint32_t from, String& msg) {
+    Serial.printf("received message [%s] from [%u]\n", msg.c_str(), from);
     String toSend = String(from) + " " + msg;
     primaryDisplay.print(msg);
 }
@@ -352,20 +379,21 @@ void setup() {
     Serial.begin(115200);
 
     // while (!Serial) {
-    //     ;  // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and
+    //     ;  // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN,
+    //     and
     //        // other 32u4 based boards.
     // }
 
     delay(2000);
-    // Initialize I2C
-    while (!Wire.begin(5, 6)) {
-        Serial.println("Failed to initialize I2C");
+    // TODO: do we need this Wire.begin?
+    Wire.begin(5, 6);
+
+    if (numI2C() > 3) {
+        isLeaderboard = true;
     }
-    // while (!Wire.available()) {
-    //     Serial.println("Waiting for I2C");
-    // }
     // Initialize the mesh
-    // mesh.setDebugMsgTypes(ERROR | STARTUP | CONNECTION);  // set before init()
+    mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
+                          COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
     mesh.onNewConnection(&newConnectionCallback);
@@ -392,14 +420,53 @@ void setup() {
         display4.print("YELLOW");
     }
 
-    encoder.setup();
-    buttonGrid.setup();
+    Serial.println("hardware setup started");
 
-    primaryDisplay.print(strFormat("n=%d", peers.size()));
+    display.setup(0x70);
+    // display.print("RED");
+
+    if (isLeaderboard) {
+        display2.setup(0x71);
+        display2.print("BLUE");
+        display3.setup(0x72);
+        display3.print("GREN");
+        display4.setup(0x73);
+        display4.print("YELW");
+    }
+    buttonGrid.setup();
+    encoder.setup();
+
+    Serial.println("setup done");
 }
 
 void loop() {
+    // Serial.println("loop started");
     mesh.update();
     buttonGrid.loop();
     encoder.loop();
+
+
+    //   Serial.println("scan start");
+
+    // WiFi.scanNetworks will return the number of networks found
+    //   int n = WiFi.scanNetworks();
+    //   Serial.println("scan done");
+    //   if (n == 0) {
+    //       Serial.println("no networks found");
+    //   } else {
+    //     Serial.print(n);
+    //     Serial.println(" networks found");
+    //     for (int i = 0; i < n; ++i) {
+    //       // Print SSID and RSSI for each network found
+    //       Serial.print(i + 1);
+    //       Serial.print(": ");
+    //       Serial.print(WiFi.SSID(i));
+    //       Serial.print(" (");
+    //       Serial.print(WiFi.RSSI(i));
+    //       Serial.print(")");
+    //       Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
+    //       delay(10);
+    //     }
+    //   }
+    //   Serial.println("");
 }
