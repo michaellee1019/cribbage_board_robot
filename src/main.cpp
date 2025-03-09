@@ -1,31 +1,20 @@
 #include <Arduino.h>
 #include <set>
 
-#include <Adafruit_MCP23X17.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 
 #include <WiFi.h>
 #include <painlessMesh.h>
 
-#include "utils.hpp"
+#include <utils.hpp>
 #include <HT16Display.hpp>
+#include <ButtonGrid.hpp>
+#include <State.hpp>
 
 #define MESH_PREFIX "mesh_network"
 #define MESH_PASSWORD "mesh_password"
 #define MESH_PORT 5555
-
-struct State {
-    Scheduler userScheduler;  // Required for custom scheduled tasks
-    painlessMesh mesh;
-
-    std::set<uint32_t> peers;
-
-    bool isLeaderboard = false;
-    int playerNumber = 0;
-    volatile bool buttonPressed = false;
-    volatile bool interrupted = false;
-};
 
 State state{};
 
@@ -36,57 +25,13 @@ std::map<int, String> playerNumberMap = {
     {4, "WHIT"},
 };
 
-static void buttonISR() {
+void buttonISR() {
     state.buttonPressed = true;
 }
 
-static void seesawInterrupt() {
+void seesawInterrupt() {
     state.interrupted = true;
 }
-
-
-class ButtonGrid {
-    HT16Display* const display;
-    Adafruit_MCP23X17 buttonGpio;
-
-    static constexpr u32_t interruptPin = 8;
-
-    static constexpr u32_t okPin = 4;
-    static constexpr u32_t plusone = 3;
-    static constexpr u32_t plusfive = 2;
-    static constexpr u32_t negone = 1;
-    static constexpr u32_t add = 0;
-    static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
-
-public:
-    explicit ButtonGrid(HT16Display* const display) : display{display} {}
-
-    void setup() {
-        buttonGpio.begin_I2C(0x20, &Wire);
-        buttonGpio.setupInterrupts(true, false, LOW);
-        for (auto&& pin : pins) {
-            buttonGpio.pinMode(pin, INPUT_PULLUP);
-            buttonGpio.setupInterruptPin(pin, CHANGE);
-        }
-        pinMode(interruptPin, INPUT_PULLUP);
-        attachInterrupt(digitalPinToInterrupt(interruptPin), buttonISR, CHANGE);
-        buttonGpio.clearInterrupts();
-    }
-
-    void loop() {
-        if (!state.buttonPressed) {
-            return;
-        }
-
-        uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
-        uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
-        if (intPin != MCP23XXX_INT_ERR) {
-            display->print(strFormat("%d %2x", intPin, intVal));
-        }
-        state.buttonPressed = false;
-        buttonGpio.clearInterrupts();
-    }
-};
 
 
 class RotaryEncoder {
@@ -230,6 +175,6 @@ void setup() {
 
 void loop() {
     state.mesh.update();
-    buttonGrid.loop();
+    buttonGrid.loop(&state);
     encoder.loop(&state);
 }
