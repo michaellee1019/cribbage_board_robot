@@ -24,7 +24,10 @@ struct State {
 
     bool isLeaderboard = false;
     int playerNumber = 0;
+    volatile bool buttonPressed = false;
 };
+
+State state{};
 
 std::map<int, String> playerNumberMap = {
     {1, "RED"},
@@ -35,9 +38,8 @@ std::map<int, String> playerNumberMap = {
 
 
 
-volatile bool buttonPressed = false;
 static void buttonISR() {
-    buttonPressed = true;
+    state.buttonPressed = true;
 }
 
 
@@ -70,7 +72,7 @@ public:
     }
 
     void loop() {
-        if (!buttonPressed) {
+        if (!state.buttonPressed) {
             return;
         }
 
@@ -82,7 +84,7 @@ public:
         // } else {
         //     display->print("Sad");
         // }
-        buttonPressed = false;
+        state.buttonPressed = false;
         buttonGpio.clearInterrupts();
     }
 };
@@ -178,7 +180,6 @@ HT16Display display4;
 RotaryEncoder encoder{&primaryDisplay};
 ButtonGrid buttonGrid(&primaryDisplay);
 
-State state{};
 
 void newConnectionCallback(uint32_t nodeId) {
     state.peers.emplace(nodeId);
