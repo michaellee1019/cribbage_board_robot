@@ -1,7 +1,13 @@
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <Wire.h>
+
+
 #include <Arduino.h>
 #include <rom/rtc.h>
 
-void print_reset_reason(RESET_REASON reason) {
+inline void print_reset_reason(RESET_REASON reason) {
   switch ( reason)
   {
     case 1 : Serial.println ("POWERON_RESET");break;          /**<1,  Vbat power on reset*/
@@ -23,7 +29,7 @@ void print_reset_reason(RESET_REASON reason) {
   }
 }
 
-void verbose_print_reset_reason(RESET_REASON reason)
+inline void verbose_print_reset_reason(RESET_REASON reason)
 {
   switch ( reason)
   {
@@ -58,7 +64,7 @@ void verbose_print_reset_reason(RESET_REASON reason)
 //   WiFi.mode(WIFI_OFF);
 //   delay(100);
 
-void buildResult() {
+inline void buildResult() {
     Serial.print(">> CPU0 reset reason: ");
     print_reset_reason(rtc_get_reset_reason(0));
     verbose_print_reset_reason(rtc_get_reset_reason(0));
@@ -97,3 +103,4 @@ inline int numI2C() {
 //   for (size_t i = 0; i < MODULE_SIZE; i++) {
 //     modules[i]->loop();
 //   }
+#endif
