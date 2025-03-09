@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <set>
 
-
 #include <Adafruit_MCP23X17.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
@@ -37,10 +36,12 @@ std::map<int, String> playerNumberMap = {
     {4, "WHIT"},
 };
 
-
-
 static void buttonISR() {
     state.buttonPressed = true;
+}
+
+static void seesawInterrupt() {
+    state.interrupted = true;
 }
 
 
@@ -82,17 +83,11 @@ public:
         if (intPin != MCP23XXX_INT_ERR) {
             display->print(strFormat("%d %2x", intPin, intVal));
         }
-        // } else {
-        //     display->print("Sad");
-        // }
         state.buttonPressed = false;
         buttonGpio.clearInterrupts();
     }
 };
 
-static void seesawInterrupt() {
-    state.interrupted = true;
-}
 
 class RotaryEncoder {
 #define SS_SWITCH 24
@@ -150,10 +145,6 @@ public:
                 Serial.printf("Player set to: %s\n", playerNumberMap[state->playerNumber].c_str());
             }
         }
-        // String msg = String(val) + " " + String(pressed);
-        // const auto sent = mesh.sendBroadcast(msg, false);
-        // Serial.printf("send message [%s], result [%i]\n", msg.c_str(), sent);
-        // display->print(msg);
         state->interrupted = false;
     }
 };
