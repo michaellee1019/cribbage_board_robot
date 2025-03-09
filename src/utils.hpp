@@ -74,6 +74,18 @@ String strFormat(const char* const format, Args... args) {
     return {buffer};
 }
 
+inline int numI2C() {
+  byte count = 0;
+
+  for (byte i = 8; i < 120; i++) {
+    Wire.beginTransmission(i);        // Begin I2C transmission Address (i)
+    if (Wire.endTransmission() == 0)  // Receive 0 = success (ACK response)
+    {
+      count++;
+    }
+  }
+  return count;
+}
 
 
 // struct queue_data {
