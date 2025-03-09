@@ -25,6 +25,7 @@ struct State {
     bool isLeaderboard = false;
     int playerNumber = 0;
     volatile bool buttonPressed = false;
+    volatile bool interrupted = false;
 };
 
 State state{};
@@ -89,9 +90,8 @@ public:
     }
 };
 
-volatile bool interrupted = false;
 static void seesawInterrupt() {
-    interrupted = true;
+    state.interrupted = true;
 }
 
 class RotaryEncoder {
@@ -129,7 +129,7 @@ public:
     }
 
     void loop(State* const state) {
-        if (!interrupted) {
+        if (!state->interrupted) {
             return;
         }
         auto pressed = !ss.digitalRead(SS_SWITCH);
@@ -154,7 +154,7 @@ public:
         // const auto sent = mesh.sendBroadcast(msg, false);
         // Serial.printf("send message [%s], result [%i]\n", msg.c_str(), sent);
         // display->print(msg);
-        interrupted = false;
+        state->interrupted = false;
     }
 };
 
