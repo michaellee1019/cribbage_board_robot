@@ -67,6 +67,14 @@ void buildResult() {
     verbose_print_reset_reason(rtc_get_reset_reason(1));
 }
 
+template <typename... Args>
+String strFormat(const char* const format, Args... args) {
+    char buffer[10];
+    std::snprintf(buffer, sizeof(buffer), format, args...);
+    return {buffer};
+}
+
+
 
 // struct queue_data {
 //   int deviceId;

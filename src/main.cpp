@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <set>
 
-#include <SparkFun_Alphanumeric_Display.h>
 
 #include <Adafruit_MCP23X17.h>
 #include <Adafruit_seesaw.h>
@@ -9,6 +8,9 @@
 
 #include <WiFi.h>
 #include <painlessMesh.h>
+
+#include "utils.hpp"
+#include <HT16Display.hpp>
 
 #define MESH_PREFIX "mesh_network"
 #define MESH_PASSWORD "mesh_password"
@@ -31,29 +33,7 @@ std::map<int, String> playerNumberMap = {
     {4, "WHIT"},
 };
 
-template <typename... Args>
-String strFormat(const char* const format, Args... args) {
-    char buffer[10];
-    std::snprintf(buffer, sizeof(buffer), format, args...);
-    return {buffer};
-}
 
-class HT16Display {
-    HT16K33 driver;
-
-public:
-    HT16Display() = default;
-    void setup(uint8_t address) {
-        while (!driver.begin(address)) {
-        }
-    }
-
-    // Talks like a duck!
-    template <typename... Args>
-    auto print(Args&&... args) {
-        return driver.print(std::forward<Args>(args)...);
-    }
-};
 
 volatile bool buttonPressed = false;
 static void buttonISR() {
