@@ -381,14 +381,7 @@ void receivedCallback(uint32_t from, String& msg) {
 void setup() {
     Serial.begin(115200);
 
-    // while (!Serial) {
-    //     ;  // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN,
-    //     and
-    //        // other 32u4 based boards.
-    // }
-
     delay(2000);
-    // TODO: do we need this Wire.begin?
     Wire.begin(5, 6);
 
     if (numI2C() > 3) {
@@ -402,9 +395,6 @@ void setup() {
     state.mesh.onNewConnection(&newConnectionCallback);
     state.mesh.onDroppedConnection(&lostConnectionCallback);
     state.mesh.onReceive(&receivedCallback);
-    // mesh.onChangedConnections([]() {
-    //     Serial.println("onChangedConnections");
-    // });
     state.peers.emplace(state.mesh.getNodeId());
 
     primaryDisplay.setup(0x70);
@@ -440,33 +430,7 @@ void setup() {
 }
 
 void loop() {
-    // Serial.println("loop started");
     state.mesh.update();
     buttonGrid.loop();
     encoder.loop(&state);
-
-
-    //   Serial.println("scan start");
-
-    // WiFi.scanNetworks will return the number of networks found
-    //   int n = WiFi.scanNetworks();
-    //   Serial.println("scan done");
-    //   if (n == 0) {
-    //       Serial.println("no networks found");
-    //   } else {
-    //     Serial.print(n);
-    //     Serial.println(" networks found");
-    //     for (int i = 0; i < n; ++i) {
-    //       // Print SSID and RSSI for each network found
-    //       Serial.print(i + 1);
-    //       Serial.print(": ");
-    //       Serial.print(WiFi.SSID(i));
-    //       Serial.print(" (");
-    //       Serial.print(WiFi.RSSI(i));
-    //       Serial.print(")");
-    //       Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
-    //       delay(10);
-    //     }
-    //   }
-    //   Serial.println("");
 }
