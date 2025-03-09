@@ -9,6 +9,7 @@
 #include <HT16Display.hpp>
 #include <ButtonGrid.hpp>
 #include <State.hpp>
+#include <game.hpp>
 
 #define MESH_PREFIX "mesh_network"
 #define MESH_PASSWORD "mesh_password"
@@ -21,9 +22,6 @@ void buttonISR() {
     state.buttonPressed = true;
 }
 
-void seesawInterrupt() {
-    state.interrupted = true;
-}
 
 
 
@@ -54,6 +52,24 @@ void receivedCallback(uint32_t from, String& msg) {
     primaryDisplay.print(msg);
 }
 
+Game game{};
+
+static TaskHandle_t seesawTaskHandle = NULL;
+void IRAM_ATTR seesawInterrupt() {
+    // TODO: remove this legacy thing in a minute
+    state.interrupted = true;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Notify the task
+    vTaskNotifyGiveFromISR(seesawTaskHandle, &xHigherPriorityTaskWoken);
+
+    // If the notification unblocked a higher priority task, yield
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
+
 void setup() {
     Serial.begin(115200);
 
@@ -63,6 +79,9 @@ void setup() {
     if (numI2C() > 3) {
         state.isLeaderboard = true;
     }
+
+    xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
+
     // Initialize the mesh
     state.mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
                                 COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
