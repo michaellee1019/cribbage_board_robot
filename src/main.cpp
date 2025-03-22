@@ -88,47 +88,43 @@ void meshLoop() {
     state.mesh.update();
 }
 
-void setup() {
+void setupIO() {
     Serial.begin(115200);
     delay(2000);
     Wire.begin(5, 6);
+}
 
-    if (numI2C() > 3) {
-        state.isLeaderboard = true;
+class Leaderboard {
+    bool isLeaderboard = false;
+public:
+    void setup() {
+        isLeaderboard = numI2C() > 3;
+        if (isLeaderboard) {
+            display2.setup(0x71);
+            display2.print("BLUE");
+            display3.setup(0x72);
+            display3.print("GREEN");
+            display4.setup(0x73);
+            display4.print("YELLOW");
+        }
     }
+};
 
-    xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
+Leaderboard leaderboard;
+
+void setup() {
+    setupIO();
 
     meshSetup();
+    leaderboard.setup();
 
     primaryDisplay.setup(0x70);
     primaryDisplay.print("RED");
 
-    if (state.isLeaderboard) {
-        display2.setup(0x71);
-        display2.print("BLUE");
-        display3.setup(0x72);
-        display3.print("GREEN");
-        display4.setup(0x73);
-        display4.print("YELLOW");
-    }
-
-    Serial.println("hardware setup started");
-
-    primaryDisplay.setup(0x70);
-
-    if (state.isLeaderboard) {
-        primaryDisplay.print("RED");
-
-        display2.setup(0x71);
-        display2.print("BLUE");
-        display3.setup(0x72);
-        display3.print("GREN");
-        display4.setup(0x73);
-        display4.print("YELW");
-    }
     buttonGrid.setup();
     encoder.setup();
+
+    xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
 
     Serial.println("setup done");
 }
