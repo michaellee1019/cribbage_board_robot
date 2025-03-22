@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <painlessMesh.h>
 
+#include <freertos/task.h>
+
 #include <utils.hpp>
 #include <RotaryEncoder.hpp>
 #include <HT16Display.hpp>
@@ -70,18 +72,7 @@ void IRAM_ATTR seesawInterrupt() {
     }
 }
 
-void setup() {
-    Serial.begin(115200);
-
-    delay(2000);
-    Wire.begin(5, 6);
-
-    if (numI2C() > 3) {
-        state.isLeaderboard = true;
-    }
-
-    xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
-
+void meshSetup() {
     // Initialize the mesh
     state.mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
                                 COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
@@ -91,6 +82,24 @@ void setup() {
     state.mesh.onDroppedConnection(&lostConnectionCallback);
     state.mesh.onReceive(&receivedCallback);
     state.peers.emplace(state.mesh.getNodeId());
+}
+
+void meshLoop() {
+    state.mesh.update();
+}
+
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+    Wire.begin(5, 6);
+
+    if (numI2C() > 3) {
+        state.isLeaderboard = true;
+    }
+
+    xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
+
+    meshSetup();
 
     primaryDisplay.setup(0x70);
     primaryDisplay.print("RED");
@@ -125,7 +134,7 @@ void setup() {
 }
 
 void loop() {
-    state.mesh.update();
+    meshLoop();
     buttonGrid.loop(&state);
     encoder.loop(&state);
 }

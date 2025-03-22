@@ -1,8 +1,11 @@
 #ifndef RTBUTTON_H
 #define RTBUTTON_H
 
+#include <Arduino.h>
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/timers.h>
 
 class RTButton {
 public:
