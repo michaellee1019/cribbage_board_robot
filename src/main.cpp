@@ -17,23 +17,17 @@
 #define MESH_PASSWORD "mesh_password"
 #define MESH_PORT 5555
 
-State state{};
+GameState gameState;
+State state{&gameState};
 
 
 void buttonISR() {
-    state.buttonPressed = true;
+    gameState.buttonPressed = true;
 }
 
 
 
 
-HT16Display primaryDisplay;
-HT16Display display2;
-HT16Display display3;
-HT16Display display4;
-
-RotaryEncoder encoder{&primaryDisplay};
-ButtonGrid buttonGrid(&primaryDisplay);
 
 
 void newConnectionCallback(uint32_t nodeId) {
@@ -51,7 +45,7 @@ void lostConnectionCallback(uint32_t nodeId) {
 void receivedCallback(uint32_t from, String& msg) {
     Serial.printf("received message [%s] from [%u]\n", msg.c_str(), from);
     String toSend = String(from) + " " + msg;
-    primaryDisplay.print(msg);
+    state.primaryDisplay.print(msg);
 }
 
 Game game{};
@@ -59,7 +53,7 @@ Game game{};
 static TaskHandle_t seesawTaskHandle = NULL;
 void IRAM_ATTR seesawInterrupt() {
     // TODO: remove this legacy thing in a minute
-    state.interrupted = true;
+    gameState.interrupted = true;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
@@ -92,6 +86,7 @@ void setupIO() {
     Serial.begin(115200);
     delay(2000);
     Wire.begin(5, 6);
+    Serial.println("Wire.begin(5, 6);");
 }
 
 class Leaderboard {
@@ -100,12 +95,12 @@ public:
     void setup() {
         isLeaderboard = numI2C() > 3;
         if (isLeaderboard) {
-            display2.setup(0x71);
-            display2.print("BLUE");
-            display3.setup(0x72);
-            display3.print("GREEN");
-            display4.setup(0x73);
-            display4.print("YELLOW");
+            state.display2.setup(0x71);
+            state.display2.print("BLUE");
+            state.display3.setup(0x72);
+            state.display3.print("GREN");
+            state.display4.setup(0x73);
+            state.display4.print("WHTE");
         }
     }
 };
@@ -118,11 +113,10 @@ void setup() {
     meshSetup();
     leaderboard.setup();
 
-    primaryDisplay.setup(0x70);
-    primaryDisplay.print("RED");
+    state.primaryDisplay.setup(0x70);
 
-    buttonGrid.setup();
-    encoder.setup();
+    state.buttonGrid.setup();
+    state.encoder.setup();
 
     xTaskCreate(seesawTask, "SeesawTask", 4096, NULL, 5, &seesawTaskHandle);
 
@@ -131,6 +125,6 @@ void setup() {
 
 void loop() {
     meshLoop();
-    buttonGrid.loop(&state);
-    encoder.loop(&state);
+    state.buttonGrid.loop(&gameState);
+    state.encoder.loop(&gameState);
 }

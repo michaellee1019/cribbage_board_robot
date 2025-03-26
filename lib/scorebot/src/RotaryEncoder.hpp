@@ -6,7 +6,7 @@
 
 #include <HT16Display.hpp>
 #include <callbacks.hpp>
-#include <State.hpp>
+#include <GameState.hpp>
 
 inline std::map<int, String> playerNumberMap = {
     {1, "RED"},
@@ -22,7 +22,7 @@ class RotaryEncoder {
 #define SEESAW_ADDR 0x36
 #define SEESAW_INTERRUPT 7
 
-    Adafruit_seesaw ss;
+    Adafruit_seesaw ss{};
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
     HT16Display* const display;
@@ -50,7 +50,7 @@ public:
         attachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT), seesawInterrupt, CHANGE);
     }
 
-    void loop(State* const state) {
+    void loop(GameState* const state) {
         if (!state->interrupted) {
             return;
         }

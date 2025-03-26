@@ -3,8 +3,8 @@
 
 #include <HT16Display.hpp>
 #include <callbacks.hpp>
-#include <State.hpp>
 
+#include <GameState.hpp>
 #include <Adafruit_MCP23X17.h>
 
 class ButtonGrid {
@@ -35,8 +35,8 @@ public:
         buttonGpio.clearInterrupts();
     }
 
-    void loop(State* state) {
-        if (!state->buttonPressed) {
+    void loop(GameState* volatile gameState) {
+        if (!gameState->buttonPressed) {
             return;
         }
 
@@ -45,7 +45,7 @@ public:
         if (intPin != MCP23XXX_INT_ERR) {
             display->print(strFormat("%d %2x", intPin, intVal));
         }
-        state->buttonPressed = false;
+        gameState->buttonPressed = false;
         buttonGpio.clearInterrupts();
     }
 };

@@ -18,6 +18,7 @@ void seesawTask(void *pvParameters) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
     Serial.println("seesawTask");
+
   }
 }
 
