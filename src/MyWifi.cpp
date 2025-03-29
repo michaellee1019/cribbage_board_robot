@@ -19,6 +19,10 @@ MyWifi::MyWifi(Coordinator *c)
   ackReceived{false}
 {}
 
+uint8_t MyWifi::getMyPeerId() {
+    return mesh.getNodeId();
+}
+
 void wifiTask(void*param) {
     static_cast<MyWifi*>(param)->senderTask(); // Cast and call instance method
 }
