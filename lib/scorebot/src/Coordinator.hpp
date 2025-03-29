@@ -6,6 +6,7 @@
 
 #include <GameState.hpp>
 #include <MyWifi.hpp>
+#include <ButtonGrid.hpp>
 //#include "Buttons.h"
 //#include "Wifi.h"
 //#include "Display.h"
@@ -17,6 +18,7 @@ public:
     Scheduler scheduler;
     HT16Display display;
     GameState state;
+    ButtonGrid buttonGrid;
     //    Buttons buttons;
     MyWifi wifi;
 public:

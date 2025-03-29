@@ -7,6 +7,7 @@ Coordinator::Coordinator() :
     eventQueue{xQueueCreate(10, sizeof(Event))},
     scheduler{},
     display{},
+    buttonGrid{this,&display},
     wifi{this}
 //    state(display),
 //    buttons(eventQueue),
@@ -20,6 +21,7 @@ void Coordinator::setup() {
 //    buttons.setup(BUTTON_PIN, 1);
     display.setup(0x70);
     wifi.setup();
+    buttonGrid.setup();
 
     xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
 }

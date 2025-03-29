@@ -7,25 +7,12 @@
 #include <GameState.hpp>
 #include <Adafruit_MCP23X17.h>
 
-
-//void IRAM_ATTR buttonISR(void* arg);
-//
-//void Buttons::setup(uint8_t buttonPin, uint8_t buttonId) {
-//    pinMode(buttonPin, INPUT_PULLUP);
-//    uint8_t* persistentButtonId = new uint8_t(buttonId);
-//    attachInterruptArg(buttonPin, buttonISR, persistentButtonId, FALLING);
-//}
-//
-//void IRAM_ATTR buttonISR(void* arg) {
-//    uint8_t buttonId = *(uint8_t*)arg;
-//    Event e{EventType::ButtonPressed, .buttonId=buttonId};
-//    BaseType_t higherPriorityWoken = pdFALSE;
-//    xQueueSendFromISR(eventQueue, &e, &higherPriorityWoken);
-//    portYIELD_FROM_ISR(higherPriorityWoken);
-//}
-
+class ButtonGrid;
+void IRAM_ATTR buttonISR(void* arg);
 
 class ButtonGrid {
+public:
+    Coordinator* coordinator;
     HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
 
@@ -39,7 +26,9 @@ class ButtonGrid {
     static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
 
 public:
-    explicit ButtonGrid(HT16Display* const display) : display{display} {}
+    explicit ButtonGrid(Coordinator* coordinator,
+                        HT16Display* const display) : coordinator{coordinator},
+                                                      display{display} {}
 
 
 
@@ -51,22 +40,21 @@ public:
             buttonGpio.setupInterruptPin(pin, CHANGE);
         }
         pinMode(interruptPin, INPUT_PULLUP);
-        attachInterrupt(digitalPinToInterrupt(interruptPin), buttonISR, CHANGE);
+        attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, CHANGE);
         buttonGpio.clearInterrupts();
     }
-
-    void loop(GameState* volatile gameState) {
-        if (!gameState->buttonPressed) {
-            return;
-        }
-
+    IRAM_ATTR Event getAndClearEvent() {
         uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
         uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
-        if (intPin != MCP23XXX_INT_ERR) {
-            display->print(strFormat("%d %2x", intPin, intVal));
-        }
-        gameState->buttonPressed = false;
         buttonGpio.clearInterrupts();
+        if (intPin == MCP23XXX_INT_ERR) {
+            Serial.println("Button interrupt Error");
+        }
+
+        Event out;
+        out.type = EventType::ButtonPressed;
+        // TODO: other things
+        return out;
     }
 };
 
