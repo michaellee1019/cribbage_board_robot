@@ -67,7 +67,7 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
         case EventType::NewPeer: onNewPeer(this, e, coordinator); break;
         case EventType::MessageReceived: onMessageReceived(this, e, coordinator); break;
     }
-    if (score % 2 == 0) {
-        coordinator->rotaryEncoder.sspixel.setPixelColor(0, 0xFF, 0x00, 0x00);
-    }
+
+    coordinator->display.print(score);
 }
+
