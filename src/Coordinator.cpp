@@ -7,11 +7,9 @@ Coordinator::Coordinator() :
     eventQueue{xQueueCreate(10, sizeof(Event))},
     scheduler{},
     display{},
-    buttonGrid{this,&display},
-    rotaryEncoder{this, &display},
+    buttonGrid{this},
+    rotaryEncoder{this},
     wifi{this}
-//    state(display),
-//    buttons(eventQueue),
 {}
 
 void Coordinator::setup() {
@@ -19,7 +17,6 @@ void Coordinator::setup() {
     delay(2000);
     Wire.begin(5, 6);
 
-//    buttons.setup(BUTTON_PIN, 1);
     display.setup(0x70);
     wifi.setup();
     buttonGrid.setup();

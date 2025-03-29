@@ -8,9 +8,6 @@
 #include <MyWifi.hpp>
 #include <ButtonGrid.hpp>
 #include <RotaryEncoder.hpp>
-//#include "Buttons.h"
-//#include "Wifi.h"
-//#include "Display.h"
 #include <HT16Display.hpp>
 
 class Coordinator {
@@ -22,7 +19,7 @@ public:
     ButtonGrid buttonGrid;
     RotaryEncoder rotaryEncoder;
     MyWifi wifi;
-public:
+
     Coordinator();
     void setup();
     void loop();

@@ -1,28 +1,30 @@
-#pragma once
-
-#include <set>
+#ifndef GAME_STATE_H
+#define GAME_STATE_H
 
 #include <Event.hpp>
-//struct GameState {
 
-//    bool isLeaderboard = false;
-//    int playerNumber = 0;
-//    volatile bool buttonPressed = false;
-//    volatile bool interrupted = false;
-//    // int encoderValue;
-//};
+#include <set>
+#include <map>
+#include <WString.h>
 
-class Coordinator;
+inline std::map<int, String> playerNumberMap = {
+  {1, "RED"},
+  {2, "BLUE"},
+  {3, "GREN"},
+  {4, "WHIT"},
+};
 
 class GameState {
 public:
   enum class TurnState { MyTurn, OpponentTurn };
   GameState();
 
-  void handleEvent(const Event& e, Coordinator* coordinator);
+  void handleEvent(const Event& e, class Coordinator* coordinator);
 
 private:
   int score;
   TurnState turn;
   std::set<uint8_t> peers;
 };
+
+#endif // GAME_STATE_H

@@ -1,18 +1,16 @@
 #ifndef BUTTONGRID_H
 #define BUTTONGRID_H
 
-#include <HT16Display.hpp>
-#include <callbacks.hpp>
-
 #include <GameState.hpp>
+
 #include <Adafruit_MCP23X17.h>
 
 void IRAM_ATTR buttonISR(void* arg);
 
+
 class ButtonGrid {
 public:
     Coordinator* coordinator;
-    HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
 
     static constexpr u32_t interruptPin = 8;
@@ -24,12 +22,7 @@ public:
     static constexpr u32_t add = 0;
     static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
 
-public:
-    explicit ButtonGrid(Coordinator* coordinator,
-                        HT16Display* const display) : coordinator{coordinator},
-                                                      display{display} {}
-
-
+    explicit ButtonGrid(Coordinator* coordinator) : coordinator{coordinator}{}
 
     void setup() {
         buttonGpio.begin_I2C(0x20, &Wire);
@@ -42,20 +35,6 @@ public:
         attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, CHANGE);
         buttonGpio.clearInterrupts();
     }
-
-    // Event getAndClearEvent() {
-    //     uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
-    //     uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
-    //     buttonGpio.clearInterrupts();
-    //     if (intPin == MCP23XXX_INT_ERR) {
-    //         Serial.println("Button interrupt Error");
-    //     }
-    //
-    //     Event out;
-    //     out.type = EventType::ButtonPressed;
-    //     // TODO: other things
-    //     return out;
-    // }
 };
 
 

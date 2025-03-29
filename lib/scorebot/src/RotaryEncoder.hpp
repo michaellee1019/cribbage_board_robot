@@ -1,39 +1,30 @@
 #ifndef RotaryEncoder_h
 #define RotaryEncoder_h
 
+#include <HT16Display.hpp>
+#include <GameState.hpp>
+
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 #include <map>
 
-#include <HT16Display.hpp>
-#include <GameState.hpp>
-
 class Coordinator;
 void IRAM_ATTR rotaryEncoderISR(void* arg);
 
-inline std::map<int, String> playerNumberMap = {
-    {1, "RED"},
-    {2, "BLUE"},
-    {3, "GREN"},
-    {4, "WHIT"},
-};
-
-class RotaryEncoder {
 #define SS_SWITCH 24
 #define SS_NEOPIX 6
 #define SEESAW_ADDR 0x36
 #define SEESAW_INTERRUPT 7
+
+class RotaryEncoder {
 public:
     Coordinator* coordinator;
+
     Adafruit_seesaw ss{};
-private:
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
-    HT16Display* const display;
-
-public:
-    RotaryEncoder(Coordinator *coordinator, HT16Display* const display)
-    : coordinator{coordinator}, display{display} {}
+    explicit RotaryEncoder(Coordinator *coordinator)
+    : coordinator{coordinator} {}
 
     void setup() {
         ss.begin(SEESAW_ADDR);
