@@ -2,10 +2,13 @@
 #define GAME_H
 
 #include <Arduino.h>
+#include <State.hpp>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+
+
 
 struct ButtonPress {
   uint32_t from;
@@ -16,6 +19,8 @@ void seesawTask(void *pvParameters) {
   for (;;) {
     // Wait for the notification from the ISR
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    state.primaryDisplay.print(state.encoder.ss.getEncoderPosition());
 
     Serial.println("seesawTask");
 

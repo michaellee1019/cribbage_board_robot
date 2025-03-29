@@ -5,4 +5,5 @@ struct GameState {
     int playerNumber = 0;
     volatile bool buttonPressed = false;
     volatile bool interrupted = false;
+    // int encoderValue;
 };

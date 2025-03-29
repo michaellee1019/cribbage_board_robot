@@ -9,7 +9,7 @@
 
 
 struct State {
-    GameState* volatile pointer;
+    GameState* volatile gameState;
     Scheduler userScheduler;  // Required for custom scheduled tasks
     painlessMesh mesh;
     std::set<uint32_t> peers;
@@ -22,10 +22,11 @@ struct State {
     ButtonGrid buttonGrid;
 
     explicit State(GameState* pointer)
-    : pointer(pointer),
+    : gameState(pointer),
       encoder{&primaryDisplay},
       buttonGrid{&primaryDisplay}{}
 };
 
+extern State state;
 
 #endif

@@ -21,8 +21,9 @@ class RotaryEncoder {
 #define SS_NEOPIX 6
 #define SEESAW_ADDR 0x36
 #define SEESAW_INTERRUPT 7
-
+public:
     Adafruit_seesaw ss{};
+private:
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
     HT16Display* const display;
@@ -56,10 +57,6 @@ public:
         }
         auto pressed = !ss.digitalRead(SS_SWITCH);
         auto val = ss.getEncoderPosition();
-
-        Serial.printf("playerNumber: %d\n", state->playerNumber);
-        Serial.printf("playerColor: %s\n", playerNumberMap[state->playerNumber].c_str());
-        Serial.printf("encoder val: %d\n", val);
 
         // initialize player selection
         if (!state->isLeaderboard && state->playerNumber == 0) {

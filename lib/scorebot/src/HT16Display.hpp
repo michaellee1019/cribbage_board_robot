@@ -17,6 +17,7 @@ public:
     // Talks like a duck!
     template <typename... Args>
     auto print(Args&&... args) {
+        Serial.println("PRINT EVENT");
         return driver.print(std::forward<Args>(args)...);
     }
 };
