@@ -8,6 +8,7 @@ Coordinator::Coordinator() :
     scheduler{},
     display{},
     buttonGrid{this,&display},
+    rotaryEncoder{this, &display},
     wifi{this}
 //    state(display),
 //    buttons(eventQueue),
@@ -22,6 +23,7 @@ void Coordinator::setup() {
     display.setup(0x70);
     wifi.setup();
     buttonGrid.setup();
+    rotaryEncoder.setup();
 
     xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
 }

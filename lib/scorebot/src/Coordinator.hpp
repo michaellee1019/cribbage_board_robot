@@ -7,6 +7,7 @@
 #include <GameState.hpp>
 #include <MyWifi.hpp>
 #include <ButtonGrid.hpp>
+#include <RotaryEncoder.hpp>
 //#include "Buttons.h"
 //#include "Wifi.h"
 //#include "Display.h"
@@ -19,7 +20,7 @@ public:
     HT16Display display;
     GameState state;
     ButtonGrid buttonGrid;
-    //    Buttons buttons;
+    RotaryEncoder rotaryEncoder;
     MyWifi wifi;
 public:
     Coordinator();

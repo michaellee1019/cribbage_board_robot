@@ -7,7 +7,6 @@
 #include <GameState.hpp>
 #include <Adafruit_MCP23X17.h>
 
-class ButtonGrid;
 void IRAM_ATTR buttonISR(void* arg);
 
 class ButtonGrid {
@@ -43,19 +42,20 @@ public:
         attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, CHANGE);
         buttonGpio.clearInterrupts();
     }
-    IRAM_ATTR Event getAndClearEvent() {
-        uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
-        uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
-        buttonGpio.clearInterrupts();
-        if (intPin == MCP23XXX_INT_ERR) {
-            Serial.println("Button interrupt Error");
-        }
 
-        Event out;
-        out.type = EventType::ButtonPressed;
-        // TODO: other things
-        return out;
-    }
+    // Event getAndClearEvent() {
+    //     uint8_t intPin = buttonGpio.getLastInterruptPin();   // Which pin caused it?
+    //     uint8_t intVal = buttonGpio.getCapturedInterrupt();  // What was the level?
+    //     buttonGpio.clearInterrupts();
+    //     if (intPin == MCP23XXX_INT_ERR) {
+    //         Serial.println("Button interrupt Error");
+    //     }
+    //
+    //     Event out;
+    //     out.type = EventType::ButtonPressed;
+    //     // TODO: other things
+    //     return out;
+    // }
 };
 
 

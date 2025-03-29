@@ -10,13 +10,16 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     switch(e.type) {
         case EventType::ButtonPressed: {
             Serial.println("ButtonPressed");
+
+            auto pos = coordinator->rotaryEncoder.ss.getEncoderPosition();
+
             uint8_t intPin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();   // Which pin caused it?
             uint8_t intVal = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();  // What was the level?
             // if (intPin != MCP23XXX_INT_ERR) {
             //     coordinator->display.print(strFormat("%d %2x", intPin, intVal));
             // }
             coordinator->buttonGrid.buttonGpio.clearInterrupts();
-            Serial.printf("Button %i Changed %i\n", intPin, intVal);
+            Serial.printf("Button %i Changed %i; pos %i\n", intPin, intVal, pos);
 
             if(turn == TurnState::MyTurn) {
                 score++;
