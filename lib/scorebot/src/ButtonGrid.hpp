@@ -7,6 +7,24 @@
 #include <GameState.hpp>
 #include <Adafruit_MCP23X17.h>
 
+
+//void IRAM_ATTR buttonISR(void* arg);
+//
+//void Buttons::setup(uint8_t buttonPin, uint8_t buttonId) {
+//    pinMode(buttonPin, INPUT_PULLUP);
+//    uint8_t* persistentButtonId = new uint8_t(buttonId);
+//    attachInterruptArg(buttonPin, buttonISR, persistentButtonId, FALLING);
+//}
+//
+//void IRAM_ATTR buttonISR(void* arg) {
+//    uint8_t buttonId = *(uint8_t*)arg;
+//    Event e{EventType::ButtonPressed, .buttonId=buttonId};
+//    BaseType_t higherPriorityWoken = pdFALSE;
+//    xQueueSendFromISR(eventQueue, &e, &higherPriorityWoken);
+//    portYIELD_FROM_ISR(higherPriorityWoken);
+//}
+
+
 class ButtonGrid {
     HT16Display* const display;
     Adafruit_MCP23X17 buttonGpio;
