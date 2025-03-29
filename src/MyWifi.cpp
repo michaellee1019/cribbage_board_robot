@@ -12,10 +12,41 @@
 #define MESH_PORT 5555
 
 MyWifi::MyWifi(Coordinator *c)
-: coordinator{c},
-  mesh{}
+: mesh{},
+  coordinator{c},
+  outgoingMsgQueue{xQueueCreate(10, sizeof(String))},
+  ack{xSemaphoreCreateBinary()},
+  ackReceived{false}
 {}
 
+void wifiTask(void*param) {
+    static_cast<MyWifi*>(param)->senderTask(); // Cast and call instance method
+}
+
+void MyWifi::sendBroadcast(const String& message) const {
+    xQueueSend(outgoingMsgQueue, &message, portMAX_DELAY);
+}
+
+
+[[noreturn]]
+void MyWifi::senderTask() {
+    String outgoing;
+    // const int retryIntervalMs = 500;
+    // const int maxRetries = 5;
+
+    while (true) {
+        if (xQueueReceive(outgoingMsgQueue, &outgoing, portMAX_DELAY) == pdTRUE) {
+            mesh.sendBroadcast(outgoing);
+            // ackReceived = false;
+            // for (int retry = 0; retry < maxRetries && !ackReceived; retry++) {
+            //     mesh.sendBroadcast(outgoing);
+            //     if (xSemaphoreTake(ack, pdMS_TO_TICKS(retryIntervalMs)) == pdTRUE) {
+            //         ackReceived = true;
+            //         break;
+            //     }
+            }
+    }
+}
 
 void MyWifi::setup() {
     // Initialize the mesh
@@ -24,6 +55,16 @@ void MyWifi::setup() {
     //                             COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
+
+    xTaskCreate(
+        wifiTask, // Static method wrapper
+        "WifiSenderTask",
+        4096,
+        this, // Pass instance pointer as param
+        2,
+        nullptr
+    );
+
 
     mesh.onNewConnection([this](uint32_t from) {
         Event e{};

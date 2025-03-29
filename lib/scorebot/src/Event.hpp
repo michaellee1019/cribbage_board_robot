@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-enum class EventType { ButtonPressed, WifiConnected, NewPeer, MessageReceived };
+enum class EventType { ButtonPressed, WifiConnected, NewPeer, MessageReceived, StateUpdate };
 
 struct Event {
     EventType type;

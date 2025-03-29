@@ -10,10 +10,12 @@ public:
     void setup();
     void loop();
 
-    auto sendBroadcast(const String& message) {
-        return mesh.sendBroadcast(message);
-    }
+    void senderTask();
+    void sendBroadcast(const String& message) const;
 private:
     painlessMesh mesh;
     Coordinator* coordinator;
+    QueueHandle_t outgoingMsgQueue;
+    SemaphoreHandle_t ack;
+    volatile bool ackReceived;
 };
