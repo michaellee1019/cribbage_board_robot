@@ -4,15 +4,7 @@
 #include <Event.hpp>
 
 #include <set>
-#include <map>
 #include <WString.h>
-
-inline std::map<int, String> playerNumberMap = {
-  {1, "RED"},
-  {2, "BLUE"},
-  {3, "GREN"},
-  {4, "WHIT"},
-};
 
 class GameState {
 public:

@@ -1,7 +1,34 @@
 #include <Coordinator.hpp>
 #include <GameState.hpp>
-#include <HWCDC.h>
 
+// #include <map>
+// std::map<int, String> playerNumberMap = {
+//     {1, "RED"},
+//     {2, "BLUE"},
+//     {3, "GREN"},
+//     {4, "WHIT"},
+// };
+
+// void loop(GameState* const state) {
+//     if (!state->interrupted) {
+//         return;
+//     }
+//     auto pressed = !ss.digitalRead(SS_SWITCH);
+//     auto val = ss.getEncoderPosition();
+//
+//     // initialize player selection
+//     if (!state->isLeaderboard && state->playerNumber == 0) {
+//         if (val > -1) {
+//             display->print(playerNumberMap[val]);
+//         }
+//
+//         if (pressed) {
+//             state->playerNumber = val;
+//             Serial.printf("Player set to: %s\n", playerNumberMap[state->playerNumber].c_str());
+//         }
+//     }
+//     state->interrupted = false;
+// }
 GameState::GameState()
     : score(0), turn(TurnState::OpponentTurn)
 {}
@@ -23,12 +50,10 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
 
             if(turn == TurnState::MyTurn) {
                 score++;
-                //                display.update(score);
             }
         } break;
         case EventType::WifiConnected:
             turn = TurnState::MyTurn;
-//        display.showMessage(e.wifiMessage);
         break;
         case EventType::NewPeer:
             peers.insert(e.peerId);

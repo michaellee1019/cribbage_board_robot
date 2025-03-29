@@ -8,11 +8,8 @@ class HT16Display {
     HT16K33 driver;
 
 public:
-    HT16Display() = default;
-    void setup(uint8_t address) {
-        while (!driver.begin(address)) {
-        }
-    }
+    explicit HT16Display();
+    void setup(uint8_t address);
 
     // Talks like a duck!
     template <typename... Args>
