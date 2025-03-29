@@ -23,6 +23,8 @@ class ButtonGrid {
 public:
     explicit ButtonGrid(HT16Display* const display) : display{display} {}
 
+
+
     void setup() {
         buttonGpio.begin_I2C(0x20, &Wire);
         buttonGpio.setupInterrupts(true, false, LOW);

@@ -11,7 +11,6 @@
 #include <HT16Display.hpp>
 #include <ButtonGrid.hpp>
 #include <State.hpp>
-#include <game.hpp>
 
 #define MESH_PREFIX "mesh_network"
 #define MESH_PASSWORD "mesh_password"
@@ -20,6 +19,17 @@
 GameState gameState;
 State state{&gameState};
 
+void seesawTask(void *pvParameters) {
+    for (;;) {
+        // Wait for the notification from the ISR
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        state.primaryDisplay.print(state.encoder.ss.getEncoderPosition());
+
+        Serial.println("seesawTask");
+
+    }
+}
 
 void buttonISR() {
     gameState.buttonPressed = true;
@@ -47,8 +57,6 @@ void receivedCallback(uint32_t from, String& msg) {
     String toSend = String(from) + " " + msg;
     state.primaryDisplay.print(msg);
 }
-
-Game game{};
 
 static TaskHandle_t seesawTaskHandle = NULL;
 void IRAM_ATTR seesawInterrupt() {
