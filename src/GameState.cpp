@@ -30,7 +30,8 @@
 //     state->interrupted = false;
 // }
 GameState::GameState()
-    : score(0), turn(TurnState::OpponentTurn)
+    : score{},
+      whosTurn{0}
 {}
 
 void onButtonPress(GameState* state, const Event& e, Coordinator* coordinator) {
@@ -50,14 +51,14 @@ void onButtonPress(GameState* state, const Event& e, Coordinator* coordinator) {
 }
 
 void onNewPeer(GameState* state, const Event& e, Coordinator* coordinator) {
-    state->peers.insert(e.peerId);
-    Serial.printf("New peer %i\n", e.peerId);
+    state->peers.insert(e.newPeer.peerId);
+    Serial.printf("New peer %i\n", e.newPeer.peerId);
 }
 
 void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinator) {
-    auto score = std::stoi(e.wifiMessage);
+    auto score = std::stoi(e.messageReceived.wifiMessage);
     state->score = std::max(state->score, score);
-    Serial.printf("[Received from=%i] [%s]\n", e.peerId, e.wifiMessage);
+    Serial.printf("[Received from=%i] [%s]\n", e.messageReceived.peerId, e.messageReceived.wifiMessage);
 }
 
 void GameState::handleEvent(const Event& e, Coordinator* coordinator) {

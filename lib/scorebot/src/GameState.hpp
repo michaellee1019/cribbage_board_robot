@@ -2,19 +2,16 @@
 #define GAME_STATE_H
 
 #include <Event.hpp>
-
 #include <set>
-#include <WString.h>
 
 class GameState {
 public:
-  enum class TurnState { MyTurn, OpponentTurn };
   GameState();
 
   void handleEvent(const Event& e, class Coordinator* coordinator);
 
   int score;
-  TurnState turn;
+  uint8_t whosTurn;
   std::set<uint8_t> peers;
 };
 

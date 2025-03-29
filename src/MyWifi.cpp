@@ -69,7 +69,7 @@ void MyWifi::setup() {
     mesh.onNewConnection([this](uint32_t from) {
         Event e{};
         e.type = EventType::NewPeer;
-        e.peerId = from;
+        e.newPeer.peerId = from;
         xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);
     });
 
@@ -77,15 +77,15 @@ void MyWifi::setup() {
     mesh.onReceive([this](uint32_t from, const String &msg) {
         Event e{};
         e.type = EventType::MessageReceived;
-        e.peerId = from;
-        strlcpy(e.wifiMessage, msg.c_str(), sizeof(e.wifiMessage));
+        e.messageReceived.peerId = from;
+        strlcpy(e.messageReceived.wifiMessage, msg.c_str(), sizeof(e.messageReceived.wifiMessage));
         xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);
     });
 
     {
         Event addSelf{};
         addSelf.type = EventType::NewPeer;
-        addSelf.peerId = mesh.getNodeId();
+        addSelf.newPeer.peerId = mesh.getNodeId();
 
         xQueueSend(coordinator->eventQueue, &addSelf, portMAX_DELAY);
     }
