@@ -29,9 +29,10 @@ void Coordinator::loop() {
     this->wifi.loop();
 }
 
+[[noreturn]]
 void Coordinator::dispatcherTask(void* param) {
-    Coordinator* coordinator = static_cast<Coordinator*>(param);
-    Event e;
+    auto* coordinator = static_cast<Coordinator*>(param);
+    Event e{};
     while (true) {
         if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
             coordinator->state.handleEvent(e, coordinator);

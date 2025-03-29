@@ -2,8 +2,8 @@
 #include <Coordinator.hpp>
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
-    RotaryEncoder* self = (RotaryEncoder*)arg;
-    Event event;
+    const auto* self = static_cast<RotaryEncoder*>(arg);
+    Event event{};
     event.type = EventType::ButtonPressed;
     BaseType_t higherPriorityWoken = pdFALSE;
     xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
