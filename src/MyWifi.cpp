@@ -25,12 +25,18 @@ void MyWifi::setup() {
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
 
-    // mesh.onNewConnection(&newConnectionCallback);
+    mesh.onNewConnection([this](uint32_t from) {
+        Event e{};
+        e.type = EventType::NewPeer;
+        e.peerId = from;
+        xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);
+    });
+
     // mesh.onDroppedConnection(&lostConnectionCallback);
-    // mesh.onReceive(&receivedCallback);
     mesh.onReceive([this](uint32_t from, const String &msg) {
         Event e{};
-        e.type = EventType::WifiConnected;
+        e.type = EventType::MessageReceived;
+        e.peerId = from;
         strlcpy(e.wifiMessage, msg.c_str(), sizeof(e.wifiMessage));
         xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);
     });

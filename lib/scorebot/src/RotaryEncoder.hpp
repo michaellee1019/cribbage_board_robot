@@ -15,8 +15,6 @@ class RotaryEncoder {
 public:
     Coordinator* coordinator;
     Adafruit_seesaw ss{};
-
-private:
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
 
 public:

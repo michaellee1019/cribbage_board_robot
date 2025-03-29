@@ -1,6 +1,7 @@
 #ifndef COORDINATOR_H
 #define COORDINATOR_H
 
+#include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
 #include <GameState.hpp>

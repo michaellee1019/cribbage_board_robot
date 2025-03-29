@@ -13,7 +13,6 @@ public:
 
   void handleEvent(const Event& e, class Coordinator* coordinator);
 
-private:
   int score;
   TurnState turn;
   std::set<uint8_t> peers;
