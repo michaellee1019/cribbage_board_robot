@@ -9,18 +9,20 @@
 //#include "Buttons.h"
 //#include "Wifi.h"
 //#include "Display.h"
+#include <HT16Display.hpp>
 
 class Coordinator {
 public:
+    QueueHandle_t eventQueue;
+    Scheduler scheduler;
+    HT16Display display;
+    GameState state;
+    //    Buttons buttons;
+    MyWifi wifi;
+public:
     Coordinator();
     void setup();
-
-    QueueHandle_t eventQueue;
-//    Display display;
-    GameState state;
-//    Buttons buttons;
-    MyWifi wifi;
-
+    void loop();
     static void dispatcherTask(void* param);
 };
 

@@ -6,8 +6,9 @@ class Coordinator;
 
 class MyWifi {
 public:
-    MyWifi(Coordinator *c);
+    explicit MyWifi(Coordinator *c);
     void setup();
+    void loop();
 private:
     painlessMesh mesh;
     Coordinator* coordinator;

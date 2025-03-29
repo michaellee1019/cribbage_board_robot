@@ -3,12 +3,13 @@
 
 #include <cstdint>
 
-enum class EventType { ButtonPressed, WifiConnected };
+enum class EventType { ButtonPressed, WifiConnected, NewPeer };
 
 struct Event {
     EventType type;
     union {
         uint8_t buttonId;
+        uint8_t peerId;
         char wifiMessage[256];
     };
 };

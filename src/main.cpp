@@ -6,4 +6,6 @@ void setup() {
     coordinator.setup();
 }
 
-void loop() {}
+void loop() {
+    coordinator.loop();
+}

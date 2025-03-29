@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Event.hpp>
 //struct GameState {
 
@@ -22,4 +24,5 @@ public:
 private:
   int score;
   TurnState turn;
+  std::set<uint8_t> peers;
 };
