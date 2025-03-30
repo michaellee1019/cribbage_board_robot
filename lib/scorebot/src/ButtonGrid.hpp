@@ -4,9 +4,10 @@
 #include <Adafruit_MCP23X17.h>
 
 class ButtonGrid {
-public:
     class Coordinator* coordinator;
+public:
     Adafruit_MCP23X17 buttonGpio;
+private:
 
     static constexpr u32_t interruptPin = 8;
 
@@ -17,8 +18,10 @@ public:
     static constexpr u32_t add = 0;
     static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
 
-    explicit ButtonGrid(class Coordinator* coordinator);
+    friend void buttonISR(void*);
 
+public:
+    explicit ButtonGrid(class Coordinator* coordinator);
     void setup();
 };
 
