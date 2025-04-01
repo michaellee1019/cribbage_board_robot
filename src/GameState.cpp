@@ -44,7 +44,7 @@ uint8_t otherPeer(Coordinator* coordinator, GameState* state) {
 }
 
 void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    Serial.println("ButtonPressed");
+    // Serial.println("ButtonPressed");
 
     int32_t pos = coordinator->rotaryEncoder.position();
 
@@ -53,7 +53,7 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
     // if (intPin != MCP23XXX_INT_ERR) {
     //     coordinator->display.print(strFormat("%d %2x", intPin, intVal));
     // }
-    Serial.printf("Button %i Changed %i; pos %i\n", intPin, intVal, pos);
+    // Serial.printf("Button %i Changed %i; pos %i\n", intPin, intVal, pos);
     state->score++;
     state->whosTurn = otherPeer(coordinator, state);
     coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
@@ -62,13 +62,12 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
 
 void onNewPeer(GameState* state, const Event& e, Coordinator* coordinator) {
     state->peers.insert(e.newPeer.peerId);
-    Serial.printf("%i has new peer %i\n", coordinator->wifi.getMyPeerId(), e.newPeer.peerId);
+    // Serial.printf("%i has new peer %i\n", coordinator->wifi.getMyPeerId(), e.newPeer.peerId);
 }
 
 void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinator) {
-    auto score = std::stoi(e.messageReceived.wifiMessage);
+    state->score = std::stoi(e.messageReceived.wifiMessage);
     state->whosTurn = coordinator->wifi.getMyPeerId();
-    state->score = std::max(state->score, score);
     Serial.printf("[Received from=%i] [%s]\n", e.messageReceived.peerId, e.messageReceived.wifiMessage);
 }
 
@@ -81,12 +80,13 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
         case EventType::StateUpdate: break;
     }
 
-    coordinator->display.print(score);
     Serial.printf("GameState::handleEvent whosTurn=%i myPeer=%i\n", coordinator->state.whosTurn, coordinator->wifi.getMyPeerId());
     if (coordinator->state.whosTurn == coordinator->wifi.getMyPeerId()) {
         coordinator->rotaryEncoder.lightOn();
+        coordinator->display.print(score);
     } else {
         coordinator->rotaryEncoder.lightOff();
+        coordinator->display.print("DEADBEEF");
     }
 }
 
