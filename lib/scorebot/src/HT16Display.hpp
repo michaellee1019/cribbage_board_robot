@@ -16,6 +16,7 @@ public:
     auto print(Args&&... args) {
         return driver.print(std::forward<Args>(args)...);
     }
+    void clear();
 };
 
 

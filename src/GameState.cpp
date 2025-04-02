@@ -50,13 +50,19 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
 
     uint8_t intPin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();   // Which pin caused it?
     uint8_t intVal = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();  // What was the level?
+    Serial.printf("intPin=%x, intVal=%x, pos=%i\n", intPin, intVal, pos);
     // if (intPin != MCP23XXX_INT_ERR) {
     //     coordinator->display.print(strFormat("%d %2x", intPin, intVal));
     // }
     // Serial.printf("Button %i Changed %i; pos %i\n", intPin, intVal, pos);
     state->score++;
-    state->whosTurn = otherPeer(coordinator, state);
-    coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
+
+    auto wasOkay = intPin == ButtonGrid::okPin;
+    if (wasOkay) {
+        state->whosTurn = otherPeer(coordinator, state);
+        coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
+    }
+
     coordinator->buttonGrid.buttonGpio.clearInterrupts();
 }
 
@@ -83,10 +89,10 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     Serial.printf("GameState::handleEvent whosTurn=%i myPeer=%i\n", coordinator->state.whosTurn, coordinator->wifi.getMyPeerId());
     if (coordinator->state.whosTurn == coordinator->wifi.getMyPeerId()) {
         coordinator->rotaryEncoder.lightOn();
-        coordinator->display.print(score);
+        coordinator->display.print("GO!");
     } else {
         coordinator->rotaryEncoder.lightOff();
-        coordinator->display.print("DEADBEEF");
+        coordinator->display.clear();
     }
 }
 

@@ -7,11 +7,12 @@ class ButtonGrid {
     class Coordinator* coordinator;
 public:
     Adafruit_MCP23X17 buttonGpio;
+    static constexpr u32_t okPin = 4;
+
 private:
 
     static constexpr u32_t interruptPin = 8;
 
-    static constexpr u32_t okPin = 4;
     static constexpr u32_t plusone = 3;
     static constexpr u32_t plusfive = 2;
     static constexpr u32_t negone = 1;
