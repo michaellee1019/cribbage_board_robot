@@ -12,7 +12,9 @@ public:
 
     void senderTask();
     void sendBroadcast(const String& message) const;
-    uint8_t getMyPeerId();
+    uint32_t getMyPeerId();
+    std::list<uint32_t> getPeers();
+
 private:
     painlessMesh mesh;
     Coordinator* coordinator;

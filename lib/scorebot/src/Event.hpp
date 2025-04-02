@@ -3,17 +3,22 @@
 
 #include <cstdint>
 
-enum class EventType { ButtonPressed, WifiConnected, NewPeer, MessageReceived, StateUpdate };
+enum class EventType { ButtonPressed, WifiConnected, NewPeer, MessageReceived, StateUpdate,
+    LostPeer
+};
 
 struct ButtonPressEvent {
     uint8_t buttonId;
 };
 struct WifiConnectedEvent {};
+struct LostPeerEvent {
+    uint32_t peerId;
+};
 struct NewPeerEvent {
-    uint8_t peerId;
+    uint32_t peerId;
 };
 struct MessageReceivedEvent {
-    uint8_t peerId;
+    uint32_t peerId;
     char wifiMessage[256];
 };
 struct StateUpdateEvent {};
@@ -26,6 +31,7 @@ struct Event {
         NewPeerEvent newPeer;
         MessageReceivedEvent messageReceived;
         StateUpdateEvent state;
+        LostPeerEvent lostPeer;
     };
 };
 

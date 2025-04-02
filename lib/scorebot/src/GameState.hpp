@@ -2,7 +2,7 @@
 #define GAME_STATE_H
 
 #include <Event.hpp>
-#include <set>
+#include <list>
 
 class GameState {
 public:
@@ -11,8 +11,8 @@ public:
   void handleEvent(const Event& e, class Coordinator* coordinator);
 
   int score;
-  uint8_t whosTurn;
-  std::set<uint8_t> peers;
+  uint32_t whosTurn;
+  std::list<uint32_t> peers;
 };
 
 #endif // GAME_STATE_H

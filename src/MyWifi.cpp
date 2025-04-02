@@ -19,8 +19,12 @@ MyWifi::MyWifi(Coordinator *c)
   ackReceived{false}
 {}
 
-uint8_t MyWifi::getMyPeerId() {
+// TODO: typedef for node/peer ID type
+uint32_t MyWifi::getMyPeerId() {
     return mesh.getNodeId();
+}
+std::list<uint32_t> MyWifi::getPeers() {
+    return mesh.getNodeList(true);
 }
 
 void wifiTask(void*param) {
@@ -69,6 +73,12 @@ void MyWifi::setup() {
         nullptr
     );
 
+    mesh.onDroppedConnection([this](uint32_t from) {
+        Event e{};
+        e.type = EventType::LostPeer;
+        e.lostPeer.peerId = from;
+        xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);
+    });
 
     mesh.onNewConnection([this](uint32_t from) {
         Event e{};
