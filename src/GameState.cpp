@@ -9,39 +9,12 @@
 //     {4, "WHIT"},
 // };
 
-// void loop(GameState* const state) {
-//     if (!state->interrupted) {
-//         return;
-//     }
-//     auto pressed = !ss.digitalRead(SS_SWITCH);
-//     auto val = ss.getEncoderPosition();
-//
-//     // initialize player selection
-//     if (!state->isLeaderboard && state->playerNumber == 0) {
-//         if (val > -1) {
-//             display->print(playerNumberMap[val]);
-//         }
-//
-//         if (pressed) {
-//             state->playerNumber = val;
-//             Serial.printf("Player set to: %s\n", playerNumberMap[state->playerNumber].c_str());
-//         }
-//     }
-//     state->interrupted = false;
-// }
 GameState::GameState()
     : score{},
       whosTurn{0}
 {}
 
 uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
-    Serial.print("peers=");
-    for (const auto& peer : state->peers) {
-        Serial.print(peer);
-        Serial.print(" ");
-    }
-    Serial.println("");
-
     for (const auto& peer : state->peers) {
         if (peer != coordinator->wifi.getMyPeerId()) {
             return peer;
@@ -51,8 +24,6 @@ uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
 }
 
 void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    // Serial.println("ButtonPressed");
-
     int32_t pos = coordinator->rotaryEncoder.position();
 
     uint8_t intPin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();   // Which pin caused it?
@@ -88,9 +59,10 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
         "[Received from=%i] [%s]\n", e.messageReceived.peerId, e.messageReceived.wifiMessage);
 }
 
-void lostPeer(GameState* state, const Event& event, Coordinator* coordinator) {
+void lostPeer(GameState* state, const Event&, Coordinator* coordinator) {
     state->peers = coordinator->wifi.getPeers();
 }
+
 void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     switch(e.type) {
         case EventType::ButtonPressed: onButtonPress(this, e.press, coordinator); break;

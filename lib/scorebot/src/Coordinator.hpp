@@ -23,7 +23,8 @@ public:
     Coordinator();
     void setup();
     void loop();
-    static void dispatcherTask(void* param);
+
+    friend void dispatcherTask(void*);
 };
 
 #endif // COORDINATOR_H

@@ -3,6 +3,18 @@
 #include "Event.hpp"
 #include <MyWifi.hpp>
 
+[[noreturn]]
+void dispatcherTask(void* param) {
+    auto* coordinator = static_cast<Coordinator*>(param);
+    Event e{};
+    while (true) {
+        if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
+            coordinator->state.handleEvent(e, coordinator);
+        }
+    }
+}
+
+
 Coordinator::Coordinator() :
     eventQueue{xQueueCreate(10, sizeof(Event))},
     scheduler{},
@@ -29,13 +41,3 @@ void Coordinator::loop() {
     this->wifi.loop();
 }
 
-[[noreturn]]
-void Coordinator::dispatcherTask(void* param) {
-    auto* coordinator = static_cast<Coordinator*>(param);
-    Event e{};
-    while (true) {
-        if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
-            coordinator->state.handleEvent(e, coordinator);
-        }
-    }
-}
