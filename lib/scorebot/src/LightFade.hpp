@@ -9,8 +9,8 @@
 
 
 class LightFade {
-    static constexpr EventBits_t ENABLED  = BIT0;
-    static constexpr EventBits_t DISABLED = BIT1;
+    static constexpr EventBits_t B_ENABLED  = BIT0;
+    static constexpr EventBits_t B_DISABLED = BIT1;
 
     Light& light;
     bool fading;
@@ -34,12 +34,12 @@ public:
 
     void blinkEnabled() {
         fading = true;
-        xEventGroupSetBits(enableEvent, ENABLED);
+        xEventGroupSetBits(enableEvent, B_ENABLED);
     }
 
     void blinkDisabled() {
         fading = false;
-        xEventGroupSetBits(enableEvent, DISABLED);
+        xEventGroupSetBits(enableEvent, B_DISABLED);
     }
 
 private:
@@ -58,16 +58,16 @@ private:
         while (true) {
             EventBits_t bits = xEventGroupWaitBits(
                 controller->enableEvent,
-                ENABLED | DISABLED,
+                B_ENABLED | B_DISABLED,
                 pdTRUE /*clear on exit*/,
                 pdFALSE /*wait for all bits*/,
                 0 /* ticks to wait*/
             );
 
-            if (bits & ENABLED) {
+            if (bits & B_ENABLED) {
                 controller->fading = true;
             }
-            else if (bits & DISABLED) {
+            else if (bits & B_DISABLED) {
                 controller->fading = false;
                 controller->light.setBrightness(0);
                 brightness = 0;
