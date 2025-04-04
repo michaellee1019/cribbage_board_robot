@@ -11,7 +11,9 @@ void IRAM_ATTR rotaryEncoderISR(void* arg) {
 }
 
 RotaryEncoder::RotaryEncoder(Coordinator *coordinator)
-    : coordinator{coordinator} {}
+    : coordinator{coordinator},
+      fade{*this}
+{}
 
 int32_t RotaryEncoder::position() {
     return ss.getEncoderPosition();
@@ -32,16 +34,22 @@ void RotaryEncoder::setup() {
     ss.enableEncoderInterrupt();
 
     attachInterruptArg(digitalPinToInterrupt(SEESAW_INTERRUPT), rotaryEncoderISR, this, CHANGE);
+
+    fade.setup();
+}
+
+void RotaryEncoder::setBrightness(const uint8_t brightness) {
+    sspixel.setBrightness(brightness);
+    sspixel.setPixelColor(0, 0xFAEDED);
+    if (brightness <= 0) {
+        sspixel.clear();
+    }
+    sspixel.show();
 }
 
 void RotaryEncoder::lightOn() {
-    Serial.println("RotaryEncoder::lightOn");
-    sspixel.setBrightness(20);
-    sspixel.setPixelColor(0, 0xFAEDED);
-    sspixel.show();
+    fade.blinkEnabled();
 }
 void RotaryEncoder::lightOff() {
-    Serial.println("RotaryEncoder::lightOff");
-    sspixel.clear();
-    sspixel.show();
+    fade.blinkDisabled();
 }
