@@ -9,9 +9,8 @@
 #include "esp_log.h"
 
 #define OTA_URL "http://192.168.1.109:8000/firmware.bin"
-#define OTA_WIFI_SSID "TODO"
-#define OTA_WIFI_PASSWORD "TODO"
-
+// put this in repo root, it's a symlink.
+#include "secret.h"
 
 
 #define OTA_BUF_SIZE 256
