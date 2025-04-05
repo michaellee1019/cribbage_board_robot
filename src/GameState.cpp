@@ -66,8 +66,8 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     }
 
     if (coordinator->state.peers.size() < 2) {
-        char buf[4] = "o=0";
-        buf[3] = '0' + coordinator->state.peers.size();
+        char buf[4] = "%=0";
+        buf[2] = '0' + coordinator->state.peers.size();
         coordinator->display.print(buf);
         coordinator->rotaryEncoder.lightOff();
         return;
