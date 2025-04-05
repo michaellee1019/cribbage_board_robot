@@ -34,6 +34,12 @@ void wifiTask(void*param) {
 void MyWifi::sendBroadcast(const String& message) const {
     xQueueSend(outgoingMsgQueue, &message, portMAX_DELAY);
 }
+void MyWifi::shutdown() {
+    Serial.println("Shutdown");
+    mesh.stop();
+    WiFi.disconnect(true);  // Disconnect from mesh/AP/STA
+    WiFi.mode(WIFI_STA);    // Switch to STA mode only
+}
 
 
 [[noreturn]]
@@ -56,13 +62,18 @@ void MyWifi::senderTask() {
     }
 }
 
+
+void MyWifi::start() {
+    mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
+}
+
 void MyWifi::setup() {
     // Initialize the mesh
     mesh.setDebugMsgTypes(ERROR);
     // mesh.setDebugMsgTypes(ERROR | STARTUP | MESH_STATUS | CONNECTION | SYNC | S_TIME |
     //                             COMMUNICATION | GENERAL | MSG_TYPES | REMOTE | APPLICATION | DEBUG);
 
-    mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
+    this->start();
 
     xTaskCreate(
         wifiTask, // Static method wrapper

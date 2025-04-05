@@ -22,6 +22,11 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
         state->whosTurn = otherPeer(coordinator, state);
         coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
     }
+    if (whichPin == ButtonGrid::add) {
+        coordinator->wifi.shutdown();
+        performOTAUpdate();
+        coordinator->wifi.start();
+    }
     coordinator->buttonGrid.buttonGpio.clearInterrupts();
 }
 
@@ -61,7 +66,9 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     }
 
     if (coordinator->state.peers.size() < 2) {
-        coordinator->display.print(coordinator->state.peers.size());
+        char buf[4] = "o=0";
+        buf[3] = '0' + coordinator->state.peers.size();
+        coordinator->display.print(buf);
         coordinator->rotaryEncoder.lightOff();
         return;
     }

@@ -4,6 +4,16 @@
 #include <Wire.h>
 #include <Arduino.h>
 
+//template<typename F>
+//class ScopeGuard {
+//    F callback;
+//public:
+//    ScopeGuard(F callback) : callback{callback} {}
+//    ~ScopeGuard() {
+//      callback();
+//    }
+//};
+
 template <typename... Args>
 String strFormat(const char* const format, Args... args) {
     char buffer[10];

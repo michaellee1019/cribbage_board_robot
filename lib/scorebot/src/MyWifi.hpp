@@ -12,6 +12,8 @@ public:
 
     void senderTask();
     void sendBroadcast(const String& message) const;
+    void shutdown();
+    void start();
     uint32_t getMyPeerId();
     std::list<uint32_t> getPeers();
 
@@ -22,3 +24,5 @@ private:
     SemaphoreHandle_t ack;
     volatile bool ackReceived;
 };
+
+void performOTAUpdate();
