@@ -1,14 +1,12 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <utils.hpp>
 
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
 #include "esp_http_client.h"
-#include "esp_log.h"
 
-#define OTA_URL "http://192.168.1.109:8000/firmware.bin"
+#define OTA_URL ("http://" OTA_HOST ":8000/firmware.bin")
 // put this in repo root, it's a symlink.
 #include "secret.h"
 
@@ -116,7 +114,8 @@ esp_err_t esp_http_ota(const esp_http_client_config_t* config)
     return ESP_OK;
 }
 
-void performOTAUpdate() {
+
+void performOTAUpdateFromUrl(const char* url) {
     Serial.println("OTA Update");
     delay(500);
     WiFi.begin(OTA_WIFI_SSID, OTA_WIFI_PASSWORD);
@@ -124,8 +123,9 @@ void performOTAUpdate() {
         Serial.print(".");
         delay(500);
     }
+
     esp_http_client_config_t config = {
-        .url = OTA_URL,
+        .url = url,
         .timeout_ms = 5000,
         .skip_cert_common_name_check = true,  // Only for HTTP or self-signed
     };
@@ -167,3 +167,10 @@ void performOTAUpdate() {
 
     esp_http_client_cleanup(client);
 }
+
+
+void performOTAUpdate() {
+    const auto url = OTA_URL;
+    performOTAUpdateFromUrl(url);
+}
+

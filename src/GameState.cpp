@@ -1,6 +1,8 @@
 #include <Coordinator.hpp>
 #include <GameState.hpp>
 
+#include <atomic.h>
+
 GameState::GameState() : score{}, whosTurn{0} {}
 
 uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
@@ -49,6 +51,9 @@ void onLostPeer(GameState* state, const Event&, Coordinator* coordinator) {
     updatePeerList(state, coordinator);
 }
 
+volatile uint32_t events;
+
+
 void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     switch(e.type) {
         case EventType::ButtonPressed:
@@ -65,19 +70,23 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
             break;
     }
 
-    if (coordinator->state.peers.size() < 2) {
-        char buf[4] = "%=0";
+    events++;
+
+    if (coordinator->state.peers.size() < 2 && (events % 80 > 60)) {
+        char buf[4] = "@=0";
         buf[2] = '0' + coordinator->state.peers.size();
         coordinator->display.print(buf);
         coordinator->rotaryEncoder.lightOff();
-        return;
-    }
-    if (coordinator->state.whosTurn == coordinator->wifi.getMyPeerId()) {
+    } else if (coordinator->state.whosTurn == coordinator->wifi.getMyPeerId()) {
         coordinator->rotaryEncoder.lightOn();
         coordinator->display.print("GO!");
     } else {
+        char buf[4] = "#=0";
+        buf[2] = '0' + events%10;
+        coordinator->display.print(buf);
         coordinator->rotaryEncoder.lightOff();
-        coordinator->display.clear();
+        // coordinator->rotaryEncoder.lightOff();
+        // coordinator->display.print(events%80);
     }
 }
 

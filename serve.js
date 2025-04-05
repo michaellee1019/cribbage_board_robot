@@ -6,8 +6,16 @@ const { exec } = require('child_process');
 const PORT = 8000;
 const baseDir = '.pio/build/controller';
 
+let reqs = 0;
+
+let sayexec = (st) => {
+  consol.log(st);
+  exec(st);
+};
+
 const server = http.createServer((req, res) => {
-  exec('say "load"');
+  reqs++;
+  sayexec(`say "start ${reqs}"`);
 
   const safePath = path.normalize(decodeURIComponent(req.url)).replace(/^(\.\.[\/\\])+/, '');
   let filePath = path.join(baseDir, safePath);
@@ -32,6 +40,7 @@ const server = http.createServer((req, res) => {
 
       res.writeHead(200);
       res.end(data);
+      sayexec(`say "end ${reqs}"`);
     });
   });
 });
