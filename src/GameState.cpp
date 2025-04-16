@@ -1,8 +1,6 @@
 #include <Coordinator.hpp>
 #include <GameState.hpp>
 
-#include <atomic.h>
-
 GameState::GameState() : score{}, whosTurn{0} {}
 
 uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
@@ -26,7 +24,7 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
     }
     if (whichPin == ButtonGrid::add) {
         coordinator->wifi.shutdown();
-        performOTAUpdate();
+        performOTAUpdate(&coordinator->display);
         coordinator->wifi.start();
     }
     coordinator->buttonGrid.buttonGpio.clearInterrupts();
@@ -81,7 +79,7 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
         coordinator->rotaryEncoder.lightOn();
         coordinator->display.print("GO!");
     } else {
-        char buf[4] = "#=0";
+        char buf[4] = "!=0";
         buf[2] = '0' + events%10;
         coordinator->display.print(buf);
         coordinator->rotaryEncoder.lightOff();

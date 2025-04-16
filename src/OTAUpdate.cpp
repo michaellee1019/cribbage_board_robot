@@ -9,6 +9,7 @@
 #define OTA_URL ("http://" OTA_HOST ":8000/firmware.bin")
 // put this in repo root, it's a symlink.
 #include "secret.h"
+#include <HT16Display.hpp>
 
 
 #define OTA_BUF_SIZE 256
@@ -114,9 +115,11 @@ esp_err_t esp_http_ota(const esp_http_client_config_t* config)
     return ESP_OK;
 }
 
+///////////////////////
 
-void performOTAUpdateFromUrl(const char* url) {
+void performOTAUpdateFromUrl(const char* url, HT16Display* display) {
     Serial.println("OTA Update");
+    display->print("OTA1");
     delay(500);
     WiFi.begin(OTA_WIFI_SSID, OTA_WIFI_PASSWORD);
     while (WiFi.status() != WL_CONNECTED) {
@@ -144,6 +147,7 @@ void performOTAUpdateFromUrl(const char* url) {
         esp_http_client_cleanup(client);
         return;
     }
+    display->print("DNLD");
 
     esp_http_client_fetch_headers(client);
 
@@ -154,9 +158,11 @@ void performOTAUpdateFromUrl(const char* url) {
         ESP_LOGI("OTA", "Firmware found, starting OTA update...");
         config.skip_cert_common_name_check = true;  // Optional if using plain HTTP
 
+        display->print("OTA2");
         esp_err_t ota_err = esp_http_ota(&config);
         if (ota_err == ESP_OK) {
             ESP_LOGI("OTA", "Update successful. Rebooting...");
+            display->print("---");
             esp_restart();
         } else {
             ESP_LOGE("OTA", "OTA failed: %s", esp_err_to_name(ota_err));
@@ -169,8 +175,8 @@ void performOTAUpdateFromUrl(const char* url) {
 }
 
 
-void performOTAUpdate() {
+void performOTAUpdate(HT16Display* display) {
     const auto url = OTA_URL;
-    performOTAUpdateFromUrl(url);
+    performOTAUpdateFromUrl(url, display);
 }
 

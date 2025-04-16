@@ -9,13 +9,19 @@ const baseDir = '.pio/build/controller';
 let reqs = 0;
 
 let sayexec = (st) => {
-  consol.log(st);
+  console.log(st);
   exec(st);
 };
 
 const server = http.createServer((req, res) => {
   reqs++;
   sayexec(`say "start ${reqs}"`);
+  // TODO: this is weirdly broken as a feedback mechanism, but the OTA update works. We're seeing double requests
+  // and the 'say stop' happens before the response is sent. Or something.
+  res.on('finish', () => {
+    // Code to execute after the response is sent
+    sayexec(`say "stop ${reqs}"`);
+  });
 
   const safePath = path.normalize(decodeURIComponent(req.url)).replace(/^(\.\.[\/\\])+/, '');
   let filePath = path.join(baseDir, safePath);
@@ -23,7 +29,7 @@ const server = http.createServer((req, res) => {
   fs.stat(filePath, (err, stats) => {
     if (err) {
       res.writeHead(404);
-      res.end('Not found');
+      res.end('Not found ' + filePath);
       return;
     }
 
@@ -40,7 +46,6 @@ const server = http.createServer((req, res) => {
 
       res.writeHead(200);
       res.end(data);
-      sayexec(`say "end ${reqs}"`);
     });
   });
 });
