@@ -1,8 +1,6 @@
 #include <Coordinator.hpp>
 #include <GameState.hpp>
 
-#include <atomic.h>
-
 GameState::GameState() : score{}, whosTurn{0} {}
 
 uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
