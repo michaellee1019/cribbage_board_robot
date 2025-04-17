@@ -21,6 +21,6 @@ void ButtonGrid::setup() {
         buttonGpio.setupInterruptPin(pin, CHANGE);
     }
     pinMode(interruptPin, INPUT_PULLUP);
-    attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, CHANGE);
+    attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, FALLING);
     buttonGpio.clearInterrupts();
 }
