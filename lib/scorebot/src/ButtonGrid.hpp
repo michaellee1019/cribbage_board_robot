@@ -9,7 +9,6 @@ public:
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
     static constexpr u32_t add = 0;
-private:
 
     static constexpr u32_t interruptPin = 8;
 

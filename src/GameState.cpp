@@ -12,16 +12,67 @@ uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
     return 0;
 }
 
+// https://stackoverflow.com/questions/111928/is-there-a-printf-converter-to-print-in-binary-format
+#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+#define BYTE_TO_BINARY(byte)  \
+  ((byte) & 0x80 ? '1' : '0'), \
+  ((byte) & 0x40 ? '1' : '0'), \
+  ((byte) & 0x20 ? '1' : '0'), \
+  ((byte) & 0x10 ? '1' : '0'), \
+  ((byte) & 0x08 ? '1' : '0'), \
+  ((byte) & 0x04 ? '1' : '0'), \
+  ((byte) & 0x02 ? '1' : '0'), \
+  ((byte) & 0x01 ? '1' : '0')
+
+
+// TODO: rename to onButtonChange
 void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    state->score++;
+
+    // Cool story, bro. Tell it again.
+    //
+    // const auto interruptState = coordinator->buttonGrid.resetInterrupts();
+    // if (interruptState.ok() && interruptState.isPressed()) {
+    // }
+    // switch (interruptState) {
+    //     case ButtonGrid::Ok_Press:
+    //     case ButtonGrid::Ok_Release:
+    // }
 
     uint8_t whichPin  = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
     // int32_t rotaryPosition = coordinator->rotaryEncoder.position();
-    // uint8_t pinValues = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
-    if (whichPin == ButtonGrid::okPin) {
-        state->whosTurn = otherPeer(coordinator, state);
-        coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
-    }
+    uint8_t pinValues = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
+    Serial.printf("pinValues = " BYTE_TO_BINARY_PATTERN "\n", BYTE_TO_BINARY(pinValues));
+    // Serial.printf("&= " BYTE_TO_BINARY_PATTERN "\n", BYTE_TO_BINARY(pinValues & (1 << ButtonGrid::okPin)));
+    auto okOnRelease = pinValues & (1 << ButtonGrid::okPin);
+    auto plusOneRelease = pinValues & (1 << ButtonGrid::plusone);
+    auto plusFiveRelease = pinValues & (1 << ButtonGrid::plusfive);
+    auto negOneRelease = pinValues & (1 << ButtonGrid::negone);
+
+    Serial.printf("whichPin = %d\n", whichPin);
+    Serial.printf("plusOneRelease = %d\n", plusOneRelease);
+        if (whichPin == ButtonGrid::plusone && !plusOneRelease) {
+            state->score++;
+            coordinator->display.print(state->score);
+        }
+        if (whichPin == ButtonGrid::plusfive && !plusFiveRelease) {
+            state->score=state->score+5;
+            coordinator->display.print(state->score);
+        }
+        if (whichPin == ButtonGrid::negone && !negOneRelease) {
+            state->score--;
+            coordinator->display.print(state->score);
+        }
+
+        // if (whichPin == ButtonGrid::okPin && okOnRelease) {
+        //     Serial.println("okay button onRelease");
+        // }
+        if (whichPin == ButtonGrid::okPin && !okOnRelease) {
+            //Serial.println("okay button onPress");
+            state->whosTurn = otherPeer(coordinator, state);
+            coordinator->wifi.sendBroadcast(std::to_string(state->score).c_str());
+            coordinator->display.print(state->score);
+        }
+
     if (whichPin == ButtonGrid::add) {
         coordinator->wifi.shutdown();
         performOTAUpdate(&coordinator->display);
@@ -81,7 +132,7 @@ void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
     } else {
         char buf[4] = "!=0";
         buf[2] = '0' + events%10;
-        coordinator->display.print(buf);
+        coordinator->display.print(score);
         coordinator->rotaryEncoder.lightOff();
         // coordinator->rotaryEncoder.lightOff();
         // coordinator->display.print(events%80);
