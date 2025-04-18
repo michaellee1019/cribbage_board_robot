@@ -16,11 +16,17 @@ ButtonGrid::ButtonGrid(Coordinator* coordinator) : coordinator{coordinator}{}
 void ButtonGrid::setup() {
     buttonGpio.begin_I2C(0x20, &Wire);
     buttonGpio.setupInterrupts(true, false, LOW);
-    for (auto&& pin : pins) {
-        buttonGpio.pinMode(pin, INPUT_PULLUP);
-        buttonGpio.setupInterruptPin(pin, CHANGE);
+    for (auto&& pin : AllPins) {
+        buttonGpio.pinMode(hardwarePin(pin), INPUT_PULLUP);
+        buttonGpio.setupInterruptPin(hardwarePin(pin), CHANGE);
     }
-    pinMode(interruptPin, INPUT_PULLUP);
-    attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, FALLING);
+
+    pinMode(hardwarePin(Pins::Interrupt), INPUT_PULLUP);
+    attachInterruptArg(
+        digitalPinToInterrupt(hardwarePin(Pins::Interrupt)),
+        buttonISR,
+        this,
+        FALLING
+    );
     buttonGpio.clearInterrupts();
 }

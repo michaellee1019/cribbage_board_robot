@@ -1,6 +1,5 @@
 #pragma once
 
-#include <HT16Display.hpp>
 #include <painlessMesh.h>
 
 class Coordinator;
@@ -26,4 +25,4 @@ private:
     volatile bool ackReceived;
 };
 
-void performOTAUpdate(HT16Display* display);
+void performOTAUpdate(class HT16Display* display);
