@@ -3,7 +3,7 @@
 
 #include <Adafruit_MCP23X17.h>
 
-enum class Pins : u32_t {
+enum class Pins : uint32_t {
     Ok = 4,
     Add = 0,
     Interrupt = 8,
@@ -36,17 +36,21 @@ static constexpr Pins AllPins[] = {
 
 struct ButtonStateHandle {
     const Pins& pin;
-    const uint16_t& changedPins;
+    const uint8_t& changedPins;
     const uint16_t& pinValues;
 
     [[nodiscard]]
     bool changed() const {
-        return changedPins & (1 << static_cast<uint8_t>(pin));
+        // Ensure pin value is masked to fit within 8 bits (changedPins is uint8_t)
+        auto pinBit = 1 << (static_cast<uint8_t>(pin) & 0x07);
+        return (changedPins & pinBit) != 0;
     }
 
     [[nodiscard]]
     bool pressed() const {
-        return pinValues & (1 << static_cast<uint8_t>(pin));
+        // Ensure pin value is masked to fit within 16 bits (pinValues is uint16_t)
+        auto pinBit = 1 << (static_cast<uint8_t>(pin) & 0x0F);
+        return (pinValues & pinBit) != 0;
     }
 
     [[nodiscard]]
@@ -87,8 +91,8 @@ public:
         cb(bs);
     }
 
-    static u32_t hardwarePin(Pins pin) {
-        return static_cast<u32_t>(pin);
+    static uint32_t hardwarePin(Pins pin) {
+        return static_cast<uint32_t>(pin);
     }
 
 
