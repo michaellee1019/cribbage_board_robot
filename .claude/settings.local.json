@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(./test_runner.sh:*)",
+      "Bash(pio test:*)",
+      "Bash(pio run:*)",
+      "Bash(rm:*)",
+      "Bash(g++:*)",
+      "Bash(./test_logic)"
     ],
     "deny": []
   }

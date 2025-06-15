@@ -49,6 +49,7 @@ pio run -t upload -t monitor -e blue
 - **ButtonGrid** (`src/ButtonGrid.cpp`) - Input handling from button matrix
 - **RotaryEncoder** (`src/RotaryEncoder.cpp`) - Score input via rotary encoder
 - **HT16Display** (`src/HT16Display.cpp`) - 7-segment display management
+- **ErrorHandler** (`lib/scorebot/src/ErrorHandler.hpp`) - Idiomatic ESP32/FreeRTOS error handling with logging and controlled restarts
 
 ### Event System
 - FreeRTOS queue-based event handling
@@ -74,13 +75,65 @@ pio run -t upload -e <environment>
 
 ### Testing
 ```bash
-# Run unit tests (needs setup)
-pio test -e <environment>
+# Run logic tests (no hardware needed)
+./test_runner.sh logic
+
+# Run tests on ESP32 hardware
+pio test -e test_embedded
+
+# Run specific test file
+pio test -e test_embedded -f test_integration_error_handler
+
+# Run tests with verbose output
+pio test -e test_embedded -v
 
 # Debug project configuration
 pio project config --json-output
 pio project metadata --json-output -e <environment>
 ```
+
+#### Error Handling Tests
+The ErrorHandler system includes both logic and integration testing:
+
+- **Logic Tests**: Test error handling logic with no hardware required (built into test runner)
+- **Integration Tests** (`test/test_integration_error_handler.cpp`): Test real FreeRTOS resource creation, memory allocation, and thread safety on ESP32
+
+**Running Error Handler Tests:**
+```bash
+# Quick logic tests (no hardware required)
+./test_runner.sh logic
+
+# Error handling integration tests (requires ESP32 hardware)
+pio test -e test_embedded -f test_integration_error_handler
+
+# Both logic and integration tests
+./test_runner.sh error-handler
+```
+
+**Regression Testing:**
+Run these tests after any changes to error handling code:
+```bash
+# Quick logic validation (no hardware)
+./test_runner.sh logic
+
+# Full test suite on ESP32
+pio test -e test_embedded
+
+# Or use the convenience script
+./test_runner.sh all
+```
+
+#### Test Runner Script
+For convenience, use `./test_runner.sh`:
+```bash
+./test_runner.sh                 # Run integration tests (default, requires hardware)
+./test_runner.sh logic           # Logic tests only (fast, no hardware needed)
+./test_runner.sh embedded        # Integration tests (requires hardware)  
+./test_runner.sh error-handler   # Error handling tests (logic + integration)
+./test_runner.sh all            # All tests (logic + integration)
+```
+
+**Note**: The logic tests use the actual `ErrorHandler.hpp` code with platform abstraction, ensuring no code duplication while enabling fast testing without hardware.
 
 ### Code Formatting
 ```bash

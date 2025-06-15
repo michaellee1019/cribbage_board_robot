@@ -1,50 +1,73 @@
+# Cribbage Board Robot
 
-Setup:
+ESP32-based mesh networked cribbage scoring system with multiple player devices and a leaderboard display.
 
-```
+## Quick Start
+
+### Setup
+```bash
 brew install platformio
 ```
 
+### Build and Upload
+```bash
+# Upload to specific device using convenience script
+./run.sh red         # Upload to red player device
+./run.sh blue        # Upload to blue player device  
+./run.sh controller  # Upload to controller/leaderboard
 
-Misc
-
-```
-pio run -t upload -t monitor -e leaderboard
-```
-
-```
-pio run -t upload -t monitor -e player0
-```
-
-Debugging project setup and the like:
-
-```
-pio project config   --json-output
-pio project metadata --json-output -e leaderboard
+# Or use PlatformIO directly
+pio run -t upload -t monitor -e red
+pio run -t upload -t monitor -e blue
 ```
 
-Maybe add clang-format as a convenience script?:
+### Testing
+```bash
+# Quick logic tests (no hardware needed)
+./test_runner.sh logic
 
-```sh
-clang-format \
-  -i \
-  ./**/*.{hpp,cpp}
+# Integration tests (requires ESP32 hardware)
+./test_runner.sh embedded
+
+# Error handling tests specifically
+./test_runner.sh error-handler
+
+# All tests
+./test_runner.sh all
 ```
 
-TODO: 
+## Development
 
-- Turn on light when no activity in a while. "Turn SOS"
-- IR receiver to set number of players, player number, etc
-- Light brightness on leaderboard indicates who's winning
-- Blink to ack data sent
-- Abort when no ack within timeout
-- LED display less bright when not your turn
-- Show self score on idle
-- Don't show any scores until committed once
-- Another button. Commit score != pass turn.
-- Score input as a rotary encoder.
-- Buttons on leaderboard?
+### Code Formatting
+```bash
+clang-format -i ./**/*.{hpp,cpp}
+```
 
-Hardware maybes:
+### Debugging
+```bash
+pio project config --json-output
+pio project metadata --json-output -e <environment>
+```
 
-- Put LED on PWM-enabled pin maybe so we can dim it. Those are A0-A7.
+## Architecture
+
+- **Platform**: ESP32 (Seeed XIAO ESP32S3)
+- **Framework**: Arduino/PlatformIO  
+- **Architecture**: Mesh network using painlessMesh library
+- **Devices**: Multiple player scoring units + leaderboard controller
+- **Hardware**: 7-segment displays, rotary encoders, button grids, LEDs
+
+See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
+
+## TODO Features
+
+- SOS light when idle
+- IR receiver for configuration
+- Brightness control based on turn/winning status
+- Score commitment vs turn passing logic
+- Leaderboard buttons functionality
+
+## Hardware Notes
+
+- Put LED on PWM-enabled pin for dimming (A0-A7)
+- Custom board definition in `boards/seeed_xiao_esp32s3.json`

@@ -1,6 +1,7 @@
 #include "Coordinator.hpp"
 
 #include "Event.hpp"
+#include "ErrorHandler.hpp"
 #include <MyWifi.hpp>
 
 [[noreturn]]
@@ -22,7 +23,9 @@ Coordinator::Coordinator() :
     buttonGrid{this},
     rotaryEncoder{this},
     wifi{this}
-{}
+{
+    CHECK_POINTER(eventQueue, ErrorCode::QUEUE_CREATE_FAILED, "Coordinator event queue");
+}
 
 void Coordinator::setup() {
     Serial.begin(115200);
@@ -34,7 +37,8 @@ void Coordinator::setup() {
     buttonGrid.setup();
     rotaryEncoder.setup();
 
-    xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
+    BaseType_t taskResult = xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
+    CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "Coordinator dispatcher task");
 }
 
 void Coordinator::loop() {
