@@ -3,7 +3,6 @@
 ## 🚨 Critical Issues
 
 ### Security & Stability
-- [ ] **CRASH RISK**: Add error handling for FreeRTOS resource creation (`xQueueCreate`, `xTaskCreate`) in `src/Coordinator.cpp:19,37`
 - [ ] **MEMORY LEAK**: Fix String object lifecycle in WiFi queue (`src/MyWifi.cpp:34-56`)
 - [ ] **INFINITE HANG**: Add timeout to hardware initialization loop in `src/HT16Display.cpp:6-8`
 

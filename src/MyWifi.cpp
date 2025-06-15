@@ -1,6 +1,7 @@
 #include <MyWifi.hpp>
 #include <Event.hpp>
 #include <Coordinator.hpp>
+#include <ErrorHandler.hpp>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -17,7 +18,10 @@ MyWifi::MyWifi(Coordinator *c)
   outgoingMsgQueue{xQueueCreate(10, sizeof(String))},
   ack{xSemaphoreCreateBinary()},
   ackReceived{false}
-{}
+{
+    CHECK_POINTER(outgoingMsgQueue, ErrorCode::QUEUE_CREATE_FAILED, "MyWifi outgoing message queue");
+    CHECK_POINTER(ack, ErrorCode::SEMAPHORE_CREATE_FAILED, "MyWifi ACK semaphore");
+}
 
 // TODO: typedef for node/peer ID type
 uint32_t MyWifi::getMyPeerId() {
@@ -64,7 +68,7 @@ void MyWifi::setup() {
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
 
-    xTaskCreate(
+    BaseType_t taskResult = xTaskCreate(
         wifiTask, // Static method wrapper
         "WifiSenderTask",
         4096,
@@ -72,6 +76,7 @@ void MyWifi::setup() {
         2,
         nullptr
     );
+    CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "MyWifi sender task");
 
     mesh.onDroppedConnection([this](uint32_t from) {
         Event e{};

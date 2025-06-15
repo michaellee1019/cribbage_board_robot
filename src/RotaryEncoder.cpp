@@ -1,5 +1,6 @@
 #include <RotaryEncoder.hpp>
 #include <Coordinator.hpp>
+#include <ErrorHandler.hpp>
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
     const auto* self = static_cast<RotaryEncoder*>(arg);
@@ -20,8 +21,12 @@ int32_t RotaryEncoder::position() {
 }
 
 void RotaryEncoder::setup() {
-    ss.begin(SEESAW_ADDR);
-    sspixel.begin(SEESAW_ADDR);
+    if (!ss.begin(SEESAW_ADDR)) {
+        FATAL_ERROR(ErrorCode::ENCODER_INIT_FAILED, "RotaryEncoder seesaw initialization failed");
+    }
+    if (!sspixel.begin(SEESAW_ADDR)) {
+        FATAL_ERROR(ErrorCode::ENCODER_INIT_FAILED, "RotaryEncoder pixel initialization failed");
+    }
 
     // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
     ss.pinMode(SS_SWITCH, INPUT_PULLUP);

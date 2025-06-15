@@ -9,7 +9,13 @@ enum class ErrorCode {
     TASK_CREATE_FAILED,
     HARDWARE_INIT_FAILED,
     WIFI_INIT_FAILED,
-    MEMORY_ALLOCATION_FAILED
+    MEMORY_ALLOCATION_FAILED,
+    SEMAPHORE_CREATE_FAILED,
+    EVENT_GROUP_CREATE_FAILED,
+    TIMER_CREATE_FAILED,
+    I2C_INIT_FAILED,
+    DISPLAY_INIT_FAILED,
+    ENCODER_INIT_FAILED
 };
 
 class ErrorHandler {
@@ -74,6 +80,18 @@ public:
                 return "WiFi initialization failed";
             case ErrorCode::MEMORY_ALLOCATION_FAILED:
                 return "Memory allocation failed";
+            case ErrorCode::SEMAPHORE_CREATE_FAILED:
+                return "Failed to create FreeRTOS semaphore";
+            case ErrorCode::EVENT_GROUP_CREATE_FAILED:
+                return "Failed to create FreeRTOS event group";
+            case ErrorCode::TIMER_CREATE_FAILED:
+                return "Failed to create FreeRTOS timer";
+            case ErrorCode::I2C_INIT_FAILED:
+                return "I2C initialization failed";
+            case ErrorCode::DISPLAY_INIT_FAILED:
+                return "Display initialization failed";
+            case ErrorCode::ENCODER_INIT_FAILED:
+                return "Encoder initialization failed";
             default:
                 return "Unknown error";
         }

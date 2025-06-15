@@ -2,6 +2,7 @@
 #define LIGHT_FADE_H
 
 #include <Light.hpp>
+#include <ErrorHandler.hpp>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,10 +20,12 @@ class LightFade {
 public:
     explicit LightFade(Light& light)
         : light{light}, fading{false}, enableEvent{xEventGroupCreate()}
-    {}
+    {
+        CHECK_POINTER(enableEvent, ErrorCode::EVENT_GROUP_CREATE_FAILED, "LightFade event group");
+    }
 
     void setup() {
-        xTaskCreate(
+        BaseType_t taskResult = xTaskCreate(
             &LightFade::blinkTask,
             "fadeTask",
             2048,
@@ -30,6 +33,7 @@ public:
             5,
             nullptr
         );
+        CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "LightFade blink task");
     }
 
     void blinkEnabled() {

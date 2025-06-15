@@ -1,6 +1,7 @@
 #include <ButtonGrid.hpp>
 #include <Coordinator.hpp>
 #include <Event.hpp>
+#include <ErrorHandler.hpp>
 
 void IRAM_ATTR buttonISR(void* arg) {
     const auto* self = static_cast<ButtonGrid*>(arg);
@@ -14,7 +15,9 @@ void IRAM_ATTR buttonISR(void* arg) {
 ButtonGrid::ButtonGrid(Coordinator* coordinator) : coordinator{coordinator}{}
 
 void ButtonGrid::setup() {
-    buttonGpio.begin_I2C(0x20, &Wire);
+    if (!buttonGpio.begin_I2C(0x20, &Wire)) {
+        FATAL_ERROR(ErrorCode::I2C_INIT_FAILED, "ButtonGrid I2C initialization failed");
+    }
     buttonGpio.setupInterrupts(true, false, LOW);
     for (auto&& pin : pins) {
         buttonGpio.pinMode(pin, INPUT_PULLUP);
