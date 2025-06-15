@@ -1,7 +1,8 @@
 #ifndef BUTTONGRID_H
 #define BUTTONGRID_H
 
-#include <Adafruit_MCP23X17.h>
+#include "interfaces/IButtonHardware.hpp"
+#include "interfaces/IEventPublisher.hpp"
 
 enum class Pins : uint32_t {
     Ok = 4,
@@ -72,20 +73,22 @@ struct ButtonState {
 };
 
 class ButtonGrid {
-    class Coordinator* coordinator;
-public:
-    Adafruit_MCP23X17 buttonGpio;
+private:
+    IButtonHardware* hardware;
+    IEventPublisher* eventPublisher;
+    uint8_t interruptPin;
 
+public:
     using Callback = std::function<void(const ButtonState& bs)>;
 
     void decodeInterrupt(const Callback& cb) {
-        const auto changedPins = buttonGpio.getLastInterruptPin();
-        const auto pinValues = buttonGpio.getCapturedInterrupt();
+        const auto changedPins = hardware->getLastInterruptPin();
+        const auto pinValues = hardware->getCapturedInterrupt();
 
         struct ScopeGuard {
-            Adafruit_MCP23XXX& gpio;
-            ~ScopeGuard() { gpio.clearInterrupts(); }
-        } sg{buttonGpio};
+            IButtonHardware* hw;
+            ~ScopeGuard() { hw->clearInterrupts(); }
+        } sg{hardware};
 
         const ButtonState bs{changedPins, pinValues};
         cb(bs);
@@ -95,11 +98,31 @@ public:
         return static_cast<uint32_t>(pin);
     }
 
+    // Expose hardware for testing
+    IButtonHardware* getHardware() const { return hardware; }
+    
+    // Expose event publisher for testing
+    IEventPublisher* getEventPublisher() const { return eventPublisher; }
 
     friend void buttonISR(void*);
 
 public:
+    /**
+     * @brief Construct a new Button Grid object
+     * 
+     * @param hardware The hardware interface implementation
+     * @param eventPublisher The event publisher implementation
+     * @param interruptPin The pin used for interrupts
+     */
+    ButtonGrid(IButtonHardware* hardware, IEventPublisher* eventPublisher, uint8_t interruptPin = static_cast<uint8_t>(Pins::Interrupt));
+    
+    /**
+     * @brief Legacy constructor for backward compatibility
+     * 
+     * @param coordinator Pointer to coordinator
+     */
     explicit ButtonGrid(class Coordinator* coordinator);
+    
     void setup();
 };
 

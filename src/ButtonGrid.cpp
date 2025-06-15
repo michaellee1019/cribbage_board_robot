@@ -1,32 +1,40 @@
 #include <ButtonGrid.hpp>
 #include <Coordinator.hpp>
 #include <Event.hpp>
+#include "hardware/MCP23017Hardware.hpp"
+#include "EventPublisher.hpp"
 
 void IRAM_ATTR buttonISR(void* arg) {
     const auto* self = static_cast<ButtonGrid*>(arg);
     Event event{};
     event.type = EventType::ButtonPressed;
-    BaseType_t higherPriorityWoken = pdFALSE;
-    xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
-    portYIELD_FROM_ISR(higherPriorityWoken);
+    self->getEventPublisher()->publishEventFromISR(event);
 }
 
-ButtonGrid::ButtonGrid(Coordinator* coordinator) : coordinator{coordinator}{}
+ButtonGrid::ButtonGrid(IButtonHardware* hardware, IEventPublisher* eventPublisher, uint8_t interruptPin)
+    : hardware(hardware), eventPublisher(eventPublisher), interruptPin(interruptPin) {}
+
+// Legacy constructor for backward compatibility
+ButtonGrid::ButtonGrid(Coordinator* coordinator) 
+    : hardware(new MCP23017Hardware(&Wire, 0x20)), 
+      eventPublisher(new EventPublisher(coordinator->eventQueue)),
+      interruptPin(static_cast<uint8_t>(Pins::Interrupt)) {}
 
 void ButtonGrid::setup() {
-    buttonGpio.begin_I2C(0x20, &Wire);
-    buttonGpio.setupInterrupts(true, false, LOW);
+    hardware->begin();
+    hardware->setupInterrupts(true, false, LOW);
+    
     for (auto&& pin : AllPins) {
-        buttonGpio.pinMode(hardwarePin(pin), INPUT_PULLUP);
-        buttonGpio.setupInterruptPin(hardwarePin(pin), CHANGE);
+        hardware->setPinMode(hardwarePin(pin), INPUT_PULLUP);
+        hardware->setupInterruptPin(hardwarePin(pin), CHANGE);
     }
 
-    pinMode(hardwarePin(Pins::Interrupt), INPUT_PULLUP);
+    pinMode(interruptPin, INPUT_PULLUP);
     attachInterruptArg(
-        digitalPinToInterrupt(hardwarePin(Pins::Interrupt)),
+        digitalPinToInterrupt(interruptPin),
         buttonISR,
         this,
         FALLING
     );
-    buttonGpio.clearInterrupts();
+    hardware->clearInterrupts();
 }
