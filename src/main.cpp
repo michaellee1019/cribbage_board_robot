@@ -417,8 +417,9 @@ public:
 
         ss.begin(SEESAW_ADDR);
         sspixel.begin(SEESAW_ADDR);
-        sspixel.setBrightness(20);
-        sspixel.setPixelColor(0, 0xFAEDED);
+        sspixel.setPixelColor(0, 0x000000);
+        // sspixel.setBrightness(1);
+        // sspixel.setPixelColor(0, 0xFAEDED);
         sspixel.show();
 
         // https://github.com/adafruit/Adafruit_Seesaw/blob/master/examples/digital/gpio_interrupts/gpio_interrupts.ino
@@ -1103,6 +1104,12 @@ void receivedCallback(uint32_t from, String& msg) {
         Serial.printf("Parsed PlayerMessage: Score=%d, TurnPassed=%s, FromNode=%u (%s)\n", 
                      playerMsg.score, playerMsg.turnPassed ? "YES" : "NO", 
                      from, fromName.c_str());
+        
+        // IGNORE score submissions before game starts
+        if (!gameStarted) {
+            Serial.printf("Game not started yet - ignoring score submission from %s\n", fromName.c_str());
+            return; // Exit early, don't process the score
+        }
         
         // Update leaderboard - use 'from' (the actual sender) not playerMsg.fromNodeId
         if (leaderboard.find(from) == leaderboard.end()) {
