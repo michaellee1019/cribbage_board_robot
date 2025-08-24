@@ -248,11 +248,14 @@ BoardRole getNodeRole(uint32_t nodeId) {
     switch(nodeId) {
         case 2934577084: // ae:ea:17:bc from 98:3d:ae:ea:17:bc
             return BoardRole::Leader;
-        case 4180928888: // f9:33:e9:78 from 30:30:f9:33:e9:78  
+        case 2934574912: // f9:33:e9:78 from 30:30:f9:33:e9:78  
             return BoardRole::Player_Red;
         case 860931256: // 33:50:c4:b8 from 64:e8:33:50:c4:b8
             return BoardRole::Player_Blue;
-        // TODO: add green and white
+        case 2934416992: // e7:a6:60 from 98:3d:ae:e7:a6:60
+            return BoardRole::Player_White;
+        case 2934574676: // 0e:54 from 98:3d:ae:ea:0e:54
+            return BoardRole::Player_Green;
         default:
             Serial.printf("DEBUG: Unknown nodeId %u, defaulting to Leader\n", nodeId);
             return BoardRole::Leader;
@@ -493,6 +496,8 @@ public:
         buttonPressed = false;
         buttonGpio.clearInterrupts();
 
+        Serial.printf("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);
+
         if (intVal == intValReleased) {
             // Handle leader board buttons (only 4 buttons: pins 0-3)
             if (myRoleConfig->role == BoardRole::Leader) {
@@ -506,7 +511,7 @@ public:
             else {
                 if (intPin == addPin) {
                     // ADD button: Submit current score without passing turn (can be done anytime)
-                    if (currentScore > 0) {
+                    if (currentScore != 0) {
                         uint32_t myNodeId = mesh.getNodeId();
                         PlayerMessage msg(currentScore, false, myNodeId);  // Pass actual nodeId
                         String jsonStr = msg.toJson();
@@ -1287,8 +1292,22 @@ void setup() {
     // }
 
     delay(5000);
-    // TODO: do we need this Wire.begin?
+        // TODO: do we need this Wire.begin?
     Wire.begin(5, 6);
+    
+    // Scan for I2C devices
+    Serial.println("Scanning for I2C devices...");
+    for (byte address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        byte error = Wire.endTransmission();
+        
+        if (error == 0) {
+            Serial.printf("I2C device found at address 0x%02X (decimal: %d)\n", address, address);
+        } else if (error == 4) {
+            Serial.printf("Unknown error at address 0x%02X\n", address);
+        }
+    }
+    Serial.println("I2C scan complete.");
     
     // Initialize score
     currentScore = 0;
@@ -1366,9 +1385,9 @@ void setup() {
             } else if (myRoleConfig->role == BoardRole::Player_Blue) {
                 primaryDisplay.setup(0x70);
             } else if (myRoleConfig->role == BoardRole::Player_Green) {
-                primaryDisplay.setup(0x71);
+                primaryDisplay.setup(0x70);
             } else if (myRoleConfig->role == BoardRole::Player_White) {
-                primaryDisplay.setup(0x72);
+                primaryDisplay.setup(0x70);
             }
             
             primaryDisplay.print("----");
