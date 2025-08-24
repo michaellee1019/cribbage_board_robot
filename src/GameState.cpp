@@ -13,10 +13,17 @@ uint32_t otherPeer(Coordinator* coordinator, GameState* state) {
 }
 
 void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    state->score++;
 
+    if (e.buttonName == ButtonName::RotaryEncoder) {
+        // Reading the delta clears the interrupt.
+        [[maybe_unused]]
+        int32_t rotaryDelta = coordinator->rotaryEncoder.delta();
+        return;
+    }
+
+    state->score++;
     uint8_t whichPin  = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
-    // int32_t rotaryPosition = coordinator->rotaryEncoder.position();
+    
     // uint8_t pinValues = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
     if (whichPin == ButtonGrid::okPin) {
         state->whosTurn = otherPeer(coordinator, state);

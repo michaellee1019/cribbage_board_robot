@@ -6,6 +6,7 @@ void IRAM_ATTR rotaryEncoderISR(void* arg) {
     const auto* self = static_cast<RotaryEncoder*>(arg);
     Event event{};
     event.type = EventType::ButtonPressed;
+    event.press.buttonName = ButtonName::RotaryEncoder;
     BaseType_t higherPriorityWoken = pdFALSE;
     xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
     portYIELD_FROM_ISR(higherPriorityWoken);
@@ -18,6 +19,10 @@ RotaryEncoder::RotaryEncoder(Coordinator *coordinator)
 
 int32_t RotaryEncoder::position() {
     return ss.getEncoderPosition();
+}
+
+int32_t RotaryEncoder::delta() {
+    return ss.getEncoderDelta();
 }
 
 void RotaryEncoder::setup() {

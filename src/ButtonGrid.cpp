@@ -7,6 +7,7 @@ void IRAM_ATTR buttonISR(void* arg) {
     const auto* self = static_cast<ButtonGrid*>(arg);
     Event event{};
     event.type = EventType::ButtonPressed;
+    event.press.buttonName = ButtonName::GPIOButtons;
     BaseType_t higherPriorityWoken = pdFALSE;
     xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
     portYIELD_FROM_ISR(higherPriorityWoken);

@@ -7,8 +7,14 @@ enum class EventType { ButtonPressed, WifiConnected, NewPeer, MessageReceived, S
     LostPeer
 };
 
+enum class ButtonName {
+    GPIOButtons,
+    RotaryEncoder,
+};
+
 struct ButtonPressEvent {
-    uint8_t buttonId;
+    // uint8_t buttonId;
+    ButtonName buttonName;
 };
 struct WifiConnectedEvent {};
 struct LostPeerEvent {
