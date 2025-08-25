@@ -3,6 +3,7 @@
 #include "Event.hpp"
 #include "ErrorHandler.hpp"
 #include <MyWifi.hpp>
+#include <utils.hpp>
 
 [[noreturn]]
 void dispatcherTask(void* param) {
@@ -19,7 +20,10 @@ void dispatcherTask(void* param) {
 Coordinator::Coordinator() :
     eventQueue{xQueueCreate(10, sizeof(Event))},
     scheduler{},
-    display{},
+    display1{},
+    display2{},
+    display3{},
+    display4{},
     buttonGrid{this},
     rotaryEncoder{this},
     wifi{this}
@@ -27,13 +31,44 @@ Coordinator::Coordinator() :
     CHECK_POINTER(eventQueue, ErrorCode::QUEUE_CREATE_FAILED, "Coordinator event queue");
 }
 
-void Coordinator::setup() {
-    Serial.begin(115200);
-    delay(2000);
-    Wire.begin(5, 6);
+BoardRole Coordinator::myRole() {
+    auto config = myRoleConfig();
+    return config ? config->role : BoardRole::Unknown;
+}
 
-    display.setup(0x70);
+std::optional<BoardRoleConfig> Coordinator::myRoleConfig() {
+    uint32_t myPeerId = wifi.getMyPeerId();
+    auto it = boardRoleConfig.find(myPeerId);
+    return it != boardRoleConfig.end() ? std::make_optional(it->second) : std::nullopt;
+}
+
+void Coordinator::setup() {
+    // Enable serial and wait for 5s delay to allow serial monitor to connect
+
+    Serial.begin(115200);
+    delay(5000);
+
+    if (!Serial.available()) {
+        Serial.setTimeout(1);
+    }
+    Wire.begin(5, 6);
+    // print i2c devices for debugging hardware
+    printI2CDevices();
+
+    // Note: wifi.setup() must be called before myRole() is called.
     wifi.setup();
+
+    display1.setup(0x70);
+    display1.print("----");
+    if (myRole() == BoardRole::Leader) {
+        display2.setup(0x71);
+        display2.print("----");
+        display3.setup(0x72);
+        display3.print("----");
+        display4.setup(0x73);
+        display4.print("----");
+    }
+    
     buttonGrid.setup();
     rotaryEncoder.setup();
 

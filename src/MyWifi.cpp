@@ -39,6 +39,10 @@ void MyWifi::sendBroadcast(const String& message) const {
     xQueueSend(outgoingMsgQueue, &message, portMAX_DELAY);
 }
 
+void MyWifi::sendTo(uint32_t nodeId, const String& message) {
+    mesh.sendSingle(nodeId, message);
+}
+
 
 [[noreturn]]
 void MyWifi::senderTask() {
@@ -68,6 +72,22 @@ void MyWifi::setup() {
 
     mesh.init(MESH_PREFIX, MESH_PASSWORD, &coordinator->scheduler, MESH_PORT, WIFI_MODE_APSTA, 1);
 
+    // Set the leaderboard as the root node for now.
+    // TODO: consider if this is necessary.
+    if (coordinator->myRole() == BoardRole::Leader) {
+        mesh.setRoot(true);
+        Serial.println("Set as mesh root node (Leader)");
+    } else {
+        mesh.setRoot(false);
+        Serial.println("Set as mesh child node (not Leader)");
+    }
+    mesh.setContainsRoot(true);
+
+    auto roleConfig = coordinator->myRoleConfig();
+    Serial.printf("NodeId: %u, Role: %s\n", 
+                 mesh.getNodeId(), roleConfig ? roleConfig->name.c_str() : "UNKNOWN");
+    Serial.printf("Mesh subnet: %s\n", mesh.subConnectionJson().c_str());
+
     BaseType_t taskResult = xTaskCreate(
         wifiTask, // Static method wrapper
         "WifiSenderTask",
@@ -96,6 +116,7 @@ void MyWifi::setup() {
     mesh.onReceive([this](uint32_t from, const String &msg) {
         Event e{};
         e.type = EventType::MessageReceived;
+        Serial.printf("[Received from=%i] [%s]\n", from, msg.c_str());
         e.messageReceived.peerId = from;
         strlcpy(e.messageReceived.wifiMessage, msg.c_str(), sizeof(e.messageReceived.wifiMessage));
         xQueueSend(coordinator->eventQueue, &e, portMAX_DELAY);

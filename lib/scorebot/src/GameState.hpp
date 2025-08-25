@@ -3,6 +3,7 @@
 
 #include <Event.hpp>
 #include <list>
+#include <BoardRole.hpp>
 
 class GameState {
 public:
@@ -10,9 +11,11 @@ public:
 
   void handleEvent(const Event& e, class Coordinator* coordinator);
 
-  int score;
-  uint32_t whosTurn;
-  std::list<uint32_t> peers;
+  int myScore;
+  BoardRole whosTurn;
+  std::map<BoardRole, int> scores;
+  std::list<BoardRole> whosConnected;
+  bool gameStarted;
 };
 
 #endif // GAME_STATE_H

@@ -12,6 +12,7 @@ public:
 
     void senderTask();
     void sendBroadcast(const String& message) const;
+    void sendTo(uint32_t nodeId, const String& message);
     uint32_t getMyPeerId();
     std::list<uint32_t> getPeers();
 

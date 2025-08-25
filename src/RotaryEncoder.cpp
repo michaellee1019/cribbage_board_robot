@@ -4,6 +4,7 @@
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
     const auto* self = static_cast<RotaryEncoder*>(arg);
+    Serial.printf("DEBUG: Rotary encoder ISR triggered:\n");
     Event event{};
     event.type = EventType::ButtonPressed;
     event.press.buttonName = ButtonName::RotaryEncoder;
@@ -62,4 +63,8 @@ void RotaryEncoder::lightOn() {
 }
 void RotaryEncoder::lightOff() {
     fade.blinkDisabled();
+}
+
+void RotaryEncoder::reset() {
+    ss.setEncoderPosition(0);
 }
