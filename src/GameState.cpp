@@ -91,10 +91,40 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
     coordinator->buttonGrid.buttonGpio.clearInterrupts();
 
     if (e.buttonName == ButtonName::RotaryEncoder) {
-        // Reading the delta clears the interrupt.
-        [[maybe_unused]]
-        int32_t rotaryDelta = coordinator->rotaryEncoder.delta();
-        return;
+        if (coordinator->rotaryEncoder.pressed()) {
+            Serial.printf("DEBUG: Rotary encoder pressed\n");
+            // OK button: Submit current score AND pass turn
+            uint32_t myNodeId = coordinator->wifi.getMyPeerId();
+            PlayerMessage msg(state->myScore, true, myNodeId);  // Pass actual nodeId
+            String jsonStr = msg.toJson();
+            uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
+            coordinator->wifi.sendTo(leaderNodeId, jsonStr);
+            Serial.printf("Sent score update with turn pass: %s\n", jsonStr.c_str());
+
+            // Reset current score to 0 after submission
+            state->myScore = 0;
+            coordinator->rotaryEncoder.reset();
+
+            coordinator->display1.print("----");
+            return;
+        } else {
+            // Reading the delta clears the interrupt.
+            int32_t rotaryDelta = coordinator->rotaryEncoder.delta();
+            Serial.printf("DEBUG: Rotary encoder delta: %d\n", rotaryDelta);
+
+            if (rotaryDelta == 0) {
+                return;
+            }
+
+            state->myScore += rotaryDelta;
+
+            coordinator->display1.print(
+                strFormat("%d", state->myScore));  // Will correctly show negative numbers
+            Serial.printf("Display updated to %d for %s (reason: building score)\n",
+                          state->myScore,
+                          coordinator->myRoleConfig()->name.c_str());
+            return;
+        }
     }
 
     Serial.printf("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);

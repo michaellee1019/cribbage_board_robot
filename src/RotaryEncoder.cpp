@@ -68,3 +68,11 @@ void RotaryEncoder::lightOff() {
 void RotaryEncoder::reset() {
     ss.setEncoderPosition(0);
 }
+
+bool RotaryEncoder::pressed() {
+    // Clear the GPIO interrupt flags on the seesaw chip
+    static constexpr uint32_t mask = static_cast<uint32_t>(0b1) << SS_SWITCH;
+    uint32_t data = ss.digitalReadBulk(mask);  // Reading clears the interrupt flags
+    Serial.printf("DEBUG: Rotary encoder pressed data: %d\n", data);
+    return data == 0; // is 0 or 16777216. 0 is press down, 16777216 is everything else (press up and rotate)
+}
