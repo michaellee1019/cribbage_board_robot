@@ -49,6 +49,11 @@ void RotaryEncoder::setup() {
     fade.setup();
 }
 
+void RotaryEncoder::setColor(uint32_t color) {
+    sspixel.setPixelColor(0, color);
+    sspixel.show();
+}
+
 void RotaryEncoder::setBrightness(const uint8_t brightness) {
     sspixel.setBrightness(brightness);
     sspixel.setPixelColor(0, 0xFAEDED);

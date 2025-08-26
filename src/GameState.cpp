@@ -311,6 +311,15 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
             roleToDisplayMap[fromRoleConfig.role]->print(
                 strFormat("%d", state->scores[fromRoleConfig.role]));
 
+            std::map<BoardRole, uint32_t> colors = {
+                {BoardRole::Player_Red, 0xFF0000},
+                {BoardRole::Player_Blue, 0x0000FF},
+                {BoardRole::Player_Green, 0x00FF00},
+                {BoardRole::Player_White, 0xFFFFFF}
+            };
+            coordinator->rotaryEncoder.setColor(colors[state->whosTurn]);
+            coordinator->rotaryEncoder.lightOn();
+
             // Turn management: if player passed turn, broadcast next player
             if (playerMsg.turnPassed && state->gameStarted) {
                 Serial.printf("Player %s passed their turn!\n", fromRoleConfig.name.c_str());

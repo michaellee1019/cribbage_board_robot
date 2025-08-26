@@ -31,6 +31,7 @@ public:
     void lightOn();
     void lightOff();
     void setBrightness(uint8_t brightness) override;
+    void setColor(uint32_t color);
     void reset();
     bool pressed();
 };
