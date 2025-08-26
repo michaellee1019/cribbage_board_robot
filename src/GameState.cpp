@@ -126,7 +126,7 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
             return;
         }
     }
-
+ 
     Serial.printf("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);
 
     if (intVal == ButtonGrid::intValReleased || intVal == ButtonGrid::intValReleased2) {
@@ -393,6 +393,12 @@ void onNewPeer(GameState* state, const Event& e, Coordinator* coordinator) {
 
     uint32_t newPeerId = e.newPeer.peerId;
     Serial.printf("New peer connected: %u\n", newPeerId);
+
+    if (state->gameStarted) {
+        Serial.printf("Game already started, ignoring new peer\n");
+        return;
+    }
+
     BoardRoleConfig config = getRoleConfig(newPeerId);
     if (config.role != BoardRole::Leader) {
         state->whosConnected.push_back(config.role);
