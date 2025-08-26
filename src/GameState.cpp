@@ -368,6 +368,7 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
             coordinator->display1.print("BEEF");
             Serial.printf("Set display to BEEF for %s\n",
                           coordinator->myRoleConfig()->name.c_str());
+            coordinator->rotaryEncoder.lightOn();
         } else {
             Serial.printf("It's %s's turn (not mine), keeping current display\n",
                           turnMsg.nextPlayerName.c_str());
@@ -376,6 +377,7 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
                 coordinator->display1.print("----");
                 Serial.printf("Set display to ---- (not my turn)\n");
             }
+            coordinator->rotaryEncoder.lightOff();
         }
 
         // Update brightness for all displays
