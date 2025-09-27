@@ -46,11 +46,13 @@ void Coordinator::setup() {
     // Enable serial and wait for 5s delay to allow serial monitor to connect
 
     Serial.begin(115200);
-    delay(5000);
+    delay(5000);  // Ensure see the serial messages from the beginning.
+    // The `while(serial)` thing doesn't terminate unless connected to a serial (USB).
 
     if (!Serial.available()) {
         Serial.setTimeout(1);
     }
+    // may need an i2c lock because Wire.h almost certainly buffers.
     Wire.begin(5, 6);
     // print i2c devices for debugging hardware
     printI2CDevices();

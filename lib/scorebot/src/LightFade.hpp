@@ -47,8 +47,9 @@ public:
     }
 
 private:
-    static constexpr int UPDATES_PER_SECOND = 15;
-    static constexpr int FADE_DELTA = 100 / UPDATES_PER_SECOND;
+    static constexpr int UPDATES_PER_SECOND = 15; // Is this too many? Perhaps it's maxing out the i2c IO capacity. Scope it?
+    static constexpr int MAX_BRIGHTNESS = 50;  // 50% brightness for player turn
+    static constexpr int FADE_DELTA = MAX_BRIGHTNESS / UPDATES_PER_SECOND;
     static constexpr TickType_t DELAY_TICKS = pdMS_TO_TICKS(1000 / UPDATES_PER_SECOND);
 
 
@@ -83,8 +84,8 @@ private:
 
                 if (fadingIn) {
                     brightness += FADE_DELTA;
-                    if (brightness >= 100) {
-                        brightness = 100;
+                    if (brightness >= MAX_BRIGHTNESS) {
+                        brightness = MAX_BRIGHTNESS;
                         fadingIn = false;
                     }
                 } else {
