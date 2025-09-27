@@ -45,20 +45,16 @@ BoardRole getNextTurn(BoardRole currentRole, GameState* state) {
     return nextRole;
 }
 
-void broadcastNextTurnMessage(GameState* state, Coordinator* coordinator) {
+void broadcastNextTurnMessage(GameState* state, Coordinator* coordinator, BoardRole nextRole, uint32_t nextNodeId, BoardRoleConfig nextRoleConfig) {
     // Only leader should call this
     if (coordinator->myRole() != BoardRole::Leader)
         return;
 
-    Serial.printf("DEBUG: Current turn before change: %d (%s)\n",
+    DEBUG_PRINTF("DEBUG: Current turn before change: %d (%s)\n",
                   (int)state->whosTurn,
                   getRoleConfig(getNodeIdForRole(state->whosTurn)).name.c_str());
 
-    BoardRole nextRole = getNextTurn(state->whosTurn, state);
-    uint32_t nextNodeId = getNodeIdForRole(nextRole);
-    BoardRoleConfig nextRoleConfig = getRoleConfig(nextNodeId);
-
-    Serial.printf("DEBUG: Next turn calculated: %d (%s), NodeID: %u\n",
+    DEBUG_PRINTF("DEBUG: Next turn calculated: %d (%s), NodeID: %u\n",
                   (int)nextRole,
                   nextRoleConfig.name.c_str(),
                   nextNodeId);
@@ -72,19 +68,19 @@ void broadcastNextTurnMessage(GameState* state, Coordinator* coordinator) {
 
         coordinator->wifi.sendTo(nextNodeId, jsonStr);
 
-        Serial.printf(
+        DEBUG_PRINTF(
             "Broadcasting next turn: %s (NodeID: %u)\n", nextPlayerName.c_str(), nextNodeId);
 
         // TODO: Update brightness for leader displays
         // updateDisplayBrightness();
     } else {
-        Serial.printf("Warning: Next player role %d not found in connected nodes\n", (int)nextRole);
+        DEBUG_PRINTF("Warning: Next player role %d not found in connected nodes\n", (int)nextRole);
     }
 }
 
 
 void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    Serial.printf("DEBUG: Button pressed event started\n");
+    DEBUG_PRINTF("DEBUG: Button pressed event started\n");
 
     uint8_t intPin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
     uint8_t intVal = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
@@ -92,14 +88,14 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
 
     if (e.buttonName == ButtonName::RotaryEncoder) {
         if (coordinator->rotaryEncoder.pressed()) {
-            Serial.printf("DEBUG: Rotary encoder pressed\n");
-            // OK button: Submit current score AND pass turn
+            DEBUG_PRINTF("DEBUG: Rotary encoder pressed\n");
+            // OK button: Submit current score but don't pass turn
             uint32_t myNodeId = coordinator->wifi.getMyPeerId();
-            PlayerMessage msg(state->myScore, true, myNodeId);  // Pass actual nodeId
+            PlayerMessage msg(state->myScore, false, myNodeId);
             String jsonStr = msg.toJson();
             uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
             coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-            Serial.printf("Sent score update with turn pass: %s\n", jsonStr.c_str());
+            DEBUG_PRINTF("Sent score update without turn pass: %s\n", jsonStr.c_str());
 
             // Reset current score to 0 after submission
             state->myScore = 0;
@@ -110,7 +106,7 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
         } else {
             // Reading the delta clears the interrupt.
             int32_t rotaryDelta = coordinator->rotaryEncoder.delta();
-            Serial.printf("DEBUG: Rotary encoder delta: %d\n", rotaryDelta);
+            DEBUG_PRINTF("DEBUG: Rotary encoder delta: %d\n", rotaryDelta);
 
             if (rotaryDelta == 0) {
                 return;
@@ -120,21 +116,30 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
 
             coordinator->display1.print(
                 strFormat("%d", state->myScore));  // Will correctly show negative numbers
-            Serial.printf("Display updated to %d for %s (reason: building score)\n",
+            DEBUG_PRINTF("Display updated to %d for %s (reason: building score)\n",
                           state->myScore,
                           coordinator->myRoleConfig()->name.c_str());
             return;
         }
     }
  
-    Serial.printf("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);
+    DEBUG_PRINTF("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);
 
     if (intVal == ButtonGrid::intValReleased || intVal == ButtonGrid::intValReleased2) {
         // Handle leader board buttons (only 4 buttons: pins 0-3)
         if (coordinator->myRole() == BoardRole::Leader) {
             if (intPin == 0 && !state->gameStarted) {  // Button 0 starts the game
+                if (state->whosConnected.size() == 0) {
+                    DEBUG_PRINTF("DEBUG: No connected players, skipping game start\n");
+                    return;
+                }
                 state->gameStarted = true;
-                broadcastNextTurnMessage(state, coordinator);
+                BoardRole nextRole = getNextTurn(state->whosTurn, state);
+                uint32_t nextNodeId = getNodeIdForRole(nextRole);
+                BoardRoleConfig nextRoleConfig = getRoleConfig(nextNodeId);
+                coordinator->rotaryEncoder.setColor(nextRoleConfig.color);
+
+                broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
 
                 std::map<BoardRole, HT16Display*> roleToDisplayMap = {
                     {BoardRole::Player_Red, &coordinator->display1},
@@ -161,19 +166,19 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
                     String jsonStr = msg.toJson();
                     uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
                     coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-                    Serial.printf("Sent score update (no turn pass): %s\n", jsonStr.c_str());
+                    DEBUG_PRINTF("Sent score update (no turn pass): %s\n", jsonStr.c_str());
 
                     // Reset current score to 0 after submission
                     state->myScore = 0;
                     coordinator->rotaryEncoder.reset();
 
                     // TODO: Keep BEEF displayed if it's still my turn
-                    // if (state->gameStarted && getNodeIdForRole(currentTurn) == myNodeId) {
-                    //     display->print("BEEF");
-                    //     Serial.printf("Keeping BEEF display - still my turn after ADD\n");
-                    // }
+                    if (state->gameStarted && state->whosTurn == coordinator->myRole()) {
+                        coordinator->display1.print("BEEF");
+                        Serial.printf("Keeping BEEF display - still my turn after ADD\n");
+                    }
                 } else {
-                    Serial.printf("No score to add\n");
+                    DEBUG_PRINTF("No score to add\n");
                 }
             } else if (intPin == ButtonGrid::negone) {
                 state->myScore--;
@@ -188,11 +193,12 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
                 String jsonStr = msg.toJson();
                 uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
                 coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-                Serial.printf("Sent score update with turn pass: %s\n", jsonStr.c_str());
+                DEBUG_PRINTF("Sent score update with turn pass: %s\n", jsonStr.c_str());
 
                 // Reset current score to 0 after submission
                 state->myScore = 0;
                 coordinator->rotaryEncoder.reset();
+                coordinator->rotaryEncoder.setColor(0x000000);
             }
             // Only update display if we're building a score or have reset to 0
             // Don't overwrite BEEF or other turn indicators
@@ -205,17 +211,17 @@ void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coo
                 // negative)
                 if (state->myScore == 0) {
                     coordinator->display1.print("----");
-                    Serial.printf("Display updated to ---- for %s (reason: score=0)\n",
+                    DEBUG_PRINTF("Display updated to ---- for %s (reason: score=0)\n",
                                   coordinator->myRoleConfig()->name.c_str());
                 } else {
                     coordinator->display1.print(
                         strFormat("%d", state->myScore));  // Will correctly show negative numbers
-                    Serial.printf("Display updated to %d for %s (reason: building score)\n",
+                    DEBUG_PRINTF("Display updated to %d for %s (reason: building score)\n",
                                   state->myScore,
                                   coordinator->myRoleConfig()->name.c_str());
                 }
             } else {
-                Serial.printf("Display NOT updated for %s (preserving current display)\n",
+                DEBUG_PRINTF("Display NOT updated for %s (preserving current display)\n",
                               coordinator->myRoleConfig()->name.c_str());
             }
         }
@@ -240,14 +246,14 @@ void updateLeaderboardConnDisplay(GameState* state, Coordinator* coordinator) {
 void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinator) {
     uint32_t from = e.messageReceived.peerId;
     String message = e.messageReceived.wifiMessage;
-    Serial.printf("[Received from=%u] [%s]\n", from, message.c_str());
+    DEBUG_PRINTF("[Received from=%u] [%s]\n", from, message.c_str());
 
     if (PlayerMessage::isPlayerMessage(message)) {
         PlayerMessage playerMsg = PlayerMessage::fromJson(message);
         BoardRoleConfig fromRoleConfig = getRoleConfig(playerMsg.fromNodeId);
 
         if (coordinator->myRole() != BoardRole::Leader) {
-            Serial.printf("DEBUG: Ignoring player message from %s (not leader)\n",
+            DEBUG_PRINTF("DEBUG: Ignoring player message from %s (not leader)\n",
                           fromRoleConfig.name.c_str());
             return;
         }
@@ -255,7 +261,7 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
         // TODO: the from is wrong, type conversion error?
         // Validate that the message's fromNodeId matches the actual sender
         if (playerMsg.fromNodeId != from) {
-            Serial.printf(
+            DEBUG_PRINTF(
                 "WARNING: Message fromNodeId (%u) doesn't match sender (%u). Using sender.\n",
                 playerMsg.fromNodeId,
                 from);
@@ -263,11 +269,11 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
         }
 
         if (playerMsg.fromNodeId == 0) {
-            Serial.printf("WARNING: Message fromNodeId is 0. Ignoring.\n");
+            DEBUG_PRINTF("WARNING: Message fromNodeId is 0. Ignoring.\n");
             return;
         }
 
-        Serial.printf("Parsed PlayerMessage: Score=%d, TurnPassed=%s, FromNode=%u (%s)\n",
+        DEBUG_PRINTF("Parsed PlayerMessage: Score=%d, TurnPassed=%s, FromNode=%u (%s)\n",
                       playerMsg.score,
                       playerMsg.turnPassed ? "YES" : "NO",
                       playerMsg.fromNodeId,
@@ -275,14 +281,14 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
 
         // IGNORE score submissions before game starts
         if (!state->gameStarted) {
-            Serial.printf("Game not started yet - ignoring score submission from %s\n",
+            DEBUG_PRINTF("Game not started yet - ignoring score submission from %s\n",
                           fromRoleConfig.name.c_str());
 
             if (coordinator->myRole() == BoardRole::Leader) {
                 if (std::find(state->whosConnected.begin(),
                               state->whosConnected.end(),
                               fromRoleConfig.role) == state->whosConnected.end()) {
-                    Serial.printf("DEBUG: Adding %s to connected players\n",
+                    DEBUG_PRINTF("DEBUG: Adding %s to connected players\n",
                                   fromRoleConfig.name.c_str());
                     state->whosConnected.push_back(fromRoleConfig.role);
                     updateLeaderboardConnDisplay(state, coordinator);
@@ -296,7 +302,7 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
             // Update leaderboard - use 'from' (the actual sender) not playerMsg.fromNodeId
             state->scores[fromRoleConfig.role] += playerMsg.score;
 
-            Serial.printf("Updated leaderboard for %s: Total=%d, Offset=%d\n",
+            DEBUG_PRINTF("Updated leaderboard for %s: Total=%d, Offset=%d\n",
                           fromRoleConfig.name.c_str(),
                           state->scores[fromRoleConfig.role],
                           playerMsg.score);
@@ -311,38 +317,39 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
             roleToDisplayMap[fromRoleConfig.role]->print(
                 strFormat("%d", state->scores[fromRoleConfig.role]));
 
-            std::map<BoardRole, uint32_t> colors = {
-                {BoardRole::Player_Red, 0xFF0000},
-                {BoardRole::Player_Blue, 0x0000FF},
-                {BoardRole::Player_Green, 0x00FF00},
-                {BoardRole::Player_White, 0xFFFFFF}
-            };
-            coordinator->rotaryEncoder.setColor(colors[state->whosTurn]);
-            coordinator->rotaryEncoder.lightOn();
-
             // Turn management: if player passed turn, broadcast next player
             if (playerMsg.turnPassed && state->gameStarted) {
-                Serial.printf("Player %s passed their turn!\n", fromRoleConfig.name.c_str());
+                DEBUG_PRINTF("Player %s passed their turn!\n", fromRoleConfig.name.c_str());
+
+
 
                 // Only process turn passing if it's actually their turn
                 uint32_t currentTurnNodeId = getNodeIdForRole(state->whosTurn);
-                Serial.printf("DEBUG: Current turn role: %d, NodeID: %u\n",
+                DEBUG_PRINTF("DEBUG: Current turn role: %d, NodeID: %u\n",
                               (int)state->whosTurn,
                               currentTurnNodeId);
-                Serial.printf("DEBUG: Message sender NodeID: %u\n", from);
+                DEBUG_PRINTF("DEBUG: Message sender NodeID: %u\n", from);
 
                 if (from == currentTurnNodeId) {
-                    Serial.printf("Turn pass confirmed for current player\n");
-                    broadcastNextTurnMessage(state, coordinator);
+                    BoardRole nextRole = getNextTurn(state->whosTurn, state);
+                    uint32_t nextNodeId = getNodeIdForRole(nextRole);
+                    BoardRoleConfig nextRoleConfig = getRoleConfig(nextNodeId);
+        
+                    coordinator->rotaryEncoder.setColor(nextRoleConfig.color);
+                    DEBUG_PRINTF("Turn pass confirmed for current player\n");
+                    broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
+                    // broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
+                    // broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
+
                 } else {
-                    Serial.printf(
+                    DEBUG_PRINTF(
                         "Turn pass ignored - not current player's turn (current: %u, sender: %u)\n",
                         currentTurnNodeId,
                         from);
                 }
             } else if (!playerMsg.turnPassed && state->gameStarted) {
                 // Player added score but didn't pass turn - remind all players of current turn
-                Serial.printf("Player %s added score but didn't pass turn - refreshing displays\n",
+                DEBUG_PRINTF("Player %s added score but didn't pass turn - refreshing displays\n",
                               fromRoleConfig.name.c_str());
 
                 // Send current turn reminder to all players
@@ -352,48 +359,47 @@ void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinato
                 TurnMessage turnMsg(currentTurnNodeId, currentTurnName);
                 String jsonStr = turnMsg.toJson();
                 coordinator->wifi.sendBroadcast(jsonStr);
-                Serial.printf("Sent turn reminder: %s\n", jsonStr.c_str());
+                DEBUG_PRINTF("Sent turn reminder: %s\n", jsonStr.c_str());
             }
         }
     } else if (TurnMessage::isTurnMessage(message)) {
         TurnMessage turnMsg = TurnMessage::fromJson(message);
 
-        Serial.printf("Parsed TurnMessage: NextPlayer=%s (NodeID: %u)\n",
+        DEBUG_PRINTF("Parsed TurnMessage: NextPlayer=%s (NodeID: %u)\n",
                       turnMsg.nextPlayerName.c_str(),
                       turnMsg.nextPlayerNodeId);
-        Serial.printf("My NodeID: %u, My Role: %s\n",
+        DEBUG_PRINTF("My NodeID: %u, My Role: %s\n",
                       coordinator->wifi.getMyPeerId(),
                       coordinator->myRoleConfig()->name.c_str());
 
         // Validate nodeId is not 0
         if (turnMsg.nextPlayerNodeId == 0) {
-            Serial.printf("ERROR: Turn message has invalid nodeId 0!\n");
+            DEBUG_PRINTF("ERROR: Turn message has invalid nodeId 0!\n");
             return;
         }
 
         // Check if it's my turn
         if (turnMsg.nextPlayerNodeId == coordinator->wifi.getMyPeerId()) {
-            Serial.println("IT'S MY TURN! Displaying BEEF");
+            DEBUG_PRINTLN("IT'S MY TURN! Displaying BEEF");
             coordinator->display1.print("BEEF");
-            Serial.printf("Set display to BEEF for %s\n",
+            coordinator->rotaryEncoder.setColor(coordinator->myRoleConfig()->color);
+            DEBUG_PRINTF("Set display to BEEF for %s\n",
                           coordinator->myRoleConfig()->name.c_str());
-            coordinator->rotaryEncoder.lightOn();
         } else {
-            Serial.printf("It's %s's turn (not mine), keeping current display\n",
+            DEBUG_PRINTF("It's %s's turn (not mine), keeping current display\n",
                           turnMsg.nextPlayerName.c_str());
             // When it's not my turn and game has started, show "----"
             if (state->gameStarted && coordinator->myRole() != BoardRole::Leader) {
                 coordinator->display1.print("----");
-                Serial.printf("Set display to ---- (not my turn)\n");
+                DEBUG_PRINTF("Set display to ---- (not my turn)\n");
             }
-            coordinator->rotaryEncoder.lightOff();
         }
 
         // Update brightness for all displays
         // TODO: update brightness based on turn
         // updateDisplayBrightness();
     } else {
-        Serial.println("Received unknown message format");
+        DEBUG_PRINTLN("Received unknown message format");
     }
 }
 
@@ -403,10 +409,10 @@ void onNewPeer(GameState* state, const Event& e, Coordinator* coordinator) {
     }
 
     uint32_t newPeerId = e.newPeer.peerId;
-    Serial.printf("New peer connected: %u\n", newPeerId);
+    DEBUG_PRINTF("New peer connected: %u\n", newPeerId);
 
     if (state->gameStarted) {
-        Serial.printf("Game already started, ignoring new peer\n");
+        DEBUG_PRINTF("Game already started, ignoring new peer\n");
         return;
     }
 

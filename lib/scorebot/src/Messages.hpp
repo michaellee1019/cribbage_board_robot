@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <utils.hpp>
 
 struct PlayerMessage {
     int32_t score;
@@ -11,7 +12,7 @@ struct PlayerMessage {
     // Constructor
     PlayerMessage(int32_t s = 0, bool t = false, uint32_t nodeId = 0) 
         : score(s), turnPassed(t), fromNodeId(nodeId) {
-        Serial.printf("DEBUG PlayerMessage created: score=%d, turnPassed=%s, fromNodeId=%u\n", 
+        DEBUG_PRINTF("DEBUG PlayerMessage created: score=%d, turnPassed=%s, fromNodeId=%u\n", 
                      s, t ? "true" : "false", nodeId);
     }
     
@@ -79,28 +80,28 @@ struct TurnMessage {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, jsonStr);
         
-        Serial.printf("DEBUG TurnMessage JSON: %s\n", jsonStr.c_str());
-        Serial.printf("DEBUG Parse error: %s\n", error.c_str());
+        DEBUG_PRINTF("DEBUG TurnMessage JSON: %s\n", jsonStr.c_str());
+        DEBUG_PRINTF("DEBUG Parse error: %s\n", error.c_str());
         
         // Check if the field exists and what type it is
         if (!doc["nextPlayerNodeId"].isNull()) {
-            Serial.printf("DEBUG nextPlayerNodeId exists\n");
+            DEBUG_PRINTF("DEBUG nextPlayerNodeId exists\n");
             if (doc["nextPlayerNodeId"].is<uint32_t>()) {
-                Serial.printf("DEBUG nextPlayerNodeId is uint32_t\n");
+                DEBUG_PRINTF("DEBUG nextPlayerNodeId is uint32_t\n");
             } else if (doc["nextPlayerNodeId"].is<int>()) {
-                Serial.printf("DEBUG nextPlayerNodeId is int\n");
+                DEBUG_PRINTF("DEBUG nextPlayerNodeId is int\n");
             } else if (doc["nextPlayerNodeId"].is<const char*>()) {
-                Serial.printf("DEBUG nextPlayerNodeId is string\n");
+                DEBUG_PRINTF("DEBUG nextPlayerNodeId is string\n");
             }
-            Serial.printf("DEBUG Raw value: %s\n", doc["nextPlayerNodeId"].as<String>().c_str());
+            DEBUG_PRINTF("DEBUG Raw value: %s\n", doc["nextPlayerNodeId"].as<String>().c_str());
         } else {
-            Serial.printf("DEBUG nextPlayerNodeId field missing!\n");
+            DEBUG_PRINTF("DEBUG nextPlayerNodeId field missing!\n");
         }
         
         uint32_t nodeId = doc["nextPlayerNodeId"].as<uint32_t>();  // Use .as<uint32_t>() instead of |
         String playerName = doc["nextPlayerName"] | String("");
         
-        Serial.printf("DEBUG TurnMessage parse result: nodeId=%u, name=%s\n", nodeId, playerName.c_str());
+        DEBUG_PRINTF("DEBUG TurnMessage parse result: nodeId=%u, name=%s\n", nodeId, playerName.c_str());
         
         return TurnMessage(nodeId, playerName);
     }

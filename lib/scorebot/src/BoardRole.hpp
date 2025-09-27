@@ -21,13 +21,13 @@ public:
     uint32_t nodeId;
     std::string name;
     int playerNumber;
-    
+    uint32_t color;
     // Default constructor
     BoardRoleConfig() : role(BoardRole::Unknown), nodeId(0), name("UNKNOWN"), playerNumber(-1) {}
     
     // Parameterized constructor
-    BoardRoleConfig(BoardRole r, uint32_t nodeId, const std::string& n, int num) 
-        : role(r), nodeId(nodeId), name(n), playerNumber(num) {}
+    BoardRoleConfig(BoardRole r, uint32_t nodeId, const std::string& n, int num, uint32_t c) 
+        : role(r), nodeId(nodeId), name(n), playerNumber(num), color(c) {}
 };
 
 // Function declarations

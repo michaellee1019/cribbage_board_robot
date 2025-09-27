@@ -2,6 +2,7 @@
 #define RTBUTTON_H
 
 #include <Arduino.h>
+#include <utils.hpp>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -39,7 +40,7 @@ public:
                                         });
 
         if (debounceTimer == nullptr || doubleClickTimer == nullptr) {
-            Serial.println("Failed to create timers");
+            DEBUG_PRINTLN("Failed to create timers");
             // TODO: have a failure mode
         }
     }
@@ -74,26 +75,26 @@ public:
             nullptr);
 
         if (taskCreated != pdPASS) {
-            Serial.println("Failed to create button task");
+            DEBUG_PRINTLN("Failed to create button task");
             // TODO: handle failure modes
         }
     }
 
 protected:
     virtual void onPress() {
-        Serial.println("Button Pressed");
+        DEBUG_PRINTLN("Button Pressed");
     }
 
     virtual void onRelease() {
-        Serial.println("Button Released");
+        DEBUG_PRINTLN("Button Released");
     }
 
     virtual void onSingleClick() {
-        Serial.println("Single Click Detected");
+        DEBUG_PRINTLN("Single Click Detected");
     }
 
     virtual void onDoubleClick() {
-        Serial.println("Double Click Detected");
+        DEBUG_PRINTLN("Double Click Detected");
     }
 
 private:
