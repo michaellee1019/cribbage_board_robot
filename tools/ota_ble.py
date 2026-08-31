@@ -5,7 +5,7 @@ import argparse
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Collection, Optional, Union
 
 from bleak import BleakClient, BleakScanner
 
@@ -86,12 +86,20 @@ async def find_device(name: Optional[str]):
     raise RuntimeError(f"Found multiple boards ({names}). Run `just flash <board-id>` to select one.")
 
 
-async def wait_for_status(statuses: asyncio.Queue[str], expected: str, timeout: float) -> None:
+async def wait_for_status(
+    statuses: asyncio.Queue[str],
+    expected: Union[str, Collection[str]],
+    timeout: float,
+    *,
+    show: bool = True,
+) -> str:
+    expected_values = {expected} if isinstance(expected, str) else set(expected)
     while True:
         status = await asyncio.wait_for(statuses.get(), timeout=timeout)
-        print(f"Board: {status}")
-        if status == expected:
-            return
+        if show:
+            print(f"Board: {status}")
+        if status in expected_values:
+            return status
         if status.startswith("ERR:"):
             raise RuntimeError(f"Board rejected the update: {status}")
 
@@ -104,12 +112,24 @@ async def write_firmware(device, firmware: bytes) -> None:
 
     async with BleakClient(device, timeout=15.0) as client:
         await client.start_notify(STATUS_UUID, on_status)
+        data_characteristic = client.services.get_characteristic(DATA_UUID)
+        if data_characteristic is None:
+            raise RuntimeError("board does not expose the OTA data characteristic")
+        # The original synchronous implementation exposed WRITE_NR as well as
+        # WRITE. Worker-based builds intentionally expose response writes only;
+        # an intermediate build still replied READY instead of READY:CREDIT.
+        # Characteristic capabilities let this sender safely upgrade all three.
+        response_write_only = (
+            "write-without-response" not in data_characteristic.properties
+        )
         status = bytes(await client.read_gatt_char(STATUS_UUID)).decode("ascii", errors="replace")
         if status != "ARMED":
             raise RuntimeError("board is not locally armed; hold its rotary button until OTA appears")
         await client.write_gatt_char(CONTROL_UUID, f"START:{len(firmware)}".encode(), response=True)
         try:
-            await wait_for_status(statuses, "READY", timeout=8.0)
+            ready_status = await wait_for_status(
+                statuses, {"READY", "READY:CREDIT"}, timeout=8.0
+            )
         except RuntimeError as error:
             if "NOT_ARMED" in str(error):
                 raise RuntimeError(
@@ -117,10 +137,22 @@ async def write_firmware(device, firmware: bytes) -> None:
                 ) from error
             raise
 
+        uses_credits = ready_status == "READY:CREDIT" or response_write_only
+
+        shown_progress = -1
         for offset in range(0, len(firmware), CHUNK_SIZE):
             await client.write_gatt_char(DATA_UUID, firmware[offset : offset + CHUNK_SIZE], response=True)
+            if uses_credits:
+                # NEXT is emitted only after the OTA worker has written this
+                # chunk to flash. This application-level credit keeps the
+                # sender within the board's bounded queue and off the NimBLE
+                # host callback. Legacy boards return READY and finish each
+                # chunk synchronously before acknowledging the BLE write.
+                await wait_for_status(statuses, "NEXT", timeout=8.0, show=False)
             progress = min(offset + CHUNK_SIZE, len(firmware)) * 100 // len(firmware)
-            print(f"\rUploading: {progress:3d}%", end="", flush=True)
+            if progress != shown_progress:
+                print(f"\rUploading: {progress:3d}%", end="", flush=True)
+                shown_progress = progress
         print()
         await client.write_gatt_char(CONTROL_UUID, b"COMMIT", response=True)
         await wait_for_status(statuses, "DONE", timeout=10.0)

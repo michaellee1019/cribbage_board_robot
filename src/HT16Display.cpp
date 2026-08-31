@@ -11,6 +11,7 @@ void HT16Display::setup(uint8_t address) {
         I2cBus::Guard guard;
         if (driver.begin(address)) {
             initialized = true;
+            blinkRateHz = 0.0f;
             return;
         }
         delay(delayMs);
@@ -47,6 +48,15 @@ void HT16Display::setBrightnessNow(uint8_t newBrightness) {
     }
     I2cBus::Guard guard;
     driver.setBrightness(clamped);
+}
+
+void HT16Display::setBlinkRate(float rateHz) {
+    if (!initialized || blinkRateHz == rateHz) {
+        return;
+    }
+    I2cBus::Guard guard;
+    driver.setBlinkRate(rateHz);
+    blinkRateHz = rateHz;
 }
 
 uint8_t HT16Display::currentBrightness() const {

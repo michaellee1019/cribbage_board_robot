@@ -25,6 +25,8 @@ public:
     void setup();
     void setupStatusPixelOnly();
     void prepareForSleep();
+    void resumeAfterSleepAbort();
+    bool interruptAsserted() const;
     void setColor(uint32_t color);
     void reset();
     bool pressed();

@@ -64,6 +64,15 @@ void RotaryEncoder::prepareForSleep() {
     // output then causes an immediate EXT1 wake; normal setup clears/reset it.
 }
 
+void RotaryEncoder::resumeAfterSleepAbort() {
+    attachInterruptArg(
+        digitalPinToInterrupt(SEESAW_INTERRUPT), rotaryEncoderISR, this, FALLING);
+}
+
+bool RotaryEncoder::interruptAsserted() const {
+    return digitalRead(SEESAW_INTERRUPT) == LOW;
+}
+
 void RotaryEncoder::setColor(uint32_t color) {
     I2cBus::Guard guard;
     sspixel.setPixelColor(0, color);

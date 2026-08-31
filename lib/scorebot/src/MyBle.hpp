@@ -26,6 +26,12 @@ class BleClientCallbacks;
 // player is a peripheral; no Wi-Fi AP or mesh routing remains active.
 class MyBle {
 public:
+    enum class TransmissionCompletion : uint8_t {
+        Pending,
+        Succeeded,
+        Failed,
+    };
+
     explicit MyBle(Coordinator* coordinator);
     ~MyBle();
     MyBle(const MyBle&) = delete;
@@ -42,9 +48,16 @@ public:
     bool otaActive() const;
     bool otaWriting() const;
     bool sleepAllowed() const;
+    bool transmissionsPending() const;
+    void beginSleepQuiesce();
+    void cancelSleepQuiesce();
+    void beginRestartQuiesce();
     void shutdownForSleep();
     bool sendBroadcast(const String& message);
+    uint32_t sendBroadcastTracked(const String& message, uint32_t retryMs);
     bool sendTo(uint32_t nodeId, const String& message);
+    TransmissionCompletion transmissionCompletion(uint32_t generation) const;
+    uint32_t transmissionCompletedAtMs(uint32_t generation) const;
 
 private:
     struct RejectedPeer {
@@ -61,8 +74,14 @@ private:
 
     struct TxRequest {
         uint32_t nodeId;
+        uint32_t generation;
+        uint32_t retryUntilMs;
+        uint32_t nextAttemptMs;
+        uint32_t lastSuccessfulAtMs;
         uint16_t length;
         bool broadcast;
+        bool tracked;
+        bool anySucceeded;
         char message[scorebot::kMaxWireMessageSize];
     };
 
@@ -82,7 +101,14 @@ private:
     size_t pendingLostPeerCount;
     std::array<NimBLEClient*, 4> intentionalDisconnects;
     SemaphoreHandle_t peersMutex;
+    SemaphoreHandle_t eventAdmissionMutex;
     QueueHandle_t txQueue;
+    std::atomic<uint32_t> outstandingTransmissions;
+    std::atomic<uint32_t> nextTransmissionGeneration;
+    std::atomic<uint32_t> trackedCompletedGeneration;
+    std::atomic<uint32_t> trackedSuccessfulGeneration;
+    std::atomic<uint32_t> trackedCompletedAtMs;
+    std::atomic<bool> transportQuiescing;
     std::atomic<uint32_t> lastLeaderActivityMs;
     std::atomic<uint16_t> leaderConnectionHandle;
     std::atomic<bool> leaderConnected;
@@ -112,6 +138,13 @@ private:
     void drainTransmissions();
     bool transmitTo(uint32_t nodeId, const char* message, size_t length);
     bool enqueueTransmission(uint32_t nodeId, const String& message, bool broadcast);
+    uint32_t enqueueTrackedTransmission(
+        uint32_t nodeId, const String& message, bool broadcast,
+        uint32_t retryMs);
+    uint32_t enqueueTransmissionRequest(
+        uint32_t nodeId, const String& message, bool broadcast,
+        bool tracked, uint32_t retryMs);
+    void beginTransportQuiesce();
     bool hasPeer(NimBLEClient* client) const;
     bool peerIsBackedOff(const NimBLEAddress& address) const;
     void backOffPeer(const NimBLEAddress& address, uint32_t durationMs);

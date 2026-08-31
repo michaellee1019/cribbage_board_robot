@@ -9,6 +9,7 @@ enum class ErrorCode {
     TASK_CREATE_FAILED,
     HARDWARE_INIT_FAILED,
     BLE_INIT_FAILED,
+    BLE_SEND_FAILED,
     MEMORY_ALLOCATION_FAILED,
     SEMAPHORE_CREATE_FAILED,
     EVENT_GROUP_CREATE_FAILED,
@@ -79,6 +80,8 @@ public:
                 return "Hardware initialization failed";
             case ErrorCode::BLE_INIT_FAILED:
                 return "BLE initialization failed";
+            case ErrorCode::BLE_SEND_FAILED:
+                return "BLE transmission could not be queued";
             case ErrorCode::MEMORY_ALLOCATION_FAILED:
                 return "Memory allocation failed";
             case ErrorCode::SEMAPHORE_CREATE_FAILED:

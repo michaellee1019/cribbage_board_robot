@@ -7,6 +7,7 @@
 #include <limits>
 
 using scorebot::ApplyResult;
+using scorebot::LobbyMode;
 using scorebot::Player;
 using scorebot::ScoreAction;
 using scorebot::Snapshot;
@@ -14,6 +15,7 @@ using scorebot::Snapshot;
 Snapshot startedThreePlayerGame() {
     Snapshot game{};
     game.connectedMask = (1u << 0) | (1u << 1) | (1u << 2);
+    game.lobbyEnabledMask = game.connectedMask;
     assert(scorebot::start(game));
     assert(game.turn == Player::Red);
     return game;
@@ -28,6 +30,8 @@ void lifecycleSelectsOnlyConnectedPlayers() {
     assert(scorebot::connect(game, Player::White));
     assert(!scorebot::connect(game, Player::Blue));
     assert(game.version == 2);
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Physical);
+    assert(scorebot::lobbyModeFor(game, Player::White) == LobbyMode::Physical);
     assert(scorebot::start(game));
     assert(game.turn == Player::Blue);
     assert(!scorebot::start(game));
@@ -187,6 +191,8 @@ void completeMultiplayerLifecycle() {
     Snapshot game{};
     assert(scorebot::connect(game, Player::Red));
     assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::setLobbyMode(game, Player::Red, LobbyMode::Physical));
+    assert(scorebot::setLobbyMode(game, Player::Blue, LobbyMode::Physical));
     assert(scorebot::start(game));
     assert(game.turn == Player::Red);
 
@@ -207,11 +213,171 @@ void completeMultiplayerLifecycle() {
 
     assert(scorebot::resetGame(game));
     assert(scorebot::connect(game, Player::Green));
+    assert(scorebot::setLobbyMode(game, Player::Green, LobbyMode::Physical));
     assert(scorebot::start(game));
     assert(game.scores[0] == 0 && game.scores[1] == 0 && game.scores[2] == 0);
     assert(game.turn == Player::Red);
     // A delayed request from the previous game remains below the high-water mark.
     assert(scorebot::apply(game, {Player::Blue, 5, false, 1}) == ApplyResult::Duplicate);
+}
+
+void localOnlyLeaderboardStartsThreePlayerGame() {
+    Snapshot game{};
+    assert(scorebot::setLocalControl(game, Player::Red, true));
+    assert(scorebot::setLocalControl(game, Player::Blue, true));
+    assert(scorebot::setLocalControl(game, Player::Green, true));
+    assert(game.connectedMask == 0);
+    assert(scorebot::start(game));
+    assert(game.rosterMask == 0x07);
+    assert(game.turn == Player::Red);
+    assert(scorebot::leaderboardControlMask(game) == 0x07);
+    assert(scorebot::applyLocal(game, {Player::Red, 3, true}) ==
+           ApplyResult::Accepted);
+    assert(game.turn == Player::Blue);
+    assert(scorebot::applyLocal(game, {Player::Blue, 5, true}) ==
+           ApplyResult::Accepted);
+    assert(game.turn == Player::Green);
+    assert(scorebot::applyLocal(game, {Player::Green, 2, true}) ==
+           ApplyResult::Accepted);
+    assert(game.turn == Player::Red);
+    assert(game.scores[0] == 3 && game.scores[1] == 5 && game.scores[2] == 2);
+}
+
+void sharedLocalActionsDoNotConsumePhysicalOperationIds() {
+    Snapshot game{};
+    assert(scorebot::connect(game, Player::Red));
+    assert(scorebot::setLocalControl(game, Player::Red, true));
+    assert(scorebot::start(game));
+    assert(scorebot::applyLocal(game, {Player::Red, 3, false}) == ApplyResult::Accepted);
+    assert(game.scores[0] == 3);
+    assert(game.lastOperation[0] == 0);
+    assert(scorebot::apply(game, {Player::Red, 2, false, 1}) == ApplyResult::Accepted);
+    assert(game.scores[0] == 5);
+    assert(game.lastOperation[0] == 1);
+}
+
+void leaderboardControlsEveryRosterPlayerBeforeAndAfterReconnect() {
+    Snapshot game = startedThreePlayerGame();
+    assert(scorebot::leaderboardControlMask(game) == game.rosterMask);
+    assert(scorebot::isLocallyControllable(game, Player::Red));
+    assert(scorebot::isLocallyControllable(game, Player::Blue));
+    assert(scorebot::isLocallyControllable(game, Player::Green));
+
+    assert(scorebot::disconnect(game, Player::Red));
+    assert(scorebot::isLocallyControllable(game, Player::Red));
+    assert(scorebot::applyLocal(game, {Player::Red, 5, true}) == ApplyResult::Accepted);
+    assert(game.scores[0] == 5);
+    assert(game.turn == Player::Blue);
+
+    assert(scorebot::connect(game, Player::Red));
+    assert(scorebot::isLocallyControllable(game, Player::Red));
+    assert(scorebot::applyLocal(game, {Player::Red, 1, false}) ==
+           ApplyResult::Accepted);
+    assert(game.scores[0] == 6);
+}
+
+void configuredSharedControlSurvivesReconnect() {
+    Snapshot game{};
+    assert(scorebot::setLocalControl(game, Player::Red, true));
+    assert(scorebot::start(game));
+    assert(scorebot::connect(game, Player::Red));
+    assert(scorebot::isLocallyControllable(game, Player::Red));
+    assert(scorebot::applyLocal(game, {Player::Red, 1, true}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Red);
+}
+
+void singleUnavailablePlayerRescueWrapsTurn() {
+    Snapshot game{};
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::setLobbyMode(game, Player::Blue, LobbyMode::Physical));
+    assert(scorebot::start(game));
+    assert(game.turn == Player::Blue);
+    assert(scorebot::disconnect(game, Player::Blue));
+    assert(scorebot::applyLocal(game, {Player::Blue, 1, true}) ==
+           ApplyResult::Accepted);
+    assert(game.turn == Player::Blue);
+}
+
+void localScoresCannotOverflowOrConsumePhysicalOperations() {
+    Snapshot game{};
+    assert(scorebot::setLocalControl(game, Player::Red, true));
+    assert(scorebot::start(game));
+    game.scores[0] = std::numeric_limits<int32_t>::max();
+    assert(scorebot::applyLocal(game, {Player::Red, 1, false}) ==
+           ApplyResult::ScoreOutOfRange);
+    assert(game.scores[0] == std::numeric_limits<int32_t>::max());
+    assert(game.lastOperation[0] == 0);
+}
+
+void localProfileCannotChangeDuringGameAndSurvivesGameReset() {
+    Snapshot game{};
+    assert(scorebot::setLocalControl(game, Player::White, true));
+    assert(!scorebot::setLocalControl(game, Player::White, true));
+    assert(scorebot::start(game));
+    assert(!scorebot::setLocalControl(game, Player::Red, true));
+    assert(scorebot::resetGame(game));
+    assert(game.localControlMask == scorebot::playerBit(Player::White));
+}
+
+void lobbyModesControlTheFrozenRoster() {
+    Snapshot game{};
+    assert(scorebot::connect(game, Player::Red));
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::lobbyModeFor(game, Player::Red) == LobbyMode::Physical);
+    assert(scorebot::setLobbyMode(game, Player::Red, LobbyMode::Physical));
+    assert(scorebot::setLobbyMode(game, Player::Red, LobbyMode::Off));
+    assert(scorebot::lobbyModeFor(game, Player::Red) == LobbyMode::Off);
+    assert(scorebot::setLobbyMode(game, Player::Blue, LobbyMode::Physical));
+    assert(scorebot::setLobbyMode(game, Player::Green, LobbyMode::Local));
+    assert(scorebot::lobbyModeFor(game, Player::Green) == LobbyMode::Local);
+    assert(scorebot::lobbyParticipantMask(game) ==
+           static_cast<uint8_t>(scorebot::playerBit(Player::Blue) |
+                                scorebot::playerBit(Player::Green)));
+    assert(scorebot::start(game));
+    assert(game.rosterMask ==
+           static_cast<uint8_t>(scorebot::playerBit(Player::Blue) |
+                                scorebot::playerBit(Player::Green)));
+    assert(game.turn == Player::Blue);
+    assert(!scorebot::isConnected(game, Player::Red));
+    // Red may remain linked at the transport layer until the BLE owner drains
+    // the exclusion, but it is already outside authoritative gameplay state.
+    assert(scorebot::apply(game, {Player::Red, 5, false, 1}) ==
+           ApplyResult::NotConnected);
+    assert(!scorebot::setLobbyMode(game, Player::White, LobbyMode::Local));
+}
+
+void availabilityDrivesUntouchedLobbyColors() {
+    Snapshot game{};
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Off);
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Physical);
+    assert((game.lobbyExplicitMask & scorebot::playerBit(Player::Blue)) == 0);
+
+    assert(scorebot::disconnect(game, Player::Blue));
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Off);
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Physical);
+
+    // Once the encoder explicitly chooses OFF, later availability changes no
+    // longer override that choice.
+    assert(scorebot::setLobbyMode(game, Player::Blue, LobbyMode::Off));
+    assert((game.lobbyExplicitMask & scorebot::playerBit(Player::Blue)) != 0);
+    assert(scorebot::disconnect(game, Player::Blue));
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Off);
+}
+
+void lobbyModeRotationIsBidirectional() {
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Local, 1) ==
+           LobbyMode::Physical);
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Physical, 1) ==
+           LobbyMode::Off);
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Off, 1) == LobbyMode::Local);
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Physical, -1) ==
+           LobbyMode::Local);
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Local, -1) == LobbyMode::Off);
+    assert(scorebot::rotatedLobbyMode(LobbyMode::Physical, 4) ==
+           LobbyMode::Off);
 }
 
 int main() {
@@ -230,6 +396,16 @@ int main() {
     operationsRequireAnActiveConnectedPlayer();
     scoresCannotOverflow();
     completeMultiplayerLifecycle();
+    localOnlyLeaderboardStartsThreePlayerGame();
+    sharedLocalActionsDoNotConsumePhysicalOperationIds();
+    leaderboardControlsEveryRosterPlayerBeforeAndAfterReconnect();
+    configuredSharedControlSurvivesReconnect();
+    singleUnavailablePlayerRescueWrapsTurn();
+    localScoresCannotOverflowOrConsumePhysicalOperations();
+    localProfileCannotChangeDuringGameAndSurvivesGameReset();
+    lobbyModesControlTheFrozenRoster();
+    availabilityDrivesUntouchedLobbyColors();
+    lobbyModeRotationIsBidirectional();
     std::cout << "Game-rule tests passed\n";
 }
 

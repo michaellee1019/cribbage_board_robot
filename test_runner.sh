@@ -20,6 +20,9 @@ run_logic_tests() {
         test/native/test_game_rules.cpp
         test/native/test_player_ui_rules.cpp
         test/native/test_leaderboard_ui_rules.cpp
+        test/native/test_leaderboard_control_rules.cpp
+        test/native/test_maintenance_rules.cpp
+        test/native/test_printer_rules.cpp
         test/native/test_light_color_rules.cpp
         test/native/test_replication_rules.cpp
         test/native/test_board_identity.cpp

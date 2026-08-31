@@ -9,6 +9,7 @@ public:
     struct Interrupt {
         uint8_t pin;
         uint16_t captured;
+        uint16_t pressed;
     };
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
@@ -30,7 +31,10 @@ public:
     explicit ButtonGrid(class Coordinator* coordinator);
     void setup();
     void prepareForSleep();
+    void resumeAfterSleepAbort();
+    bool interruptAsserted() const;
     Interrupt consumeInterrupt();
+    uint16_t pressedMask();
 };
 
 

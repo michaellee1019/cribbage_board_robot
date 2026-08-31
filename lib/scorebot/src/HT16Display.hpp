@@ -11,6 +11,7 @@ class HT16Display {
     HT16K33 driver;
     display_brightness::Transition brightness;
     bool initialized{false};
+    float blinkRateHz{-1.0f};
 
 public:
     explicit HT16Display();
@@ -26,6 +27,7 @@ public:
     void sleep();
     void setTargetBrightness(uint8_t brightness);
     void setBrightnessNow(uint8_t brightness);
+    void setBlinkRate(float rateHz);
     void updateBrightness(uint32_t now);
     uint8_t currentBrightness() const;
 };

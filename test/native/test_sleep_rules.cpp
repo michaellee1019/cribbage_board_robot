@@ -11,7 +11,7 @@ int main() {
     assert(idleTimeoutMs(false, false) == kPlayerIdleTimeoutMs);
     assert(idleTimeoutMs(false, true) == kPendingScoreIdleTimeoutMs);
     assert(idleTimeoutMs(true, false) == kLeaderboardIdleTimeoutMs);
-    assert(idleTimeoutMs(true, true) == kLeaderboardIdleTimeoutMs);
+    assert(idleTimeoutMs(true, true) == kPendingScoreIdleTimeoutMs);
 
     assert(!isDue(kPlayerIdleTimeoutMs - 1, 0, 0, false,
                   kPlayerIdleTimeoutMs));

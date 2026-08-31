@@ -143,3 +143,51 @@ struct PlayerSleepMessage {
                doc["state"].is<const char*>() && doc["state"] == "sleep";
     }
 };
+
+// Compact authoritative reset epoch. Unlike a full state snapshot this stays
+// below one ATT payload, so reset propagation uses NimBLE's nonblocking
+// write-without-response path before the leaderboard reboots.
+struct LeaderResetMessage {
+    uint32_t gameId;
+    uint32_t term;
+    uint32_t leaderId;
+
+    LeaderResetMessage(
+        uint32_t game = 0, uint32_t resetTerm = 0, uint32_t leader = 0)
+        : gameId(game), term(resetTerm), leaderId(leader) {}
+
+    String toJson() const {
+        JsonDocument doc;
+        doc["type"] = "reset";
+        doc["protocol"] = scorebot::kWireProtocolVersion;
+        doc["game"] = gameId;
+        doc["term"] = term;
+        doc["leader"] = leaderId;
+        String output;
+        serializeJson(doc, output);
+        return output;
+    }
+
+    static LeaderResetMessage fromJson(const String& jsonStr) {
+        JsonDocument doc;
+        deserializeJson(doc, jsonStr);
+        return {
+            doc["game"].as<uint32_t>(),
+            doc["term"].as<uint32_t>(),
+            doc["leader"].as<uint32_t>(),
+        };
+    }
+
+    static bool isLeaderResetMessage(const String& jsonStr) {
+        JsonDocument doc;
+        const DeserializationError error = deserializeJson(doc, jsonStr);
+        return error == DeserializationError::Ok &&
+               doc["type"].is<const char*>() && doc["type"] == "reset" &&
+               doc["protocol"].is<uint16_t>() &&
+               doc["protocol"].as<uint16_t>() ==
+                   scorebot::kWireProtocolVersion &&
+               doc["game"].is<unsigned int>() &&
+               doc["term"].is<unsigned int>() &&
+               doc["leader"].is<unsigned int>();
+    }
+};

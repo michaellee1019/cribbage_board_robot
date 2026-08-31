@@ -20,11 +20,13 @@ inline constexpr uint32_t kStatusPulseMs = 80;
 inline constexpr uint32_t kRejoinAlternateMs = 1000;
 
 constexpr uint32_t idleTimeoutMs(bool isLeaderboard, bool hasPendingScore) {
+    if (hasPendingScore) {
+        return kPendingScoreIdleTimeoutMs;
+    }
     if (isLeaderboard) {
         return kLeaderboardIdleTimeoutMs;
     }
-    return hasPendingScore ? kPendingScoreIdleTimeoutMs
-                           : kPlayerIdleTimeoutMs;
+    return kPlayerIdleTimeoutMs;
 }
 
 constexpr bool isDue(uint32_t now, uint32_t awakeSince,

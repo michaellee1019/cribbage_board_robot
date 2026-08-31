@@ -28,15 +28,18 @@ constexpr uint16_t kJoinMinInterval = 12;
 constexpr uint16_t kJoinMaxInterval = 24;
 constexpr uint16_t kJoinLatency = 0;
 constexpr uint16_t kJoinTimeout = 400;
-constexpr uint16_t kSteadyMinInterval = 80;
-constexpr uint16_t kSteadyMaxInterval = 100;
-constexpr uint16_t kSteadyLatency = 4;
-constexpr uint16_t kSteadyTimeout = 600;
+// Score and turn traffic is interactive. Keep established links at 15-30 ms
+// with no skipped connection events; deep sleep, rather than a 100-625 ms BLE
+// response envelope, provides the system's battery savings.
+constexpr uint16_t kSteadyMinInterval = 12;
+constexpr uint16_t kSteadyMaxInterval = 24;
+constexpr uint16_t kSteadyLatency = 0;
+constexpr uint16_t kSteadyTimeout = 400;
 constexpr size_t kPlayerCount = 4;
 constexpr size_t kTxQueueDepth = 8;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
 constexpr uint8_t kSleepMessageCount = 3;
-// The steady connection interval can be as long as 125 ms. Leaving a full
+// Leave substantially more than the 30 ms steady connection interval after
 // interval after every notification, including the last one, gives the radio
 // time to put each queued packet on air before it is deinitialized.
 constexpr uint32_t kSleepMessageGapMs = 150;
@@ -209,7 +212,14 @@ MyBle::MyBle(Coordinator* coordinator)
       pendingLostPeerCount(0),
       intentionalDisconnects(),
       peersMutex(nullptr),
+      eventAdmissionMutex(nullptr),
       txQueue(nullptr),
+      outstandingTransmissions(0),
+      nextTransmissionGeneration(0),
+      trackedCompletedGeneration(0),
+      trackedSuccessfulGeneration(0),
+      trackedCompletedAtMs(0),
+      transportQuiescing(false),
       lastLeaderActivityMs(0),
       leaderConnectionHandle(kNoConnection),
       leaderConnected(false),
@@ -233,6 +243,9 @@ MyBle::MyBle(Coordinator* coordinator)
 MyBle::~MyBle() {
     if (peersMutex != nullptr) {
         vSemaphoreDelete(peersMutex);
+    }
+    if (eventAdmissionMutex != nullptr) {
+        vSemaphoreDelete(eventAdmissionMutex);
     }
     if (txQueue != nullptr) {
         vQueueDelete(txQueue);
@@ -289,10 +302,58 @@ bool MyBle::sleepAllowed() const {
     return !otaActive();
 }
 
+bool MyBle::transmissionsPending() const {
+    return outstandingTransmissions.load(std::memory_order_acquire) != 0;
+}
+
+void MyBle::beginTransportQuiesce() {
+    ota.setTransportQuiescing(true);
+    bool alreadyQuiescing = false;
+    {
+        // Wait for a host callback that already passed admission to finish
+        // enqueueing. Its accepted event cancels Coordinator's Quiescing phase
+        // before this method returns; later callbacks observe the closed gate.
+        ScopedSemaphore admission(eventAdmissionMutex);
+        alreadyQuiescing = transportQuiescing.exchange(
+            true, std::memory_order_acq_rel);
+    }
+    if (alreadyQuiescing) {
+        return;
+    }
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) {
+        scan->stop();
+    }
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    if (advertising->isAdvertising()) {
+        advertising->stop();
+    }
+}
+
+void MyBle::beginSleepQuiesce() {
+    beginTransportQuiesce();
+}
+
+void MyBle::beginRestartQuiesce() {
+    beginTransportQuiesce();
+}
+
+void MyBle::cancelSleepQuiesce() {
+    if (!transportQuiescing.exchange(false, std::memory_order_acq_rel)) {
+        return;
+    }
+    ota.setTransportQuiescing(false);
+    updateAdvertising(false);
+    if (coordinator->myRole() == BoardRole::Leader) {
+        beginScan();
+    }
+}
+
 void MyBle::enterOtaTransportMode() {
     otaTransportActive = true;
     if (txQueue != nullptr) {
         xQueueReset(txQueue);
+        outstandingTransmissions.store(0, std::memory_order_release);
     }
     connectionRequested.store(false);
     if (pendingConnectionClient.load() == nullptr) {
@@ -379,6 +440,7 @@ void MyBle::updateAdvertising(bool otaOnly) {
 }
 
 void MyBle::shutdownForSleep() {
+    beginTransportQuiesce();
     if (coordinator->myRole() != BoardRole::Leader && hasLeader()) {
         const String message = PlayerSleepMessage(peerId).toJson();
         // Notifications are unacknowledged, so make the final few packets all
@@ -410,6 +472,10 @@ void MyBle::setup() {
     NimBLEDevice::setPower(9, NimBLETxPowerType::Scan);
     peersMutex = xSemaphoreCreateMutex();
     CHECK_POINTER(peersMutex, ErrorCode::SEMAPHORE_CREATE_FAILED, "BLE peer mutex");
+    eventAdmissionMutex = xSemaphoreCreateMutex();
+    CHECK_POINTER(
+        eventAdmissionMutex, ErrorCode::SEMAPHORE_CREATE_FAILED,
+        "BLE event admission mutex");
     txQueue = xQueueCreate(kTxQueueDepth, sizeof(TxRequest));
     CHECK_POINTER(txQueue, ErrorCode::QUEUE_CREATE_FAILED, "BLE transmission queue");
 
@@ -948,15 +1014,40 @@ void MyBle::flushLifecycleEvents() {
 }
 
 bool MyBle::enqueueTransmission(uint32_t nodeId, const String& message, bool broadcast) {
+    return enqueueTransmissionRequest(
+               nodeId, message, broadcast, false, 0) != 0;
+}
+
+uint32_t MyBle::enqueueTrackedTransmission(
+    uint32_t nodeId, const String& message, bool broadcast,
+    uint32_t retryMs) {
+    return enqueueTransmissionRequest(
+        nodeId, message, broadcast, true, retryMs);
+}
+
+uint32_t MyBle::enqueueTransmissionRequest(
+    uint32_t nodeId, const String& message, bool broadcast,
+    bool tracked, uint32_t retryMs) {
     if (message.length() > scorebot::kMaxWireMessageSize || txQueue == nullptr) {
-        return false;
+        return 0;
     }
     TxRequest request{};
     request.nodeId = nodeId;
+    request.generation = nextTransmissionGeneration.fetch_add(
+                             1, std::memory_order_acq_rel) +
+                         1;
+    request.retryUntilMs = millis() + retryMs;
+    request.nextAttemptMs = 0;
     request.length = static_cast<uint16_t>(message.length());
     request.broadcast = broadcast;
+    request.tracked = tracked;
     memcpy(request.message, message.c_str(), request.length);
-    return xQueueSend(txQueue, &request, 0) == pdPASS;
+    outstandingTransmissions.fetch_add(1, std::memory_order_acq_rel);
+    if (xQueueSend(txQueue, &request, 0) != pdPASS) {
+        outstandingTransmissions.fetch_sub(1, std::memory_order_acq_rel);
+        return 0;
+    }
+    return request.generation;
 }
 
 bool MyBle::sendTo(uint32_t nodeId, const String& message) {
@@ -965,6 +1056,32 @@ bool MyBle::sendTo(uint32_t nodeId, const String& message) {
 
 bool MyBle::sendBroadcast(const String& message) {
     return enqueueTransmission(0, message, true);
+}
+
+uint32_t MyBle::sendBroadcastTracked(
+    const String& message, uint32_t retryMs) {
+    return enqueueTrackedTransmission(0, message, true, retryMs);
+}
+
+MyBle::TransmissionCompletion MyBle::transmissionCompletion(
+    uint32_t generation) const {
+    if (generation != 0 &&
+        trackedSuccessfulGeneration.load(std::memory_order_acquire) == generation) {
+        return TransmissionCompletion::Succeeded;
+    }
+    if (generation != 0 &&
+        trackedCompletedGeneration.load(std::memory_order_acquire) == generation) {
+        return TransmissionCompletion::Failed;
+    }
+    return TransmissionCompletion::Pending;
+}
+
+uint32_t MyBle::transmissionCompletedAtMs(uint32_t generation) const {
+    return generation != 0 &&
+                   trackedCompletedGeneration.load(std::memory_order_acquire) ==
+                       generation
+               ? trackedCompletedAtMs.load(std::memory_order_acquire)
+               : 0;
 }
 
 bool MyBle::transmitTo(uint32_t nodeId, const char* message, size_t length) {
@@ -1003,38 +1120,89 @@ bool MyBle::transmitTo(uint32_t nodeId, const char* message, size_t length) {
 void MyBle::drainTransmissions() {
     TxRequest request{};
     while (xQueueReceive(txQueue, &request, 0) == pdPASS) {
+        const uint32_t now = millis();
+        if (request.tracked && request.nextAttemptMs != 0 &&
+            static_cast<int32_t>(now - request.nextAttemptMs) < 0) {
+            if (xQueueSend(txQueue, &request, 0) != pdPASS) {
+                trackedCompletedAtMs.store(
+                    request.anySucceeded ? request.lastSuccessfulAtMs : 0,
+                    std::memory_order_release);
+                trackedCompletedGeneration.store(
+                    request.generation, std::memory_order_release);
+                outstandingTransmissions.fetch_sub(1, std::memory_order_acq_rel);
+            }
+            break;
+        }
+        bool hadTargets = false;
+        bool succeeded = true;
+        bool anySucceeded = false;
         if (!request.broadcast || coordinator->myRole() != BoardRole::Leader) {
             const uint32_t target = request.broadcast
                                         ? getNodeIdForRole(BoardRole::Leader)
                                         : request.nodeId;
-            (void)transmitTo(target, request.message, request.length);
-            continue;
-        }
-
-        std::array<uint32_t, kPlayerCount> nodeIds{};
-        size_t count = 0;
-        const bool frozen = rosterFrozen.load();
-        const uint8_t allowed = rosterMask.load();
-        {
-            ScopedSemaphore lock(peersMutex);
-            for (const auto& [nodeId, peer] : peers) {
-                (void)peer;
-                if (frozen && (allowed & roleMask(getRoleConfig(nodeId).role)) == 0) {
-                    continue;
-                }
-                if (count < nodeIds.size()) {
-                    nodeIds[count++] = nodeId;
+            hadTargets = true;
+            succeeded = transmitTo(target, request.message, request.length);
+            anySucceeded = succeeded;
+        } else {
+            std::array<uint32_t, kPlayerCount> nodeIds{};
+            size_t count = 0;
+            const bool frozen = rosterFrozen.load();
+            const uint8_t allowed = rosterMask.load();
+            {
+                ScopedSemaphore lock(peersMutex);
+                for (const auto& [nodeId, peer] : peers) {
+                    (void)peer;
+                    if (frozen &&
+                        (allowed & roleMask(getRoleConfig(nodeId).role)) == 0) {
+                        continue;
+                    }
+                    if (count < nodeIds.size()) {
+                        nodeIds[count++] = nodeId;
+                    }
                 }
             }
+            hadTargets = count != 0;
+            for (size_t index = 0; index < count; ++index) {
+                const bool targetSucceeded = transmitTo(
+                    nodeIds[index], request.message, request.length);
+                anySucceeded = anySucceeded || targetSucceeded;
+                succeeded = targetSucceeded && succeeded;
+            }
         }
-        for (size_t index = 0; index < count; ++index) {
-            (void)transmitTo(nodeIds[index], request.message, request.length);
+        if (anySucceeded) {
+            request.anySucceeded = true;
+            request.lastSuccessfulAtMs = millis();
         }
+        const uint32_t attemptFinishedMs = millis();
+        if (request.tracked && hadTargets && !succeeded &&
+            static_cast<int32_t>(attemptFinishedMs - request.retryUntilMs) < 0) {
+            request.nextAttemptMs =
+                attemptFinishedMs + kSteadyMaxInterval * 5 / 4;
+            if (xQueueSend(txQueue, &request, 0) == pdPASS) {
+                break;
+            }
+        }
+        if (request.tracked) {
+            if (!hadTargets || succeeded) {
+                trackedSuccessfulGeneration.store(
+                    request.generation, std::memory_order_release);
+            }
+            trackedCompletedAtMs.store(
+                !hadTargets || succeeded
+                    ? millis()
+                    : request.anySucceeded ? request.lastSuccessfulAtMs : 0,
+                std::memory_order_release);
+            trackedCompletedGeneration.store(
+                request.generation, std::memory_order_release);
+        }
+        outstandingTransmissions.fetch_sub(1, std::memory_order_acq_rel);
     }
 }
 
 void MyBle::receive(uint32_t from, const uint8_t* data, size_t length, uint16_t connectionHandle) {
-    if (length == 0 || length >= sizeof(MessageReceivedEvent::message)) {
+    ScopedSemaphore admission(eventAdmissionMutex);
+    if (transportQuiescing.load(std::memory_order_acquire) || length == 0 ||
+        length >= sizeof(MessageReceivedEvent::message)) {
         return;
     }
     Event event{};
@@ -1051,6 +1219,9 @@ bool MyBle::enqueue(const Event& event) {
 }
 
 bool MyBle::emit(EventType type, uint32_t nodeId) {
+    if (transportQuiescing.load(std::memory_order_acquire)) {
+        return false;
+    }
     Event event{};
     event.type = type;
     if (type == EventType::NewPeer) {
@@ -1066,6 +1237,12 @@ void MyBle::loop() {
         ota.arm();
     }
     ota.loop();
+    if (transportQuiescing.load(std::memory_order_acquire)) {
+        // Reset owns this mode until reboot. A tentative sleep handoff does
+        // not call the BLE loop again unless it first resumes normal transport.
+        drainTransmissions();
+        return;
+    }
     if (ota.isActive()) {
         if (!otaTransportActive) {
             enterOtaTransportMode();

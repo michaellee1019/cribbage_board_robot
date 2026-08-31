@@ -20,5 +20,10 @@ int main() {
     assert(scorebot::leaderboardLightLevel(0) == 2);
     assert(scorebot::leaderboardLightLevel(15) == 32);
     assert(scorebot::leaderboardLightLevel(255) == 32);
+    assert(!scorebot::turnStatusShowsScore(0));
+    assert(!scorebot::turnStatusShowsScore(999));
+    assert(scorebot::turnStatusShowsScore(1000));
+    assert(scorebot::turnStatusShowsScore(1999));
+    assert(!scorebot::turnStatusShowsScore(2000));
     std::cout << "Visual-feedback tests passed\n";
 }

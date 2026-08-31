@@ -30,9 +30,27 @@ void ButtonGrid::setup() {
 
 ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
     I2cBus::Guard guard;
-    const Interrupt result{buttonGpio.getLastInterruptPin(), buttonGpio.getCapturedInterrupt()};
+    const uint8_t pin = buttonGpio.getLastInterruptPin();
+    const uint16_t captured = buttonGpio.getCapturedInterrupt();
+    const uint16_t gpio = buttonGpio.readGPIOAB();
+    constexpr uint16_t buttonMask =
+        (1u << okPin) | (1u << plusone) | (1u << plusfive) |
+        (1u << negone) | (1u << add);
+    const Interrupt result{
+        pin,
+        captured,
+        static_cast<uint16_t>(static_cast<uint16_t>(~gpio) & buttonMask),
+    };
     buttonGpio.clearInterrupts();
     return result;
+}
+
+uint16_t ButtonGrid::pressedMask() {
+    I2cBus::Guard guard;
+    constexpr uint16_t buttonMask =
+        (1u << okPin) | (1u << plusone) | (1u << plusfive) |
+        (1u << negone) | (1u << add);
+    return static_cast<uint16_t>(~buttonGpio.readGPIOAB()) & buttonMask;
 }
 
 void ButtonGrid::prepareForSleep() {
@@ -40,4 +58,13 @@ void ButtonGrid::prepareForSleep() {
     // Do not clear the peripheral latch here. An input arriving during the
     // sleep handoff must keep the active-low line asserted so EXT1 wakes the
     // board immediately instead of losing that interaction.
+}
+
+void ButtonGrid::resumeAfterSleepAbort() {
+    attachInterruptArg(
+        digitalPinToInterrupt(interruptPin), buttonISR, this, FALLING);
+}
+
+bool ButtonGrid::interruptAsserted() const {
+    return digitalRead(interruptPin) == LOW;
 }

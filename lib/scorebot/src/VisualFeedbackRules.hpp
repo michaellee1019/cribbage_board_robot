@@ -10,6 +10,7 @@ inline constexpr uint32_t kTurnCycleMs = kTurnFadeMs * 2 + kTurnHoldMs;
 inline constexpr uint8_t kSegmentMaxBrightness = 15;
 inline constexpr uint8_t kTurnLightMaxLevel = 32;
 inline constexpr uint8_t kLeaderboardIdleLightLevel = 2;
+inline constexpr uint32_t kTurnStatusAlternateMs = 1000;
 
 struct TurnPulse {
     uint8_t segmentBrightness;
@@ -40,6 +41,16 @@ constexpr uint8_t leaderboardLightLevel(uint8_t segmentBrightness) {
         kLeaderboardIdleLightLevel +
         clamped * (kTurnLightMaxLevel - kLeaderboardIdleLightLevel) /
             kSegmentMaxBrightness);
+}
+
+constexpr uint32_t turnStatusFrame(uint32_t elapsedMs) {
+    return elapsedMs / kTurnStatusAlternateMs;
+}
+
+constexpr bool turnStatusShowsScore(uint32_t elapsedMs) {
+    // Begin every newly assigned turn with GO, then alternate with the
+    // authoritative total score once per second.
+    return (turnStatusFrame(elapsedMs) & 1u) != 0;
 }
 
 }  // namespace scorebot
