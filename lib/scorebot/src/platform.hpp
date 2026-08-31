@@ -4,7 +4,11 @@
     // Native/desktop testing environment
     #include <iostream>
     #include <cstdlib>
-    #define ESP_LOGE(tag, format, ...) printf("[ERROR][%s] " format "\n", tag, ##__VA_ARGS__)
+    #define ESP_LOGE(tag, ...) do { \
+        printf("[ERROR][%s] ", tag); \
+        printf(__VA_ARGS__); \
+        printf("\n"); \
+    } while (0)
     #define esp_restart() exit(1)
     #define delay(ms) // No-op for testing
     typedef int BaseType_t;

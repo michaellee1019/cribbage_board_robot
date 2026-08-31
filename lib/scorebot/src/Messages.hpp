@@ -1,3 +1,5 @@
+#pragma once
+
 // Message structure for player updates
 #include <cstdint>
 #include <Arduino.h>
@@ -102,68 +104,5 @@ struct PlayerActivityMessage {
                doc["protocol"].as<uint16_t>() == scorebot::kWireProtocolVersion &&
                doc["fromNodeId"].is<unsigned int>() &&
                doc["game"].is<unsigned int>();
-    }
-};
-
-// Message structure for turn notifications from leader
-struct TurnMessage {
-    uint32_t nextPlayerNodeId;
-    String nextPlayerName;
-    
-    // Constructor
-    TurnMessage(uint32_t nodeId = 0, const String& name = "") 
-        : nextPlayerNodeId(nodeId), nextPlayerName(name) {}
-    
-    // Serialize to JSON string
-    String toJson() const {
-        JsonDocument doc;
-        doc["type"] = "turn";
-        doc["nextPlayerNodeId"] = nextPlayerNodeId;
-        doc["nextPlayerName"] = nextPlayerName;
-        
-        String output;
-        serializeJson(doc, output);
-        return output;
-    }
-    
-    // Enhanced TurnMessage fromJson with detailed debugging
-    static TurnMessage fromJson(const String& jsonStr) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, jsonStr);
-        
-        DEBUG_PRINTF("DEBUG TurnMessage JSON: %s\n", jsonStr.c_str());
-        DEBUG_PRINTF("DEBUG Parse error: %s\n", error.c_str());
-        
-        // Check if the field exists and what type it is
-        if (!doc["nextPlayerNodeId"].isNull()) {
-            DEBUG_PRINTF("DEBUG nextPlayerNodeId exists\n");
-            if (doc["nextPlayerNodeId"].is<uint32_t>()) {
-                DEBUG_PRINTF("DEBUG nextPlayerNodeId is uint32_t\n");
-            } else if (doc["nextPlayerNodeId"].is<int>()) {
-                DEBUG_PRINTF("DEBUG nextPlayerNodeId is int\n");
-            } else if (doc["nextPlayerNodeId"].is<const char*>()) {
-                DEBUG_PRINTF("DEBUG nextPlayerNodeId is string\n");
-            }
-            DEBUG_PRINTF("DEBUG Raw value: %s\n", doc["nextPlayerNodeId"].as<String>().c_str());
-        } else {
-            DEBUG_PRINTF("DEBUG nextPlayerNodeId field missing!\n");
-        }
-        
-        uint32_t nodeId = doc["nextPlayerNodeId"].as<uint32_t>();  // Use .as<uint32_t>() instead of |
-        String playerName = doc["nextPlayerName"] | String("");
-        
-        DEBUG_PRINTF("DEBUG TurnMessage parse result: nodeId=%u, name=%s\n", nodeId, playerName.c_str());
-        
-        return TurnMessage(nodeId, playerName);
-    }
-    
-    // Check if JSON string is a valid TurnMessage
-    static bool isTurnMessage(const String& jsonStr) {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, jsonStr);
-        return error == DeserializationError::Ok && 
-               doc["type"].is<const char*>() && 
-               doc["type"] == "turn" &&
-               doc["nextPlayerNodeId"].is<unsigned int>();  // More specific type check
     }
 };

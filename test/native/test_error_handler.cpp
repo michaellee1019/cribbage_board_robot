@@ -4,7 +4,7 @@
 #include <iostream>
 
 #define NATIVE_BUILD
-#include "../lib/scorebot/src/ErrorHandler.hpp"
+#include <ErrorHandler.hpp>
 
 void testSuccessCases() {
     int value = 42;

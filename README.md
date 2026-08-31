@@ -19,14 +19,8 @@ just flash <board-id>
 # First install or USB recovery for a directly connected board.
 just usb-flash
 
-# Upload to specific device using convenience script
-./run.sh red         # Upload to red player device
-./run.sh blue        # Upload to blue player device  
-./run.sh controller  # Upload to controller/leaderboard
-
-# Or use PlatformIO directly
-pio run -t upload -t monitor -e red
-pio run -t upload -t monitor -e blue
+# Build without uploading.
+just build
 ```
 
 ### Testing
@@ -70,6 +64,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 ## Reliability and recovery
 
 - Every accepted score or turn action is an atomic, versioned commit on the leaderboard.
+- Fixed board identities are checked against each peer's factory-derived public Bluetooth address; payloads cannot self-assert another configured color or the leaderboard role.
 - The committed snapshot is persisted locally and replicated to connected player boards. Each board retains its latest snapshot in flash, so a rebooted board reconnects and resumes the game state.
 - Player requests carry a monotonic operation ID, so repeated notifications are ignored. Scoring and turn changes are separate permissions: every connected rostered player may score, while only the active player may advance the turn.
 - **OK** always commits the visible score delta. For the active player it also passes the turn; out of turn it commits the score without changing the turn. This lets accidental scoring be corrected without weakening turn control.
@@ -81,7 +76,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 - A paired player in the lobby shows idle dashes. During gameplay, **-1**, **+1**, **+5**, or the rotary encoder build a visible score delta. **ADD** submits it without changing the turn. **OK** also submits it; if that player owns the turn, OK advances it and clears `GO` and the turn light immediately while the leaderboard confirms the operation.
 - During gameplay, a temporarily disconnected rostered board alternates `PAIR` with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
 - A temporary disconnect or deep-sleep cycle never advances the turn. If the active board is asleep, the game waits for that same board to rejoin.
-- The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. Player interaction wakes the leaderboard displays and turn light; after five quiet seconds they fade to their minimum visible levels.
+- The first local control action on a deep-sleeping board is wake-only: it wakes and rejoins without also changing a score or starting/resetting a game. The leaderboard and player boards are woken independently.
+- The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. While the leaderboard is awake, player interaction wakes its displays and turn light; after five quiet seconds they fade to their minimum visible levels. Deep-sleeping boards are woken independently with a local control press.
 - On dual-core ESP32-S3 boards, the Bluetooth controller and NimBLE host are pinned to radio Core 0. The Arduino loop, UI dispatcher, I2C input/display work, and non-blocking fades run on application Core 1; BLE callbacks only copy gameplay messages into the application queue.
 - During a game, briefly press the leaderboard's rotary encoder to zero every score and return to an open lobby. Holding it for three seconds still arms OTA. Persisted scores survive ordinary power cycles until this explicit reset.
 

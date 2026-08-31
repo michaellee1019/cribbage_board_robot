@@ -16,23 +16,20 @@ ESP32-based BLE scoring system with player boards and a leaderboard.
 # Setup
 brew install platformio
 
-# Build and upload to specific device
-just usb-flash    # USB flash the directly connected board
-./run.sh red    # Upload to red player device
-./run.sh blue   # Upload to blue player device  
-./run.sh controller  # Upload to controller/leaderboard
+# USB flash the one directly connected board
+just usb-flash
 
-# Alternative direct commands
-pio run -t upload -t monitor -e red
-pio run -t upload -t monitor -e blue
+# Build production firmware without uploading
+just build
 ```
 
 ## Development Environment
 
 ### PlatformIO Environments
-- `red` - Player device (red)
-- `blue` - Player device (blue) 
-- `controller` - Leaderboard/controller device
+- `controller` - Production firmware; hardware identity selects leaderboard/player role
+- `debug` - Production behavior with application diagnostics enabled
+- `sleep_test` - Hardware validation build with a 15-second sleep timeout
+- `test_embedded` - Unity integration tests on ESP32 hardware
 
 ### Key Libraries
 - `NimBLE-Arduino` - Low-power BLE central/peripheral transport
@@ -61,20 +58,14 @@ pio run -t upload -t monitor -e blue
 
 ### Building & Uploading
 ```bash
-# Update an armed board over the Mac's Bluetooth connection
-just flash <board-id>
-
-# Quick upload and monitor
-./run.sh <environment>
-
 # Build only
-pio run -e <environment>
+just build
 
-# Clean build
-pio run -t clean -e <environment>
+# USB upload
+just usb-flash
 
-# Upload without monitor
-pio run -t upload -e <environment>
+# BLE upload to a physically armed board
+just flash <board-id>
 ```
 
 ### Testing
@@ -102,7 +93,7 @@ pio project metadata --json-output -e <environment>
 The ErrorHandler system includes both logic and integration testing:
 
 - **Logic Tests**: Test error handling logic with no hardware required (built into test runner)
-- **Integration Tests** (`test/test_integration_error_handler.cpp`): Test real FreeRTOS resource creation, memory allocation, and thread safety on ESP32
+- **Integration Tests** (`test/test_integration_error_handler/test_main.cpp`): Test real FreeRTOS resource creation, memory allocation, and thread safety on ESP32
 
 **Running Error Handler Tests:**
 ```bash
@@ -151,7 +142,7 @@ clang-format -i ./**/*.{hpp,cpp}
 - Hardware debugger: `esp-prog`
 - Debug speed: 2000 (reduced for stability)
 - Monitor filters: `esp32_exception_decoder`
-- Debug level: `CORE_DEBUG_LEVEL=5`
+- Production debug level: errors; the `debug` environment enables application diagnostics
 
 ## Known Issues & Considerations
 
@@ -171,25 +162,15 @@ clang-format -i ./**/*.{hpp,cpp}
 ### Device Types
 - **Player Units**: Score input (rotary encoder, buttons), local display
 - **Leaderboard**: Central display showing all player scores
-- **BLE Star**: Devices communicate through the leaderboard; player boards enter `dEGr` mode if it is unavailable
+- **BLE Star**: Devices communicate through the leaderboard; unpaired player boards show `PAIR`
 
-### Ports (varies by device)
-```ini
-# Red device
-upload_port = /dev/cu.usbmodem101
-monitor_port = /dev/cu.usbmodem101
-
-# Blue device  
-upload_port = /dev/cu.usbmodem2101
-monitor_port = /dev/cu.usbmodem2101
-```
+USB ports are discovered at flash time. `just usb-flash` ignores unrelated
+serial devices and accepts a board ID when multiple Scorebot boards are connected.
 
 ## TODO Features
 - SOS light when idle
 - IR receiver for configuration
 - Brightness control based on turn/winning status
-- Score commitment vs turn passing
-- Leaderboard buttons
 
 ## Files to Check
 - `platformio.ini` - Build configuration and environments

@@ -15,32 +15,33 @@ run_logic_tests() {
     test_dir=$(mktemp -d)
     trap 'rm -rf "$test_dir"' RETURN
 
-    g++ -std=c++17 -I. test/test_error_handler.cpp -o "$test_dir/error_handler"
-    "$test_dir/error_handler"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_game_rules.cpp -o "$test_dir/game_rules"
-    "$test_dir/game_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_player_ui_rules.cpp -o "$test_dir/player_ui_rules"
-    "$test_dir/player_ui_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_leaderboard_ui_rules.cpp -o "$test_dir/leaderboard_ui_rules"
-    "$test_dir/leaderboard_ui_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_light_color_rules.cpp -o "$test_dir/light_color_rules"
-    "$test_dir/light_color_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_replication_rules.cpp -o "$test_dir/replication_rules"
-    "$test_dir/replication_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_board_identity.cpp -o "$test_dir/board_identity"
-    "$test_dir/board_identity"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_button_input_rules.cpp -o "$test_dir/button_input_rules"
-    "$test_dir/button_input_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_ota_transfer_rules.cpp -o "$test_dir/ota_transfer_rules"
-    "$test_dir/ota_transfer_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_protocol.cpp -o "$test_dir/protocol"
-    "$test_dir/protocol"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_display_brightness.cpp -o "$test_dir/display_brightness"
-    "$test_dir/display_brightness"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_visual_feedback_rules.cpp -o "$test_dir/visual_feedback_rules"
-    "$test_dir/visual_feedback_rules"
-    g++ -std=c++17 -Ilib/scorebot/src test/test_sleep_rules.cpp -o "$test_dir/sleep_rules"
-    "$test_dir/sleep_rules"
+    local sources=(
+        test/native/test_error_handler.cpp
+        test/native/test_game_rules.cpp
+        test/native/test_player_ui_rules.cpp
+        test/native/test_leaderboard_ui_rules.cpp
+        test/native/test_light_color_rules.cpp
+        test/native/test_replication_rules.cpp
+        test/native/test_board_identity.cpp
+        test/native/test_button_input_rules.cpp
+        test/native/test_ota_transfer_rules.cpp
+        test/native/test_protocol.cpp
+        test/native/test_display_brightness.cpp
+        test/native/test_visual_feedback_rules.cpp
+        test/native/test_sleep_rules.cpp
+        test/native/test_message_authority_rules.cpp
+    )
+    local source binary
+    for source in "${sources[@]}"; do
+        binary="$test_dir/$(basename "${source%.cpp}")"
+        local extra_sources=()
+        if [[ "$source" == "test/native/test_board_identity.cpp" ]]; then
+            extra_sources+=(src/BoardRole.cpp)
+        fi
+        g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
+            -I. -Ilib/scorebot/src "$source" "${extra_sources[@]}" -o "$binary"
+        "$binary"
+    done
 }
 
 case "${1:-embedded}" in

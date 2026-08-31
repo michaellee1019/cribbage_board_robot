@@ -25,21 +25,8 @@ String strFormat(const char* const format, Args... args) {
     return {buffer};
 }
 
-inline int numI2C() {
-  I2cBus::Guard guard;
-  byte count = 0;
-
-  for (byte i = 8; i < 120; i++) {
-    Wire.beginTransmission(i);        // Begin I2C transmission Address (i)
-    if (Wire.endTransmission() == 0)  // Receive 0 = success (ACK response)
-    {
-      count++;
-    }
-  }
-  return count;
-}
-
 inline void printI2CDevices() {
+#if SCOREBOT_DEBUG
       I2cBus::Guard guard;
       // Scan for I2C devices
       DEBUG_PRINTLN("Scanning for I2C devices...");
@@ -54,6 +41,7 @@ inline void printI2CDevices() {
           }
       }
       DEBUG_PRINTLN("I2C scan complete.");
+#endif
 }
 
 #endif
