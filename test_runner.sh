@@ -28,6 +28,7 @@ run_logic_tests() {
         test/native/test_protocol.cpp
         test/native/test_display_brightness.cpp
         test/native/test_visual_feedback_rules.cpp
+        test/native/test_ble_power_rules.cpp
         test/native/test_sleep_rules.cpp
         test/native/test_message_authority_rules.cpp
     )

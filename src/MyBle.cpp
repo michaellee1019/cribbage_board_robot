@@ -21,7 +21,16 @@ constexpr uint32_t kMaintenanceScanDurationMs = 2000;
 constexpr uint32_t kMaintenanceScanBackoffMs = 5000;
 constexpr uint32_t kConnectionSettleMs = 500;
 constexpr uint32_t kRejectedPeerBackoffMs = 15000;
+constexpr uint32_t kConnectionFailureBackoffMs = 2000;
 constexpr uint32_t kConnectionWatchdogMs = 10000;
+constexpr uint16_t kJoinMinInterval = 12;
+constexpr uint16_t kJoinMaxInterval = 24;
+constexpr uint16_t kJoinLatency = 0;
+constexpr uint16_t kJoinTimeout = 400;
+constexpr uint16_t kSteadyMinInterval = 80;
+constexpr uint16_t kSteadyMaxInterval = 100;
+constexpr uint16_t kSteadyLatency = 4;
+constexpr uint16_t kSteadyTimeout = 600;
 constexpr size_t kPlayerCount = 4;
 constexpr size_t kTxQueueDepth = 8;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
@@ -93,6 +102,7 @@ public:
         owner.ota.onDisconnected(connection.getConnHandle());
         if (owner.coordinator->myRole() != BoardRole::Leader &&
             owner.leaderConnectionHandle.load() == connection.getConnHandle()) {
+            owner.recordLinkLoss();
             owner.leaderConnectionHandle.store(kNoConnection);
             owner.leaderConnected.store(false);
             owner.leaderLostPending.store(true);
@@ -117,6 +127,8 @@ public:
 
     void onConnectFail(NimBLEClient* client, int reason) override {
         owner.connectionSettledMs.store(millis());
+        owner.recordLinkLoss();
+        owner.backOffPeer(client->getPeerAddress(), kConnectionFailureBackoffMs);
         owner.finishPendingConnection(client);
         DEBUG_PRINTF("BLE: connect failed to %s reason=%d\n",
                      client->getPeerAddress().toString().c_str(), reason);
@@ -124,6 +136,7 @@ public:
 
     void onDisconnect(NimBLEClient* client, int reason) override {
         owner.connectionSettledMs.store(millis());
+        owner.recordLinkLoss(client);
         // A different established peer can disconnect while this client is
         // connecting. Only the client that owns the in-flight attempt may
         // release the scan/connect gate.
@@ -159,6 +172,9 @@ public:
         if (owner.connectionPending.exchange(true)) {
             return;
         }
+        DEBUG_PRINTF("BLE: candidate %s rssi=%d dBm cached=%d\n",
+                     device->getAddress().toString().c_str(), device->getRSSI(),
+                     client != nullptr);
         // Do not initiate a GAP connection from NimBLE's scan callback. Copy
         // the address and let the application loop stop scanning and connect.
         // Publishing the request after the copy makes the handoff atomic.
@@ -185,6 +201,7 @@ MyBle::MyBle(Coordinator* coordinator)
       nextRejectedPeer(0),
       pendingLostPeers(),
       pendingLostPeerCount(0),
+      intentionalDisconnects(),
       peersMutex(nullptr),
       txQueue(nullptr),
       lastLeaderActivityMs(0),
@@ -200,6 +217,9 @@ MyBle::MyBle(Coordinator* coordinator)
       connectionRequested(false),
       connectionAttemptStartedMs(0),
       connectionSettledMs(0),
+      disconnectWindow(),
+      powerIncreaseRequested(false),
+      connectionPowerDbm(scorebot::ble_power::kInitialConnectionPowerDbm),
       lastScanStartedMs(0),
       lastAdvertisingCheckMs(0) {}
 
@@ -269,7 +289,7 @@ void MyBle::setup() {
         FATAL_ERROR(ErrorCode::BLE_INIT_FAILED, "NimBLE initialization");
     }
     NimBLEDevice::setMTU(185);
-    NimBLEDevice::setPower(3);
+    NimBLEDevice::setPower(connectionPowerDbm.load());
     // Use maximum power only for discovery/OTA advertising and connection
     // initiation. Once connected, the lower default power preserves battery.
     NimBLEDevice::setPower(9, NimBLETxPowerType::Advertise);
@@ -349,7 +369,7 @@ void MyBle::beginScan() {
                                    ? static_cast<size_t>(__builtin_popcount(rosterMask.load()))
                                    : kPlayerCount;
     if (scan->isScanning() || peers >= targetPeers ||
-        now - lastScanStartedMs < scanBackoffMs) {
+        (lastScanStartedMs != 0 && now - lastScanStartedMs < scanBackoffMs)) {
         return;
     }
     // A second player can be reported while an asynchronous connection to the
@@ -400,13 +420,25 @@ void MyBle::startPendingConnection() {
             return;
         }
         client->setClientCallbacks(clientCallbacks.get(), false);
-        client->setConnectionParams(80, 100, 4, 600);
+        // Use a responsive interval only while establishing and discovering.
+        // The connection returns to the battery-first parameters as soon as
+        // the player is registered.
+        client->setConnectionParams(
+            kJoinMinInterval, kJoinMaxInterval, kJoinLatency, kJoinTimeout);
         client->setConnectTimeout(5000);
+        NimBLEClient::Config config = client->getConfig();
+        // A failed peer returns to the scan rotation after a short backoff.
+        // Avoid spending three consecutive attempts on it while other players
+        // are waiting to join.
+        config.connectFailRetries = 0;
+        client->setConfig(config);
     }
 
     pendingConnectionClient.store(client);
     connectionAttemptStartedMs.store(millis());
-    if (!client->connect(true, true, true)) {
+    // A previously verified client keeps its attribute cache across a normal
+    // disconnect; a newly allocated client performs full discovery.
+    if (!client->connect(newClient, true, true)) {
         finishPendingConnection(client);
         DEBUG_PRINTF("BLE: connect start failed for %s\n",
                      pendingConnectionAddress.toString().c_str());
@@ -437,7 +469,7 @@ void MyBle::recoverStalledConnection() {
     connectionPending.store(false);
     connectionAttemptStartedMs.store(0);
     connectionSettledMs.store(millis());
-    backOffPeer(pendingConnectionAddress);
+    backOffPeer(pendingConnectionAddress, kRejectedPeerBackoffMs);
     if (client != nullptr) {
         NimBLEDevice::deleteClient(client);
     }
@@ -445,6 +477,7 @@ void MyBle::recoverStalledConnection() {
 
 void MyBle::addPeer(NimBLEClient* client) {
     const uint32_t discoveryStartedMs = millis();
+    const bool hadCachedServices = !client->getServices().empty();
     NimBLERemoteService* service = client->getService(kServiceUuid);
     DEBUG_PRINTF("BLE: service discovered in %lu ms\n",
                  static_cast<unsigned long>(millis() - discoveryStartedMs));
@@ -454,6 +487,16 @@ void MyBle::addPeer(NimBLEClient* client) {
         NimBLEDevice::deleteClient(client);
         return;
     }
+    const bool attributesCached =
+        hadCachedServices && !service->getCharacteristics().empty();
+    const size_t characteristicCount = attributesCached
+                                           ? service->getCharacteristics().size()
+                                           : service->getCharacteristics(true).size();
+    DEBUG_PRINTF("BLE: %u characteristics ready at %lu ms cached=%d\n",
+                 static_cast<unsigned>(characteristicCount),
+                 static_cast<unsigned long>(millis() - discoveryStartedMs),
+                 attributesCached);
+    keepExistingPeersAlive();
     NimBLERemoteCharacteristic* identity = service->getCharacteristic(kIdentityUuid);
     DEBUG_PRINTF("BLE: identity discovered at %lu ms\n",
                  static_cast<unsigned long>(millis() - discoveryStartedMs));
@@ -472,8 +515,8 @@ void MyBle::addPeer(NimBLEClient* client) {
     keepExistingPeersAlive();
     if (identity == nullptr || protocol == nullptr || remoteUplink == nullptr || remoteDownlink == nullptr) {
         DEBUG_PRINTLN("BLE: player service is missing required characteristics");
-        if (client->isConnected()) {
-            backOffPeer(client->getPeerAddress());
+        if (client->isConnected() && !attributesCached) {
+            backOffPeer(client->getPeerAddress(), kRejectedPeerBackoffMs);
         }
         NimBLEDevice::deleteClient(client);
         return;
@@ -489,16 +532,22 @@ void MyBle::addPeer(NimBLEClient* client) {
     const uint16_t remoteProtocol = protocol->readValue<uint16_t>();
     const BoardRole role = getRoleConfig(nodeId).role;
     const uint8_t playerMask = roleMask(role);
+    const bool rosterRejected =
+        rosterFrozen.load() && (rosterMask.load() & playerMask) == 0;
     if (remoteProtocol != scorebot::kWireProtocolVersion || nodeId == 0 ||
         nodeId != transportNodeId ||
         nodeId == peerId || !isPlayerRole(role) ||
-        (rosterFrozen.load() && (rosterMask.load() & playerMask) == 0)) {
+        rosterRejected) {
         DEBUG_PRINTF(
             "BLE: rejected player identity=%08lx protocol=%u expected=%u frozen=%d roster=0x%02x\n",
             static_cast<unsigned long>(nodeId), static_cast<unsigned>(remoteProtocol),
             static_cast<unsigned>(scorebot::kWireProtocolVersion), rosterFrozen.load(),
             static_cast<unsigned>(rosterMask.load()));
-        backOffPeer(client->getPeerAddress());
+        // A cached handle can become stale after player OTA. Delete it and
+        // allow the next scan to retry with a fresh database immediately.
+        if (!attributesCached || rosterRejected) {
+            backOffPeer(client->getPeerAddress(), kRejectedPeerBackoffMs);
+        }
         NimBLEDevice::deleteClient(client);
         return;
     }
@@ -521,7 +570,7 @@ void MyBle::addPeer(NimBLEClient* client) {
                      rejectedAfterFreeze ? "roster-rejected" : "duplicate",
                      static_cast<unsigned long>(nodeId));
         if (rejectedAfterFreeze) {
-            backOffPeer(client->getPeerAddress());
+            backOffPeer(client->getPeerAddress(), kRejectedPeerBackoffMs);
         }
         NimBLEDevice::deleteClient(client);
         return;
@@ -537,9 +586,17 @@ void MyBle::addPeer(NimBLEClient* client) {
         NimBLEDevice::deleteClient(client);
         return;
     }
+    const uint32_t joinMs = millis() - connectionAttemptStartedMs.load();
+    const int rssi = client->getRssi();
+    const bool steadyParamsRequested = client->updateConnParams(
+        kSteadyMinInterval, kSteadyMaxInterval, kSteadyLatency,
+        kSteadyTimeout);
     connectionSettledMs.store(millis());
     finishPendingConnection(client);
-    DEBUG_PRINTF("BLE: registered player %08lx\n", static_cast<unsigned long>(nodeId));
+    DEBUG_PRINTF(
+        "BLE: registered player %08lx join=%lu ms rssi=%d dBm steady=%d\n",
+        static_cast<unsigned long>(nodeId), static_cast<unsigned long>(joinMs),
+        rssi, steadyParamsRequested);
 }
 
 void MyBle::finishPendingConnection(NimBLEClient* client) {
@@ -551,6 +608,7 @@ void MyBle::finishPendingConnection(NimBLEClient* client) {
 }
 
 void MyBle::removePeer(NimBLEClient* client) {
+    connectionSettledMs.store(millis());
     uint32_t nodeId = 0;
     {
         ScopedSemaphore lock(peersMutex);
@@ -573,7 +631,9 @@ void MyBle::removePeer(NimBLEClient* client) {
             pendingLostPeers[pendingLostPeerCount++] = nodeId;
         }
     }
-    NimBLEDevice::deleteClient(client);
+    // Preserve the verified player's attribute cache for a fast reconnect.
+    // addPeer validates live identity and protocol values; a stale cache after
+    // OTA is discarded and retried fresh.
 }
 
 bool MyBle::hasPeer(NimBLEClient* client) const {
@@ -598,10 +658,33 @@ bool MyBle::peerIsBackedOff(const NimBLEAddress& address) const {
     return false;
 }
 
-void MyBle::backOffPeer(const NimBLEAddress& address) {
+void MyBle::backOffPeer(const NimBLEAddress& address, uint32_t durationMs) {
     ScopedSemaphore lock(peersMutex);
-    rejectedPeers[nextRejectedPeer] = {address, millis() + kRejectedPeerBackoffMs};
+    rejectedPeers[nextRejectedPeer] = {address, millis() + durationMs};
     nextRejectedPeer = (nextRejectedPeer + 1) % rejectedPeers.size();
+}
+
+void MyBle::recordLinkLoss(NimBLEClient* client) {
+    if (client != nullptr) {
+        ScopedSemaphore lock(peersMutex);
+        for (NimBLEClient*& intentional : intentionalDisconnects) {
+            if (intentional == client) {
+                intentional = nullptr;
+                return;
+            }
+        }
+    }
+
+    // Server and client disconnect callbacks run on NimBLE's host task, so
+    // this window has a single writer. The application loop consumes only the
+    // atomic request raised when the threshold is reached.
+    const auto result = scorebot::ble_power::recordUnexpectedDisconnect(
+        disconnectWindow, millis());
+    disconnectWindow = result.window;
+    if (result.increasePower &&
+        connectionPowerDbm.load() < scorebot::ble_power::kMaximumConnectionPowerDbm) {
+        powerIncreaseRequested.store(true);
+    }
 }
 
 void MyBle::keepExistingPeersAlive() {
@@ -642,6 +725,21 @@ void MyBle::disconnectExcludedPeers() {
             if ((allowed & roleMask(getRoleConfig(nodeId).role)) == 0 &&
                 count < excluded.size()) {
                 excluded[count++] = peer.client;
+            }
+        }
+        for (size_t index = 0; index < count; ++index) {
+            bool marked = false;
+            for (NimBLEClient* intentional : intentionalDisconnects) {
+                marked = marked || intentional == excluded[index];
+            }
+            if (marked) {
+                continue;
+            }
+            for (NimBLEClient*& intentional : intentionalDisconnects) {
+                if (intentional == nullptr) {
+                    intentional = excluded[index];
+                    break;
+                }
             }
         }
     }
@@ -859,6 +957,17 @@ void MyBle::loop() {
     }
     drainTransmissions();
     const uint32_t now = millis();
+    if (powerIncreaseRequested.exchange(false)) {
+        const int8_t nextPower =
+            scorebot::ble_power::nextConnectionPowerDbm(
+                connectionPowerDbm.load());
+        if (NimBLEDevice::setPower(nextPower, NimBLETxPowerType::Connection)) {
+            connectionPowerDbm.store(nextPower);
+            DEBUG_PRINTF(
+                "BLE: raised connection TX power to %d dBm after repeated disconnects\n",
+                connectionPowerDbm.load());
+        }
+    }
     if (server != nullptr && now - lastAdvertisingCheckMs >= 1000) {
         lastAdvertisingCheckMs = now;
         NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();

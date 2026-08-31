@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <BlePowerRules.hpp>
 #include <NimBLEDevice.h>
 #include <Event.hpp>
 #include <OtaUpdate.hpp>
@@ -77,6 +78,7 @@ private:
     size_t nextRejectedPeer;
     std::array<uint32_t, 4> pendingLostPeers;
     size_t pendingLostPeerCount;
+    std::array<NimBLEClient*, 4> intentionalDisconnects;
     SemaphoreHandle_t peersMutex;
     QueueHandle_t txQueue;
     std::atomic<uint32_t> lastLeaderActivityMs;
@@ -92,6 +94,9 @@ private:
     std::atomic<bool> connectionRequested;
     std::atomic<uint32_t> connectionAttemptStartedMs;
     std::atomic<uint32_t> connectionSettledMs;
+    scorebot::ble_power::DisconnectWindow disconnectWindow;
+    std::atomic<bool> powerIncreaseRequested;
+    std::atomic<int8_t> connectionPowerDbm;
     uint32_t lastScanStartedMs;
     uint32_t lastAdvertisingCheckMs;
 
@@ -106,7 +111,8 @@ private:
     bool enqueueTransmission(uint32_t nodeId, const String& message, bool broadcast);
     bool hasPeer(NimBLEClient* client) const;
     bool peerIsBackedOff(const NimBLEAddress& address) const;
-    void backOffPeer(const NimBLEAddress& address);
+    void backOffPeer(const NimBLEAddress& address, uint32_t durationMs);
+    void recordLinkLoss(NimBLEClient* client = nullptr);
     void keepExistingPeersAlive();
     size_t peerCount() const;
     void beginScan();
