@@ -2,20 +2,17 @@
 #include <Coordinator.hpp>
 #include <Event.hpp>
 #include <ErrorHandler.hpp>
+#include <I2cBus.hpp>
 
 void IRAM_ATTR buttonISR(void* arg) {
     const auto* self = static_cast<ButtonGrid*>(arg);
-    Event event{};
-    event.type = EventType::ButtonPressed;
-    event.press.buttonName = ButtonName::GPIOButtons;
-    BaseType_t higherPriorityWoken = pdFALSE;
-    xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
-    portYIELD_FROM_ISR(higherPriorityWoken);
+    self->coordinator->enqueueInputFromISR(ButtonName::GPIOButtons);
 }
 
 ButtonGrid::ButtonGrid(Coordinator* coordinator) : coordinator{coordinator}{}
 
 void ButtonGrid::setup() {
+    I2cBus::Guard guard;
     if (!buttonGpio.begin_I2C(0x20, &Wire)) {
         FATAL_ERROR(ErrorCode::I2C_INIT_FAILED, "ButtonGrid I2C initialization failed");
     }
@@ -29,4 +26,11 @@ void ButtonGrid::setup() {
     // a rising edge, so react only to the asserted edge.
     attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, FALLING);
     buttonGpio.clearInterrupts();
+}
+
+ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
+    I2cBus::Guard guard;
+    const Interrupt result{buttonGpio.getLastInterruptPin(), buttonGpio.getCapturedInterrupt()};
+    buttonGpio.clearInterrupts();
+    return result;
 }

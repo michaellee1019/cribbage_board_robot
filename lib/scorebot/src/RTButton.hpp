@@ -2,6 +2,7 @@
 #define RTBUTTON_H
 
 #include <Arduino.h>
+#include <ErrorHandler.hpp>
 #include <utils.hpp>
 
 #include <freertos/FreeRTOS.h>
@@ -16,6 +17,7 @@ public:
           doubleClickThresholdMs(doubleClickThreshold),
           lastInterruptTime(0) {
         buttonSemaphore = xSemaphoreCreateBinary();
+        CHECK_POINTER(buttonSemaphore, ErrorCode::SEMAPHORE_CREATE_FAILED, "RTButton semaphore");
 
         debounceTimer = xTimerCreate("Debounce Timer",
                                      pdMS_TO_TICKS(debounceDelayMs),
@@ -39,11 +41,12 @@ public:
                                                 button->doubleClickCallback();
                                         });
 
-        if (debounceTimer == nullptr || doubleClickTimer == nullptr) {
-            DEBUG_PRINTLN("Failed to create timers");
-            // TODO: have a failure mode
-        }
+        CHECK_POINTER(debounceTimer, ErrorCode::TIMER_CREATE_FAILED, "RTButton debounce timer");
+        CHECK_POINTER(doubleClickTimer, ErrorCode::TIMER_CREATE_FAILED, "RTButton double-click timer");
     }
+
+    RTButton(const RTButton&) = delete;
+    RTButton& operator=(const RTButton&) = delete;
 
 
     virtual ~RTButton() {
@@ -74,10 +77,7 @@ public:
             1,
             nullptr);
 
-        if (taskCreated != pdPASS) {
-            DEBUG_PRINTLN("Failed to create button task");
-            // TODO: handle failure modes
-        }
+        CHECK_FREERTOS_RESULT(taskCreated, ErrorCode::TASK_CREATE_FAILED, "RTButton task");
     }
 
 protected:

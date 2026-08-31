@@ -23,6 +23,8 @@ run_logic_tests() {
     "$test_dir/replication_rules"
     g++ -std=c++17 -Ilib/scorebot/src test/test_ota_transfer_rules.cpp -o "$test_dir/ota_transfer_rules"
     "$test_dir/ota_transfer_rules"
+    g++ -std=c++17 -Ilib/scorebot/src test/test_display_brightness.cpp -o "$test_dir/display_brightness"
+    "$test_dir/display_brightness"
 }
 
 case "${1:-embedded}" in

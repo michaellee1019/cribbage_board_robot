@@ -3,6 +3,7 @@
 #include "Event.hpp"
 #include "ErrorHandler.hpp"
 #include <MyBle.hpp>
+#include <I2cBus.hpp>
 #include <utils.hpp>
 
 [[noreturn]]
@@ -19,6 +20,7 @@ void dispatcherTask(void* param) {
 
 Coordinator::Coordinator() :
     eventQueue{xQueueCreate(32, sizeof(Event))},
+    pendingInputEvents(0),
     display1{},
     display2{},
     display3{},
@@ -53,6 +55,8 @@ void Coordinator::setup() {
     }
     // may need an i2c lock because Wire.h almost certainly buffers.
     Wire.begin(5, 6);
+    CHECK_FREERTOS_RESULT(I2cBus::initialize() ? pdPASS : pdFAIL,
+                          ErrorCode::SEMAPHORE_CREATE_FAILED, "I2C mutex");
     // print i2c devices for debugging hardware
     printI2CDevices();
 
@@ -86,13 +90,64 @@ void Coordinator::setup() {
     buttonGrid.setup();
     rotaryEncoder.setup();
     state.refreshDisplays(this);
+    updateDisplayBrightness();
 
     BaseType_t taskResult = xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
     CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "Coordinator dispatcher task");
 }
 
 void Coordinator::loop() {
+    flushInputEvents();
     this->ble.loop();
     this->state.heartbeat(this);
+    updateDisplayBrightness();
     delay(5);  // let the idle task run instead of continuously spinning a CPU core
+}
+
+void Coordinator::noteInteraction() {
+    lastInteractionMs = millis();
+}
+
+void Coordinator::enqueueInputFromISR(ButtonName buttonName) {
+    static_assert(std::atomic<uint8_t>::is_always_lock_free,
+                  "input-event coalescing must remain ISR-safe");
+    const uint8_t bit = buttonName == ButtonName::GPIOButtons ? 1u : 2u;
+    pendingInputEvents.fetch_or(bit, std::memory_order_relaxed);
+}
+
+void Coordinator::flushInputEvents() {
+    uint8_t pending = pendingInputEvents.exchange(0, std::memory_order_acq_rel);
+    while (pending != 0) {
+        const ButtonName buttonName = (pending & 1u) != 0
+                                          ? ButtonName::GPIOButtons
+                                          : ButtonName::RotaryEncoder;
+        const uint8_t bit = buttonName == ButtonName::GPIOButtons ? 1u : 2u;
+        Event event{};
+        event.type = EventType::ButtonPressed;
+        event.press.buttonName = buttonName;
+        noteInteraction();
+        if (xQueueSend(eventQueue, &event, 0) != pdPASS) {
+            pendingInputEvents.fetch_or(pending, std::memory_order_release);
+            return;
+        }
+        pending &= ~bit;
+    }
+}
+
+void Coordinator::updateDisplayBrightness() {
+    const uint32_t now = millis();
+    const bool active = display_brightness::isInteractionActive(now, lastInteractionMs);
+    if (active != displaysAreActive) {
+        const uint8_t targetBrightness = display_brightness::targetFor(active);
+        display1.setTargetBrightness(targetBrightness);
+        display2.setTargetBrightness(targetBrightness);
+        display3.setTargetBrightness(targetBrightness);
+        display4.setTargetBrightness(targetBrightness);
+        displaysAreActive = active;
+    }
+
+    display1.updateBrightness(now);
+    display2.updateBrightness(now);
+    display3.updateBrightness(now);
+    display4.updateBrightness(now);
 }

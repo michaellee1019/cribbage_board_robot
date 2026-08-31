@@ -171,7 +171,7 @@ void MyBle::setup() {
     peerId = static_cast<uint32_t>(ESP.getEfuseMac());
     NimBLEDevice::init((String("Scorebot-") + String(peerId, HEX)).c_str());
     NimBLEDevice::setMTU(185);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P3);  // close-range tabletop use
+    NimBLEDevice::setPower(3);  // dBm; sufficient for close-range tabletop use
     peersMutex = xSemaphoreCreateMutex();
     CHECK_POINTER(peersMutex, ErrorCode::SEMAPHORE_CREATE_FAILED, "BLE peer mutex");
 

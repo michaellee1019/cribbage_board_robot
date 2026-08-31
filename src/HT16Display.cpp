@@ -8,7 +8,9 @@ void HT16Display::setup(uint8_t address) {
     const int delayMs = 500;
     
     for (int retry = 0; retry < maxRetries; retry++) {
+        I2cBus::Guard guard;
         if (driver.begin(address)) {
+            initialized = true;
             return;
         }
         delay(delayMs);
@@ -17,5 +19,21 @@ void HT16Display::setup(uint8_t address) {
     FATAL_ERROR(ErrorCode::DISPLAY_INIT_FAILED, "HT16Display initialization failed after retries");
 }
 void HT16Display::clear() {
+    I2cBus::Guard guard;
     driver.clear();
+}
+
+void HT16Display::setTargetBrightness(uint8_t newBrightness) {
+    brightness.setTarget(newBrightness);
+}
+
+void HT16Display::updateBrightness(uint32_t now) {
+    if (!initialized || !brightness.advance(now)) {
+        return;
+    }
+
+    {
+        I2cBus::Guard guard;
+        driver.setBrightness(brightness.current());
+    }
 }

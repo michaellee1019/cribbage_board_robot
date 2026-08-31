@@ -1,16 +1,12 @@
 #include <RotaryEncoder.hpp>
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
+#include <I2cBus.hpp>
 #include <utils.hpp>
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
     const auto* self = static_cast<RotaryEncoder*>(arg);
-    Event event{};
-    event.type = EventType::ButtonPressed;
-    event.press.buttonName = ButtonName::RotaryEncoder;
-    BaseType_t higherPriorityWoken = pdFALSE;
-    xQueueSendFromISR(self->coordinator->eventQueue, &event, &higherPriorityWoken);
-    portYIELD_FROM_ISR(higherPriorityWoken);
+    self->coordinator->enqueueInputFromISR(ButtonName::RotaryEncoder);
 }
 
 RotaryEncoder::RotaryEncoder(Coordinator *coordinator)
@@ -19,14 +15,17 @@ RotaryEncoder::RotaryEncoder(Coordinator *coordinator)
 {}
 
 int32_t RotaryEncoder::position() {
+    I2cBus::Guard guard;
     return ss.getEncoderPosition();
 }
 
 int32_t RotaryEncoder::delta() {
+    I2cBus::Guard guard;
     return ss.getEncoderDelta();
 }
 
 void RotaryEncoder::setup() {
+    I2cBus::Guard guard;
     if (!ss.begin(SEESAW_ADDR)) {
         FATAL_ERROR(ErrorCode::ENCODER_INIT_FAILED, "RotaryEncoder seesaw initialization failed");
     }
@@ -51,12 +50,14 @@ void RotaryEncoder::setup() {
 }
 
 void RotaryEncoder::setColor(uint32_t color) {
+    I2cBus::Guard guard;
     sspixel.setPixelColor(0, color);
     sspixel.show();
 }
 
 // TODO: setBrightness(0) doesn't work. Use setColor(0x000000) instead.
 void RotaryEncoder::setBrightness(const uint8_t brightness) {
+    I2cBus::Guard guard;
     sspixel.setBrightness(brightness);
     sspixel.setPixelColor(0, 0xFAEDED);
     if (brightness <= 0) {
@@ -73,10 +74,12 @@ void RotaryEncoder::lightOff() {
 }
 
 void RotaryEncoder::reset() {
+    I2cBus::Guard guard;
     ss.setEncoderPosition(0);
 }
 
 bool RotaryEncoder::pressed() {
+    I2cBus::Guard guard;
     // Clear the GPIO interrupt flags on the seesaw chip
     static constexpr uint32_t mask = static_cast<uint32_t>(0b1) << SS_SWITCH;
     uint32_t data = ss.digitalReadBulk(mask);  // Reading clears the interrupt flags

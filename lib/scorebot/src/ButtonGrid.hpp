@@ -6,6 +6,10 @@
 class ButtonGrid {
     class Coordinator* coordinator;
 public:
+    struct Interrupt {
+        uint8_t pin;
+        uint16_t captured;
+    };
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
     static constexpr u32_t plusone = 3;
@@ -29,6 +33,7 @@ private:
 public:
     explicit ButtonGrid(class Coordinator* coordinator);
     void setup();
+    Interrupt consumeInterrupt();
 };
 
 

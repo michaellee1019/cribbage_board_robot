@@ -22,8 +22,13 @@ public:
     {
         CHECK_POINTER(enableEvent, ErrorCode::EVENT_GROUP_CREATE_FAILED, "LightFade event group");
     }
+    LightFade(const LightFade&) = delete;
+    LightFade& operator=(const LightFade&) = delete;
 
     void setup() {
+        if (started) {
+            return;
+        }
         BaseType_t taskResult = xTaskCreate(
             &LightFade::blinkTask,
             "fadeTask",
@@ -33,6 +38,7 @@ public:
             nullptr
         );
         CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "LightFade blink task");
+        started = taskResult == pdPASS;
     }
 
     void blinkEnabled() {
@@ -48,6 +54,7 @@ private:
     static constexpr int MAX_BRIGHTNESS = 50;  // 50% brightness for player turn
     static constexpr int FADE_DELTA = MAX_BRIGHTNESS / UPDATES_PER_SECOND;
     static constexpr TickType_t DELAY_TICKS = pdMS_TO_TICKS(1000 / UPDATES_PER_SECOND);
+    bool started{false};
 
 
     [[noreturn]]

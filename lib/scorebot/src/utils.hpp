@@ -3,6 +3,7 @@
 
 #include <Wire.h>
 #include <Arduino.h>
+#include <I2cBus.hpp>
 
 // Debug macros - compile to nothing when SCOREBOT_DEBUG=0 for maximum efficiency
 #if SCOREBOT_DEBUG
@@ -25,6 +26,7 @@ String strFormat(const char* const format, Args... args) {
 }
 
 inline int numI2C() {
+  I2cBus::Guard guard;
   byte count = 0;
 
   for (byte i = 8; i < 120; i++) {
@@ -38,6 +40,7 @@ inline int numI2C() {
 }
 
 inline void printI2CDevices() {
+      I2cBus::Guard guard;
       // Scan for I2C devices
       DEBUG_PRINTLN("Scanning for I2C devices...");
       for (byte address = 1; address < 127; address++) {
