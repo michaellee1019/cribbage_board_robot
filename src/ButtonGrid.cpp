@@ -34,3 +34,9 @@ ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
     buttonGpio.clearInterrupts();
     return result;
 }
+
+void ButtonGrid::prepareForSleep() {
+    detachInterrupt(digitalPinToInterrupt(interruptPin));
+    I2cBus::Guard guard;
+    buttonGpio.clearInterrupts();
+}

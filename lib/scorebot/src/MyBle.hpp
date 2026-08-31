@@ -37,6 +37,8 @@ public:
     void openRoster();
     void armOta();
     bool otaArmed() const;
+    bool sleepAllowed() const;
+    void shutdownForSleep();
     bool sendBroadcast(const String& message);
     bool sendTo(uint32_t nodeId, const String& message);
 

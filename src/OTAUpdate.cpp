@@ -92,6 +92,10 @@ bool OtaUpdate::isArmed() const {
            static_cast<int32_t>(armUntilMs.load() - millis()) > 0;
 }
 
+bool OtaUpdate::isWriting() const {
+    return writing.load();
+}
+
 void OtaUpdate::setStatus(const char* status) {
     if (statusCharacteristic == nullptr) {
         return;

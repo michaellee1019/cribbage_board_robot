@@ -79,7 +79,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
 - In the lobby, the leaderboard shows the names of connected players. Press its **ADD/Start** button to freeze that roster and start with Red, or the first connected color after Red.
 - A paired player in the lobby shows idle dashes. During gameplay, **-1**, **+1**, **+5**, or the rotary encoder build a visible score delta. **ADD** submits it without changing the turn. **OK** also submits it; if that player owns the turn, OK advances it and clears `GO` and the turn light immediately while the leaderboard confirms the operation.
-- During gameplay the leaderboard shows scores only for rostered boards that are currently connected. Unseen or disconnected player positions are blank; `PAIR` is reserved for the open lobby.
+- During gameplay, a temporarily disconnected rostered board alternates `PAIR` with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
+- A temporary disconnect or deep-sleep cycle never advances the turn. If the active board is asleep, the game waits for that same board to rejoin.
 - The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. Player interaction wakes the leaderboard displays and turn light; after five quiet seconds they fade to their minimum visible levels.
 - On dual-core ESP32-S3 boards, the Bluetooth controller and NimBLE host are pinned to radio Core 0. The Arduino loop, UI dispatcher, I2C input/display work, and non-blocking fades run on application Core 1; BLE callbacks only copy gameplay messages into the application queue.
 - During a game, briefly press the leaderboard's rotary encoder to zero every score and return to an open lobby. Holding it for three seconds still arms OTA. Persisted scores survive ordinary power cycles until this explicit reset.

@@ -23,6 +23,16 @@ void HT16Display::clear() {
     driver.clear();
 }
 
+void HT16Display::sleep() {
+    if (!initialized) {
+        return;
+    }
+    I2cBus::Guard guard;
+    driver.clear();
+    driver.displayOff();
+    driver.disableSystemClock();
+}
+
 void HT16Display::setTargetBrightness(uint8_t newBrightness) {
     brightness.setTarget(newBrightness);
 }

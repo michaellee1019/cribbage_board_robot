@@ -95,9 +95,6 @@ inline bool connect(Snapshot& snapshot, Player player) {
         return false;
     }
     snapshot.connectedMask |= 1u << playerIndex(player);
-    if (snapshot.started && !isConnected(snapshot, snapshot.turn)) {
-        snapshot.turn = nextConnected(snapshot.turn, snapshot);
-    }
     ++snapshot.version;
     return true;
 }
@@ -107,9 +104,6 @@ inline bool disconnect(Snapshot& snapshot, Player player) {
         return false;
     }
     snapshot.connectedMask &= ~(1u << playerIndex(player));
-    if (snapshot.turn == player) {
-        snapshot.turn = nextConnected(player, snapshot);
-    }
     ++snapshot.version;
     return true;
 }

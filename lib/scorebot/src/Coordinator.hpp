@@ -3,6 +3,7 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 
 #include <atomic>
 
@@ -17,6 +18,7 @@
 class Coordinator {
 public:
     QueueHandle_t eventQueue;
+    SemaphoreHandle_t stateMutex;
     std::atomic<uint8_t> pendingInputEvents;
     HT16Display display1;
     HT16Display display2;
@@ -40,6 +42,7 @@ public:
     friend void dispatcherTask(void*);
 
 private:
+    uint32_t awakeSinceMs{0};
     std::atomic<uint32_t> lastInteractionMs{0};
     std::atomic<bool> playerTurnAnimationActive{false};
     std::atomic<uint32_t> playerTurnAnimationStartedMs{0};
@@ -50,9 +53,11 @@ private:
     bool turnAnimationWasActive{false};
     // Start true so the first update applies the idle target after display setup.
     bool displaysAreActive{true};
+    std::atomic<bool> sleeping{false};
 
     void flushInputEvents();
     void updateDisplayBrightness();
+    bool sleepBlocked() const;
 };
 
 #endif // COORDINATOR_H

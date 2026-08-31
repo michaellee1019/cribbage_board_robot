@@ -237,6 +237,16 @@ bool MyBle::otaArmed() const {
     return ota.isArmed();
 }
 
+bool MyBle::sleepAllowed() const {
+    return !ota.isArmed() && !ota.isWriting();
+}
+
+void MyBle::shutdownForSleep() {
+    // deinit(false) stops the host and controller without running destructors
+    // against application-owned callback objects during the final sleep path.
+    NimBLEDevice::deinit(false);
+}
+
 void MyBle::setup() {
     // Preserve the IDs used by the original painlessMesh role table. A raw
     // uint32_t cast selects the wrong end of ESP.getEfuseMac().

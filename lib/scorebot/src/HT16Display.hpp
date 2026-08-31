@@ -23,6 +23,7 @@ public:
         return driver.print(std::forward<Args>(args)...);
     }
     void clear();
+    void sleep();
     void setTargetBrightness(uint8_t brightness);
     void setBrightnessNow(uint8_t brightness);
     void updateBrightness(uint32_t now);

@@ -13,7 +13,7 @@ int main() {
     assert(scorebot::leaderboardDisplayMode(true, true, true) ==
            LeaderboardDisplayMode::Score);
     assert(scorebot::leaderboardDisplayMode(true, false, true) ==
-           LeaderboardDisplayMode::Blank);
+           LeaderboardDisplayMode::Rejoining);
     assert(scorebot::leaderboardDisplayMode(true, true, false) ==
            LeaderboardDisplayMode::Blank);
     assert(scorebot::leaderboardDisplayMode(true, false, false) ==

@@ -29,6 +29,7 @@ private:
 public:
     explicit ButtonGrid(class Coordinator* coordinator);
     void setup();
+    void prepareForSleep();
     Interrupt consumeInterrupt();
 };
 

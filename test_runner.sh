@@ -39,6 +39,8 @@ run_logic_tests() {
     "$test_dir/display_brightness"
     g++ -std=c++17 -Ilib/scorebot/src test/test_visual_feedback_rules.cpp -o "$test_dir/visual_feedback_rules"
     "$test_dir/visual_feedback_rules"
+    g++ -std=c++17 -Ilib/scorebot/src test/test_sleep_rules.cpp -o "$test_dir/sleep_rules"
+    "$test_dir/sleep_rules"
 }
 
 case "${1:-embedded}" in

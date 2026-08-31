@@ -66,11 +66,11 @@ void acceptedOperationIsIdempotent() {
     assert(game.turn == Player::Blue);
 }
 
-void disconnectionSkipsTheCurrentTurn() {
+void disconnectionPreservesTheCurrentTurn() {
     Snapshot game = startedThreePlayerGame();
     const uint32_t version = game.version;
     assert(scorebot::disconnect(game, Player::Red));
-    assert(game.turn == Player::Blue);
+    assert(game.turn == Player::Red);
     assert(game.connectedMask == ((1u << 1) | (1u << 2)));
     assert(game.version == version + 1);
     assert(!scorebot::disconnect(game, Player::Red));
@@ -107,15 +107,16 @@ void reconnectPreservesFrozenTurn() {
     assert(scorebot::disconnect(game, Player::Red));
     assert(scorebot::disconnect(game, Player::Blue));
     assert(scorebot::disconnect(game, Player::Green));
-    assert(game.turn == Player::None);
+    assert(game.turn == Player::Red);
     assert(scorebot::connect(game, Player::Blue));
-    assert(game.turn == Player::Blue);
+    assert(game.turn == Player::Red);
 
     // This also models a leaderboard restart with a saved, unavailable turn.
     game.connectedMask = 0;
     game.turn = Player::Red;
     assert(scorebot::connect(game, Player::Green));
-    assert(game.turn == Player::Green);
+    assert(game.turn == Player::Red);
+
 }
 
 void normalPassScoresAndAdvancesExactlyOnce() {
@@ -193,7 +194,7 @@ int main() {
     scoresMayBeCorrectedOutOfTurn();
     outOfTurnOkScoresWithoutChangingTurn();
     acceptedOperationIsIdempotent();
-    disconnectionSkipsTheCurrentTurn();
+    disconnectionPreservesTheCurrentTurn();
     startFreezesRosterButAllowsReconnection();
     resetStartsCleanLobbyWithoutAdmittingDelayedOperations();
     reconnectPreservesFrozenTurn();

@@ -2,7 +2,7 @@
 
 namespace scorebot {
 
-enum class LeaderboardDisplayMode { Pairing, LobbyName, Score, Blank };
+enum class LeaderboardDisplayMode { Pairing, LobbyName, Score, Rejoining, Blank };
 
 constexpr LeaderboardDisplayMode leaderboardDisplayMode(
     bool gameStarted, bool connected, bool inRoster) {
@@ -10,8 +10,11 @@ constexpr LeaderboardDisplayMode leaderboardDisplayMode(
         return connected ? LeaderboardDisplayMode::LobbyName
                          : LeaderboardDisplayMode::Pairing;
     }
-    return connected && inRoster ? LeaderboardDisplayMode::Score
-                                 : LeaderboardDisplayMode::Blank;
+    if (!inRoster) {
+        return LeaderboardDisplayMode::Blank;
+    }
+    return connected ? LeaderboardDisplayMode::Score
+                     : LeaderboardDisplayMode::Rejoining;
 }
 
 }  // namespace scorebot

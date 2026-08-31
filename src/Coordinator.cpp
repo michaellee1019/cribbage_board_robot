@@ -6,7 +6,10 @@
 #include <I2cBus.hpp>
 #include <LightColorRules.hpp>
 #include <VisualFeedbackRules.hpp>
+#include <DeepSleep.hpp>
+#include <SleepRules.hpp>
 #include <utils.hpp>
+#include <esp_sleep.h>
 
 #if !CONFIG_FREERTOS_UNICORE
 static_assert(ARDUINO_RUNNING_CORE == 1,
@@ -24,7 +27,11 @@ void dispatcherTask(void* param) {
     Event e{};
     while (true) {
         if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
-            coordinator->state.handleEvent(e, coordinator);
+            xSemaphoreTake(coordinator->stateMutex, portMAX_DELAY);
+            if (!coordinator->sleeping.load()) {
+                coordinator->state.handleEvent(e, coordinator);
+            }
+            xSemaphoreGive(coordinator->stateMutex);
         }
     }
 }
@@ -32,6 +39,7 @@ void dispatcherTask(void* param) {
 
 Coordinator::Coordinator() :
     eventQueue{xQueueCreate(32, sizeof(Event))},
+    stateMutex{xSemaphoreCreateMutex()},
     pendingInputEvents(0),
     display1{},
     display2{},
@@ -42,6 +50,7 @@ Coordinator::Coordinator() :
     ble{this}
 {
     CHECK_POINTER(eventQueue, ErrorCode::QUEUE_CREATE_FAILED, "Coordinator event queue");
+    CHECK_POINTER(stateMutex, ErrorCode::SEMAPHORE_CREATE_FAILED, "Coordinator state mutex");
 }
 
 BoardRole Coordinator::myRole() {
@@ -56,10 +65,13 @@ std::optional<BoardRoleConfig> Coordinator::myRoleConfig() {
 }
 
 void Coordinator::setup() {
+    scorebot::deep_sleep::handleTimerWake(*this);
     // Enable serial and wait for 5s delay to allow serial monitor to connect
 
     Serial.begin(115200);
-    delay(5000);  // Ensure see the serial messages from the beginning.
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        delay(5000);  // Ensure see the serial messages from the beginning on cold boot.
+    }
     // The `while(serial)` thing doesn't terminate unless connected to a serial (USB).
 
     if (!Serial.available()) {
@@ -114,6 +126,7 @@ void Coordinator::setup() {
     rotaryEncoder.setup();
     state.refreshDisplays(this);
     updateDisplayBrightness();
+    awakeSinceMs = millis();
 
     DEBUG_PRINTF("Tasks: Arduino loop core=%d configured=%d, BLE core=%d\n",
                  xPortGetCoreID(), ARDUINO_RUNNING_CORE,
@@ -127,9 +140,24 @@ void Coordinator::setup() {
 void Coordinator::loop() {
     flushInputEvents();
     this->ble.loop();
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
     this->state.heartbeat(this);
     updateDisplayBrightness();
+    const bool shouldSleep = scorebot::sleep::isDue(
+        millis(), awakeSinceMs, lastInteractionMs.load(), sleepBlocked());
+    if (shouldSleep) {
+        sleeping.store(true);
+    }
+    xSemaphoreGive(stateMutex);
+    if (shouldSleep) {
+        scorebot::deep_sleep::enter(*this);
+    }
     delay(5);  // let the idle task run instead of continuously spinning a CPU core
+}
+
+bool Coordinator::sleepBlocked() const {
+    return state.myScore != 0 || state.pendingOperation != 0 ||
+           state.rotaryPressStartedMs.load() != 0 || !ble.sleepAllowed();
 }
 
 void Coordinator::noteInteraction() {

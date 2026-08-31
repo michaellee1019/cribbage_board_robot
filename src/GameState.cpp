@@ -10,6 +10,7 @@
 #include <PlayerUiRules.hpp>
 #include <Protocol.hpp>
 #include <ReplicationRules.hpp>
+#include <SleepRules.hpp>
 #include <utils.hpp>
 
 #include <Preferences.h>
@@ -236,6 +237,13 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 break;
             case scorebot::LeaderboardDisplayMode::Pairing:
                 displays[index]->print("PAIR");
+                break;
+            case scorebot::LeaderboardDisplayMode::Rejoining:
+                if (scorebot::sleep::showSavedScore(millis())) {
+                    displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                } else {
+                    displays[index]->print("PAIR");
+                }
                 break;
             case scorebot::LeaderboardDisplayMode::Blank:
                 displays[index]->clear();
@@ -532,6 +540,7 @@ GameState::GameState()
       lastOperation{},
       localOperation(0),
       lastReplicationMs(0),
+      lastRejoinDisplayMs(0),
       pendingOperation(0),
       pendingScore(0),
       pendingPass(false),
@@ -601,6 +610,11 @@ void GameState::heartbeat(Coordinator* coordinator) {
             }
         }
         return;
+    }
+    if (gameStarted && (connectedMask & rosterMask) != rosterMask &&
+        now - lastRejoinDisplayMs >= scorebot::sleep::kRejoinAlternateMs) {
+        setLeaderboardDisplays(*this, coordinator);
+        lastRejoinDisplayMs = now;
     }
     if (now - lastReplicationMs >= kReplicationPeriodMs) {
         leaderId = coordinator->ble.getMyPeerId();

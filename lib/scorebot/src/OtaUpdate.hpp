@@ -22,6 +22,7 @@ public:
     void setup(NimBLEServer* server);
     void arm();
     bool isArmed() const;
+    bool isWriting() const;
     void onDisconnected(uint16_t connectionHandle);
     void loop();
 

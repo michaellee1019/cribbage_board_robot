@@ -50,6 +50,26 @@ void RotaryEncoder::setup() {
     this->setColor(0x000000);
 }
 
+void RotaryEncoder::setupStatusPixelOnly() {
+    I2cBus::Guard guard;
+    // Do not reset the seesaw during a timer-only wake: its GPIO/encoder
+    // interrupt configuration must survive so physical input can wake us from
+    // the next deep-sleep interval.
+    if (!sspixel.Adafruit_seesaw::begin(SEESAW_ADDR, -1, false)) {
+        return;
+    }
+    sspixel.updateType(NEO_GRB + NEO_KHZ800);
+    sspixel.updateLength(1);
+    sspixel.setPin(SS_NEOPIX);
+}
+
+void RotaryEncoder::prepareForSleep() {
+    detachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT));
+    // Both reads clear any already-latched encoder/switch interrupts.
+    (void)delta();
+    (void)pressed();
+}
+
 void RotaryEncoder::setColor(uint32_t color) {
     I2cBus::Guard guard;
     sspixel.setPixelColor(0, color);

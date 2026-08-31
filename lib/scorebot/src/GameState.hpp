@@ -34,6 +34,7 @@ public:
   std::array<uint32_t, 4> lastOperation;
   uint32_t localOperation;
   uint32_t lastReplicationMs;
+  uint32_t lastRejoinDisplayMs;
   uint32_t pendingOperation;
   int pendingScore;
   bool pendingPass;

@@ -25,6 +25,8 @@ public:
     /** Clears the interrupt flag. */
     int32_t delta();
     void setup();
+    void setupStatusPixelOnly();
+    void prepareForSleep();
     void setColor(uint32_t color);
     void reset();
     bool pressed();
