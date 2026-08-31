@@ -23,6 +23,7 @@ struct Snapshot {
     std::array<int32_t, kPlayerCount> scores{};
     std::array<uint32_t, kPlayerCount> lastOperation{};
     uint8_t connectedMask{0};
+    uint8_t rosterMask{0};
     Player turn{Player::None};
     bool started{false};
     uint32_t version{0};
@@ -37,11 +38,11 @@ struct ScoreAction {
 
 enum class ApplyResult {
     Accepted,
+    AcceptedWithoutTurnChange,
     GameNotStarted,
     UnknownPlayer,
     NotConnected,
     Duplicate,
-    NotCurrentTurn,
     ScoreOutOfRange,
 };
 
@@ -68,16 +69,35 @@ inline bool start(Snapshot& snapshot) {
         return false;
     }
     snapshot.started = true;
+    snapshot.rosterMask = snapshot.connectedMask;
     snapshot.turn = nextConnected(Player::None, snapshot);
     ++snapshot.version;
     return true;
 }
 
+inline bool resetGame(Snapshot& snapshot) {
+    if (!snapshot.started) {
+        return false;
+    }
+    snapshot.scores.fill(0);
+    // Keep operation high-water marks so delayed requests from the previous
+    // game cannot be applied to the next one.
+    snapshot.rosterMask = 0;
+    snapshot.turn = Player::None;
+    snapshot.started = false;
+    ++snapshot.version;
+    return true;
+}
+
 inline bool connect(Snapshot& snapshot, Player player) {
-    if (!isPlayer(player) || isConnected(snapshot, player)) {
+    if (!isPlayer(player) || isConnected(snapshot, player) ||
+        (snapshot.started && (snapshot.rosterMask & (1u << playerIndex(player))) == 0)) {
         return false;
     }
     snapshot.connectedMask |= 1u << playerIndex(player);
+    if (snapshot.started && !isConnected(snapshot, snapshot.turn)) {
+        snapshot.turn = nextConnected(snapshot.turn, snapshot);
+    }
     ++snapshot.version;
     return true;
 }
@@ -108,24 +128,23 @@ inline ApplyResult apply(Snapshot& snapshot, const ScoreAction& action) {
     if (action.operationId <= snapshot.lastOperation[index]) {
         return ApplyResult::Duplicate;
     }
-    // An out-of-turn correction is valid. A pass remains leader-authoritative:
-    // it changes score and turn together only for the current player.
-    if (action.passesTurn && snapshot.turn != action.player) {
-        return ApplyResult::NotCurrentTurn;
-    }
-
     const int64_t nextScore = static_cast<int64_t>(snapshot.scores[index]) + action.scoreDelta;
     if (nextScore < std::numeric_limits<int32_t>::min() ||
         nextScore > std::numeric_limits<int32_t>::max()) {
+        snapshot.lastOperation[index] = action.operationId;
+        ++snapshot.version;
         return ApplyResult::ScoreOutOfRange;
     }
     snapshot.scores[index] = static_cast<int32_t>(nextScore);
     snapshot.lastOperation[index] = action.operationId;
-    if (action.passesTurn) {
+    const bool turnMayChange = action.passesTurn && snapshot.turn == action.player;
+    if (turnMayChange) {
         snapshot.turn = nextConnected(action.player, snapshot);
     }
     ++snapshot.version;
-    return ApplyResult::Accepted;
+    return action.passesTurn && !turnMayChange
+               ? ApplyResult::AcceptedWithoutTurnChange
+               : ApplyResult::Accepted;
 }
 
 }  // namespace scorebot

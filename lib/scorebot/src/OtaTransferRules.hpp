@@ -5,6 +5,12 @@
 
 namespace scorebot {
 
+constexpr bool otaArmHoldReached(bool pressed, uint32_t nowMs,
+                                 uint32_t pressStartedMs, uint32_t holdMs) {
+    return pressed && pressStartedMs != 0 &&
+           static_cast<uint32_t>(nowMs - pressStartedMs) >= holdMs;
+}
+
 constexpr bool otaTransferOwnedBy(bool writing, uint16_t writer, uint16_t connection) {
     return writing && writer == connection;
 }

@@ -27,6 +27,22 @@ void HT16Display::setTargetBrightness(uint8_t newBrightness) {
     brightness.setTarget(newBrightness);
 }
 
+void HT16Display::setBrightnessNow(uint8_t newBrightness) {
+    const uint8_t clamped = newBrightness > display_brightness::kActiveBrightness
+                                ? display_brightness::kActiveBrightness
+                                : newBrightness;
+    brightness.setCurrent(clamped);
+    if (!initialized) {
+        return;
+    }
+    I2cBus::Guard guard;
+    driver.setBrightness(clamped);
+}
+
+uint8_t HT16Display::currentBrightness() const {
+    return brightness.current();
+}
+
 void HT16Display::updateBrightness(uint32_t now) {
     if (!initialized || !brightness.advance(now)) {
         return;

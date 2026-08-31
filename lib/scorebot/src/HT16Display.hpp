@@ -24,7 +24,9 @@ public:
     }
     void clear();
     void setTargetBrightness(uint8_t brightness);
+    void setBrightnessNow(uint8_t brightness);
     void updateBrightness(uint32_t now);
+    uint8_t currentBrightness() const;
 };
 
 

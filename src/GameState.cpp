@@ -1,7 +1,13 @@
 #include <Coordinator.hpp>
+#include <ButtonInputRules.hpp>
+#include <ErrorHandler.hpp>
 #include <GameState.hpp>
 #include <GameRules.hpp>
+#include <LeaderboardUiRules.hpp>
+#include <LightColorRules.hpp>
 #include <Messages.hpp>
+#include <OtaTransferRules.hpp>
+#include <PlayerUiRules.hpp>
 #include <Protocol.hpp>
 #include <ReplicationRules.hpp>
 #include <utils.hpp>
@@ -74,6 +80,7 @@ scorebot::Snapshot toRules(const GameState& state) {
         rules.lastOperation[index] = operationFor(state, role);
     }
     rules.connectedMask = state.connectedMask;
+    rules.rosterMask = state.rosterMask;
     return rules;
 }
 
@@ -82,6 +89,7 @@ void fromRules(GameState& state, const scorebot::Snapshot& rules) {
     state.whosTurn = fromRulePlayer(rules.turn);
     state.version = rules.version;
     state.connectedMask = rules.connectedMask;
+    state.rosterMask = rules.rosterMask;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         scoreFor(state, role) = rules.scores[index];
@@ -93,6 +101,7 @@ String snapshotJson(const GameState& state) {
     JsonDocument document;
     document["type"] = "state";
     document["protocol"] = scorebot::kWireProtocolVersion;
+    document["game"] = state.gameId;
     document["term"] = state.term;
     document["version"] = state.version;
     document["leader"] = state.leaderId;
@@ -107,6 +116,7 @@ String snapshotJson(const GameState& state) {
         operations.add(operationFor(state, role));
     }
     document["connected"] = state.connectedMask;
+    document["roster"] = state.rosterMask;
 
     String encoded;
     serializeJson(document, encoded);
@@ -121,7 +131,8 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
         document["type"] != "state" ||
         !document["protocol"].is<uint16_t>() ||
         document["protocol"].as<uint16_t>() != scorebot::kWireProtocolVersion ||
-        !document["term"].is<uint32_t>() || !document["version"].is<uint32_t>() ||
+        !document["game"].is<uint32_t>() || !document["term"].is<uint32_t>() ||
+        !document["version"].is<uint32_t>() ||
         !document["leader"].is<uint32_t>() || !document["scores"].is<JsonArray>() ||
         !document["operations"].is<JsonArray>()) {
         return SnapshotDecodeResult::Invalid;
@@ -138,8 +149,14 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
         return SnapshotDecodeResult::Invalid;
     }
     const uint32_t connectedMask = document["connected"] | 0;
+    const bool rosterPresent = document["roster"].is<uint32_t>();
+    const uint32_t rosterMask = rosterPresent ? document["roster"].as<uint32_t>() : 0;
+    // Older snapshots did not distinguish a frozen roster from live links.
+    // Resume those in the lobby instead of accidentally locking out a board.
+    const bool gameStarted = (document["started"] | false) && rosterPresent;
     const BoardRole turn = static_cast<BoardRole>(document["turn"] | 0);
-    if ((connectedMask & ~0x0fu) != 0 ||
+    if ((connectedMask & ~0x0fu) != 0 || (rosterMask & ~0x0fu) != 0 ||
+        ((connectedMask & ~rosterMask) != 0 && gameStarted) ||
         (turn != BoardRole::Unknown && !isPlayer(turn))) {
         return SnapshotDecodeResult::Invalid;
     }
@@ -158,11 +175,13 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     }
 
     state.term = term;
+    state.gameId = document["game"].as<uint32_t>();
     state.version = version;
     state.leaderId = document["leader"].as<uint32_t>();
-    state.gameStarted = document["started"] | false;
-    state.whosTurn = turn;
+    state.gameStarted = gameStarted;
+    state.whosTurn = gameStarted ? turn : BoardRole::Unknown;
     state.connectedMask = static_cast<uint8_t>(connectedMask);
+    state.rosterMask = static_cast<uint8_t>(rosterMask);
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         scoreFor(state, role) = scores[index].as<int32_t>();
@@ -176,17 +195,25 @@ void setPlayerDisplay(const GameState& state, Coordinator* coordinator) {
     if (coordinator->myRole() == BoardRole::Leader) {
         return;
     }
-    if (state.leaderless) {
-        coordinator->display1.print("dEGr");
-        coordinator->rotaryEncoder.setColor(0x000000);
-    } else if (state.gameStarted && state.whosTurn == coordinator->myRole()) {
-        coordinator->display1.print("BEEF");
-        coordinator->rotaryEncoder.setColor(coordinator->myRoleConfig()->color);
-    } else if (state.myScore == 0) {
-        coordinator->display1.print("----");
-        coordinator->rotaryEncoder.setColor(0x000000);
-    } else {
-        coordinator->display1.print(strFormat("%d", state.myScore));
+    const bool isMyTurn = scorebot::playerTurnLocallyActive(
+        state.whosTurn == coordinator->myRole(), state.pendingPass);
+    const scorebot::PlayerDisplayMode mode = scorebot::playerDisplayMode(
+        state.myScore, state.leaderless, state.gameStarted, isMyTurn);
+    coordinator->setPlayerTurnAnimation(mode == scorebot::PlayerDisplayMode::Turn);
+
+    switch (mode) {
+        case scorebot::PlayerDisplayMode::Delta:
+            coordinator->display1.print(strFormat("%d", state.myScore));
+            break;
+        case scorebot::PlayerDisplayMode::Pairing:
+            coordinator->display1.print("PAIR");
+            break;
+        case scorebot::PlayerDisplayMode::Turn:
+            coordinator->display1.print("GO  ");
+            break;
+        case scorebot::PlayerDisplayMode::Idle:
+            coordinator->display1.print("----");
+            break;
     }
 }
 
@@ -197,7 +224,29 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
     const std::array<HT16Display*, 4> displays = {
         &coordinator->display1, &coordinator->display2, &coordinator->display3, &coordinator->display4};
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
-        displays[index]->print(strFormat("%d", scoreFor(state, kPlayers[index])));
+        const BoardRole role = kPlayers[index];
+        const bool connected = (state.connectedMask & (1u << index)) != 0;
+        const bool inRoster = (state.rosterMask & (1u << index)) != 0;
+        switch (scorebot::leaderboardDisplayMode(state.gameStarted, connected, inRoster)) {
+            case scorebot::LeaderboardDisplayMode::Score:
+                displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                break;
+            case scorebot::LeaderboardDisplayMode::LobbyName:
+                displays[index]->print(getRoleConfig(getNodeIdForRole(role)).name.c_str());
+                break;
+            case scorebot::LeaderboardDisplayMode::Pairing:
+                displays[index]->print("PAIR");
+                break;
+            case scorebot::LeaderboardDisplayMode::Blank:
+                displays[index]->clear();
+                break;
+        }
+    }
+    if (state.gameStarted && isPlayer(state.whosTurn)) {
+        coordinator->setLeaderboardTurnColor(
+            getRoleConfig(getNodeIdForRole(state.whosTurn)).color);
+    } else {
+        coordinator->setLeaderboardTurnColor(0x000000);
     }
 }
 
@@ -212,6 +261,12 @@ void commit(GameState& state, Coordinator* coordinator) {
         FATAL_ERROR(ErrorCode::STATE_PERSIST_FAILED, "leader game-state commit");
         return;
     }
+    DEBUG_PRINTF(
+        "State commit: started=%d connected=0x%02x roster=0x%02x turn=%u game=%lu term=%lu version=%lu\n",
+        state.gameStarted, static_cast<unsigned>(state.connectedMask),
+        static_cast<unsigned>(state.rosterMask), static_cast<unsigned>(state.whosTurn),
+        static_cast<unsigned long>(state.gameId), static_cast<unsigned long>(state.term),
+        static_cast<unsigned long>(state.version));
     state.refreshDisplays(coordinator);
     replicate(state, coordinator);
 }
@@ -220,46 +275,91 @@ void rejectAndResync(const GameState& state, Coordinator* coordinator, uint32_t 
     coordinator->ble.sendTo(sender, snapshotJson(state));
 }
 
+void sendPlayerActivity(GameState* state, Coordinator* coordinator) {
+    if (!state->gameStarted || state->leaderless || !coordinator->ble.hasLeader()) {
+        return;
+    }
+    constexpr uint32_t kActivityThrottleMs = 100;
+    const uint32_t now = millis();
+    if (state->lastActivitySentMs != 0 &&
+        now - state->lastActivitySentMs < kActivityThrottleMs) {
+        return;
+    }
+    const PlayerActivityMessage message(
+        coordinator->ble.getMyPeerId(), state->gameId);
+    if (coordinator->ble.sendTo(
+            getNodeIdForRole(BoardRole::Leader), message.toJson())) {
+        state->lastActivitySentMs = now;
+    }
+}
+
 void sendPlayerOperation(GameState* state, Coordinator* coordinator, bool passesTurn) {
     if (!state->gameStarted || !coordinator->ble.hasLeader() || state->leaderless ||
         state->pendingOperation != 0) {
         setPlayerDisplay(*state, coordinator);
         return;
     }
-    if (passesTurn && state->whosTurn != coordinator->myRole()) {
-        return;
-    }
     const uint32_t operationId = state->nextOperationId();
-    PlayerMessage message(state->myScore, passesTurn, coordinator->ble.getMyPeerId(), operationId);
+    PlayerMessage message(state->myScore, passesTurn, coordinator->ble.getMyPeerId(),
+                          operationId, state->gameId);
     const String encoded = message.toJson();
     if (coordinator->ble.sendTo(getNodeIdForRole(BoardRole::Leader), encoded)) {
         state->pendingOperation = operationId;
         state->pendingScore = state->myScore;
-        state->pendingPass = passesTurn;
+        // OK always commits the delta. Only a locally active turn is hidden
+        // optimistically; the leaderboard independently decides whether the
+        // same operation is allowed to advance the turn.
+        state->pendingPass = passesTurn && state->whosTurn == coordinator->myRole();
         state->pendingMessage = encoded;
         state->pendingSentMs = millis();
-        coordinator->display1.print("WAIT");
+        // The pending payload has its own immutable copy. Clear the submitted
+        // entry now so the player can immediately build the next correction;
+        // its eventual acknowledgement must not erase that new input.
+        state->myScore = 0;
+        coordinator->rotaryEncoder.reset();
+        setPlayerDisplay(*state, coordinator);
     }
+}
+
+void showOtaArmed(Coordinator* coordinator) {
+    coordinator->ble.armOta();
+    coordinator->display1.print("OTA ");
+    coordinator->rotaryEncoder.setColor(0x004040);
+}
+
+void resetLeaderboard(GameState* state, Coordinator* coordinator) {
+    scorebot::Snapshot rules = toRules(*state);
+    if (!scorebot::resetGame(rules)) {
+        return;
+    }
+    fromRules(*state, rules);
+    ++state->gameId;
+    coordinator->ble.openRoster();
+    commit(*state, coordinator);
 }
 
 void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator* coordinator) {
     const BoardRole role = coordinator->myRole();
     if (event.buttonName == ButtonName::RotaryEncoder) {
         if (coordinator->rotaryEncoder.pressed()) {
-            if (state->rotaryPressStartedMs == 0) {
-                state->rotaryPressStartedMs = millis();
+            coordinator->noteInteraction();
+            if (role != BoardRole::Leader) {
+                sendPlayerActivity(state, coordinator);
+            }
+            if (state->rotaryPressStartedMs.load() == 0) {
+                state->rotaryPressStartedMs.store(millis());
             }
             return;
         }
 
-        if (state->rotaryPressStartedMs != 0) {
-            const uint32_t heldMs = millis() - state->rotaryPressStartedMs;
-            state->rotaryPressStartedMs = 0;
+        const uint32_t pressStartedMs = state->rotaryPressStartedMs.exchange(0);
+        if (pressStartedMs != 0) {
+            const uint32_t heldMs = millis() - pressStartedMs;
             if (heldMs >= kOtaArmHoldMs) {
-                coordinator->ble.armOta();
-                coordinator->display1.print("OTA ");
-                coordinator->rotaryEncoder.setColor(0x004040);
-            } else if (role != BoardRole::Leader && state->pendingOperation == 0) {
+                showOtaArmed(coordinator);
+            } else if (role == BoardRole::Leader) {
+                resetLeaderboard(state, coordinator);
+            } else {
                 // A short rotary press is the existing quick-score action. It
                 // remains legal off-turn so an accidental score can be fixed.
                 sendPlayerOperation(state, coordinator, false);
@@ -267,12 +367,17 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
             return;
         }
 
-        if (role == BoardRole::Leader || state->pendingOperation != 0) {
+        if (role == BoardRole::Leader) {
             return;
         }
         const int32_t delta = coordinator->rotaryEncoder.delta();
-        if (delta != 0 && !state->leaderless) {
+        if (delta != 0 && state->gameStarted && !state->leaderless) {
+            coordinator->noteInteraction();
+            sendPlayerActivity(state, coordinator);
             state->myScore += delta;
+            setPlayerDisplay(*state, coordinator);
+        } else if (delta != 0) {
+            coordinator->noteInteraction();
             setPlayerDisplay(*state, coordinator);
         }
         return;
@@ -281,23 +386,37 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
     const ButtonGrid::Interrupt interrupt = coordinator->buttonGrid.consumeInterrupt();
     const uint8_t pin = interrupt.pin;
     const uint16_t value = interrupt.captured;
-    if (value != ButtonGrid::intValReleased && value != ButtonGrid::intValReleased2) {
+    DEBUG_PRINTF("Button grid: role=%u pin=%u captured=0x%04x pressed=%d\n",
+                 static_cast<unsigned>(role), static_cast<unsigned>(pin),
+                 static_cast<unsigned>(value), scorebot::buttonCapturedPressed(pin, value));
+    if (!scorebot::buttonCapturedPressed(pin, value)) {
         return;
+    }
+    coordinator->noteInteraction();
+    if (role != BoardRole::Leader) {
+        sendPlayerActivity(state, coordinator);
     }
 
     if (role == BoardRole::Leader) {
         scorebot::Snapshot rules = toRules(*state);
-        if (pin == 0 && scorebot::start(rules)) {
+        if (pin == ButtonGrid::add && scorebot::start(rules)) {
             fromRules(*state, rules);
+            coordinator->ble.freezeRoster(state->rosterMask);
             commit(*state, coordinator);
+        } else if (pin == ButtonGrid::okPin) {
+            // Some player-style assemblies expose pin 4. The leaderboard
+            // hardware does not, so its primary reset control is a short
+            // rotary press handled above.
+            resetLeaderboard(state, coordinator);
         }
         return;
     }
 
-    if (state->leaderless || state->pendingOperation != 0) {
+    if (!state->gameStarted || state->leaderless) {
         setPlayerDisplay(*state, coordinator);
         return;
     }
+
     if (pin == ButtonGrid::add) {
         if (state->myScore != 0) {
             sendPlayerOperation(state, coordinator, false);
@@ -326,19 +445,51 @@ void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordina
     const PlayerMessage message = PlayerMessage::fromJson(json);
     const uint32_t sender = event.messageReceived.peerId;
     const BoardRoleConfig senderConfig = getRoleConfig(sender);
-    if (!isPlayer(senderConfig.role) || message.fromNodeId != sender || !state->gameStarted) {
+    if (!isPlayer(senderConfig.role) || message.fromNodeId != sender ||
+        message.gameId != state->gameId || !state->gameStarted) {
         rejectAndResync(*state, coordinator, sender);
         return;
     }
+    coordinator->noteInteraction();
     scorebot::Snapshot rules = toRules(*state);
+    const uint32_t previousVersion = rules.version;
     const scorebot::ApplyResult result = scorebot::apply(
         rules, {toRulePlayer(senderConfig.role), message.score, message.turnPassed, message.operationId});
-    if (result != scorebot::ApplyResult::Accepted) {
+    if (result == scorebot::ApplyResult::Accepted ||
+        result == scorebot::ApplyResult::AcceptedWithoutTurnChange ||
+        rules.version != previousVersion) {
+        // Valid rejected operations are recorded as consumed so a player can
+        // distinguish rejection from packet loss and stop retrying them.
+        fromRules(*state, rules);
+        commit(*state, coordinator);
+    } else {
         rejectAndResync(*state, coordinator, sender);
+    }
+}
+
+void onPlayerActivityMessage(
+    GameState* state, const Event& event, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader || !state->gameStarted) {
         return;
     }
-    fromRules(*state, rules);
-    commit(*state, coordinator);
+    const PlayerActivityMessage message =
+        PlayerActivityMessage::fromJson(event.messageReceived.message);
+    const uint32_t sender = event.messageReceived.peerId;
+    const BoardRole senderRole = getRoleConfig(sender).role;
+    if (!isPlayer(senderRole) || message.fromNodeId != sender ||
+        message.gameId != state->gameId) {
+        return;
+    }
+    const scorebot::Player player = toRulePlayer(senderRole);
+    const scorebot::Snapshot rules = toRules(*state);
+    if (!scorebot::isConnected(rules, player) ||
+        (rules.rosterMask & (1u << scorebot::playerIndex(player))) == 0) {
+        return;
+    }
+    DEBUG_PRINTF("Player activity: from=%08lx game=%lu\n",
+                 static_cast<unsigned long>(sender),
+                 static_cast<unsigned long>(message.gameId));
+    coordinator->noteInteraction();
 }
 
 void onNewPeer(GameState* state, const Event& event, Coordinator* coordinator) {
@@ -371,7 +522,9 @@ GameState::GameState()
       whosTurn(BoardRole::Unknown),
       scores{},
       connectedMask(0),
+      rosterMask(0),
       gameStarted(false),
+      gameId(0),
       term(0),
       version(0),
       leaderId(0),
@@ -384,6 +537,7 @@ GameState::GameState()
       pendingPass(false),
       pendingMessage(),
       pendingSentMs(0),
+      lastActivitySentMs(0),
       rotaryPressStartedMs(0) {}
 
 void GameState::restore() {
@@ -424,6 +578,19 @@ void GameState::refreshDisplays(Coordinator* coordinator) const {
 
 void GameState::heartbeat(Coordinator* coordinator) {
     const uint32_t now = millis();
+    const uint32_t pressStartedMs = rotaryPressStartedMs.load();
+    if (pressStartedMs != 0 &&
+        static_cast<uint32_t>(now - pressStartedMs) >= kOtaArmHoldMs) {
+        const bool stillPressed = coordinator->rotaryEncoder.pressed();
+        rotaryPressStartedMs.store(0);
+        if (scorebot::otaArmHoldReached(
+                stillPressed, now, pressStartedMs, kOtaArmHoldMs)) {
+            // Arm as soon as the threshold is reached. This gives immediate
+            // feedback and does not depend on receiving a second interrupt
+            // when the button is released.
+            showOtaArmed(coordinator);
+        }
+    }
     if (coordinator->myRole() != BoardRole::Leader) {
         // A notification can be received while the leader is briefly busy. Keep
         // the original operation id and retry until a newer snapshot commits it.
@@ -467,7 +634,12 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
             const String json = event.messageReceived.message;
             if (PlayerMessage::isPlayerMessage(json)) {
                 onPlayerMessage(this, event, coordinator);
+            } else if (PlayerActivityMessage::isPlayerActivityMessage(json)) {
+                onPlayerActivityMessage(this, event, coordinator);
             } else {
+                const bool wasGameStarted = gameStarted;
+                const uint32_t previousGameId = gameId;
+                const uint32_t previousTerm = term;
                 const SnapshotDecodeResult decoded = decodeSnapshot(*this, json);
                 if (decoded == SnapshotDecodeResult::Invalid ||
                     decoded == SnapshotDecodeResult::Older) {
@@ -476,8 +648,37 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                 const BoardRole myRole = coordinator->myRole();
                 if (isPlayer(myRole)) {
                     coordinator->ble.confirmLeader(event.messageReceived.connectionHandle);
+                    const bool acknowledged = scorebot::operationAcknowledged(
+                        pendingOperation, operationFor(*this, myRole));
+                    const scorebot::PendingDisposition pendingDisposition =
+                        scorebot::pendingDisposition(
+                            pendingOperation != 0, acknowledged,
+                            gameId != previousGameId, term != previousTerm);
+                    if (pendingDisposition == scorebot::PendingDisposition::Restore) {
+                        // The authoritative epoch changed before this request
+                        // was committed. Restore its delta for explicit retry.
+                        myScore += pendingScore;
+                    }
                     localOperation = scorebot::reconcileOperationId(
                         localOperation, operationFor(*this, myRole));
+                    if (pendingDisposition != scorebot::PendingDisposition::Keep) {
+                        pendingOperation = 0;
+                        pendingScore = 0;
+                        pendingPass = false;
+                        pendingMessage = "";
+                        pendingSentMs = 0;
+                    }
+                    if (gameId != previousGameId || (wasGameStarted && !gameStarted)) {
+                        // A leaderboard reset starts a clean lobby. Discard
+                        // transient input and any request from the old game.
+                        pendingOperation = 0;
+                        pendingScore = 0;
+                        pendingPass = false;
+                        pendingMessage = "";
+                        pendingSentMs = 0;
+                        myScore = 0;
+                        coordinator->rotaryEncoder.reset();
+                    }
                 }
                 if (decoded == SnapshotDecodeResult::Equal) {
                     // A rebooted player commonly receives only equal revision
@@ -485,17 +686,6 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                     leaderless = false;
                     refreshDisplays(coordinator);
                     break;
-                }
-                if (isPlayer(myRole)) {
-                    if (pendingOperation != 0 && operationFor(*this, myRole) >= pendingOperation) {
-                        myScore = 0;
-                        coordinator->rotaryEncoder.reset();
-                        pendingOperation = 0;
-                        pendingScore = 0;
-                        pendingPass = false;
-                        pendingMessage = "";
-                        pendingSentMs = 0;
-                    }
                 }
                 if (!persist()) {
                     FATAL_ERROR(ErrorCode::STATE_PERSIST_FAILED, "player state replication");

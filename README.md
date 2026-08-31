@@ -71,15 +71,24 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
 - Every accepted score or turn action is an atomic, versioned commit on the leaderboard.
 - The committed snapshot is persisted locally and replicated to connected player boards. Each board retains its latest snapshot in flash, so a rebooted board reconnects and resumes the game state.
-- Player requests carry a monotonic operation ID. Repeated notifications are ignored, and an out-of-turn pass is rejected without changing a score.
-- A player may submit an add/correction while it is another player's turn; only the active player may pass the turn. This lets accidental scoring be corrected without weakening turn control.
-- If the leaderboard is unavailable, player boards show `dEGr` and reject new game actions. They resume automatically when the leaderboard reconnects; this prevents competing versions of the score while preserving the last committed state.
+- Player requests carry a monotonic operation ID, so repeated notifications are ignored. Scoring and turn changes are separate permissions: every connected rostered player may score, while only the active player may advance the turn.
+- **OK** always commits the visible score delta. For the active player it also passes the turn; out of turn it commits the score without changing the turn. This lets accidental scoring be corrected without weakening turn control.
+- If the leaderboard is unavailable, player boards always show `PAIR` and reject new game actions. They resume automatically when the leaderboard reconnects; this prevents competing versions of the score while preserving the last committed state.
+
+### Game controls
+
+- In the lobby, the leaderboard shows the names of connected players. Press its **ADD/Start** button to freeze that roster and start with Red, or the first connected color after Red.
+- A paired player in the lobby shows idle dashes. During gameplay, **-1**, **+1**, **+5**, or the rotary encoder build a visible score delta. **ADD** submits it without changing the turn. **OK** also submits it; if that player owns the turn, OK advances it and clears `GO` and the turn light immediately while the leaderboard confirms the operation.
+- During gameplay the leaderboard shows scores only for rostered boards that are currently connected. Unseen or disconnected player positions are blank; `PAIR` is reserved for the open lobby.
+- The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. Player interaction wakes the leaderboard displays and turn light; after five quiet seconds they fade to their minimum visible levels.
+- On dual-core ESP32-S3 boards, the Bluetooth controller and NimBLE host are pinned to radio Core 0. The Arduino loop, UI dispatcher, I2C input/display work, and non-blocking fades run on application Core 1; BLE callbacks only copy gameplay messages into the application queue.
+- During a game, briefly press the leaderboard's rotary encoder to zero every score and return to an open lobby. Holding it for three seconds still arms OTA. Persisted scores survive ordinary power cycles until this explicit reset.
 
 ## BLE OTA updates
 
 After initially flashing firmware by USB, an individual board can be updated from the laptop without joining a Wi-Fi network:
 
-1. Hold and release that board's rotary button for at least three seconds. Its display shows `OTA ` and opens a ten-minute update window.
+1. Hold that board's rotary button for at least three seconds. Its display shows `OTA ` as soon as the hold is recognized and opens a ten-minute update window.
 2. On the laptop, run `just flash <board-id>` (the board advertises as `Scorebot-<board-id>`). If it is the only Scorebot board nearby, `just flash` selects it automatically.
 
 To update every board at once, locally arm each board first and run `just flash-all`. The laptop updates them sequentially and reports any board that was not armed or could not be reached.
@@ -97,8 +106,6 @@ The BLE service and every game message carry a wire-protocol version. A leaderbo
 - SOS light when idle
 - IR receiver for configuration
 - Brightness control based on turn/winning status
-- Score commitment vs turn passing logic
-- Leaderboard buttons functionality
 
 ## Hardware Notes
 

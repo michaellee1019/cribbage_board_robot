@@ -16,7 +16,6 @@
 - [ ] SOS light when idle
 - [ ] IR receiver for configuration  
 - [ ] Brightness control based on turn/winning status
-- [ ] Leaderboard buttons functionality
 
 ### Code Quality Improvements
 - [ ] Create typedef for node/peer ID type (`lib/scorebot/src/MyBle.hpp`)
@@ -39,7 +38,8 @@
 
 ## ✅ Done
 
-*(Completed items will be moved here)*
+- [x] Score commitment is separate from turn passing; out-of-turn corrections remain valid.
+- [x] Leaderboard ADD/Start and OK/Reset controls.
 
 ---
 

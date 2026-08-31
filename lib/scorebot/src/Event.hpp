@@ -1,6 +1,8 @@
 #ifndef EVENT_H
 #define EVENT_H
 
+#include <Protocol.hpp>
+
 #include <cstdint>
 
 enum class EventType {
@@ -32,7 +34,7 @@ struct NewPeerEvent {
 struct MessageReceivedEvent {
     uint32_t peerId;
     uint16_t connectionHandle;
-    char message[256];
+    char message[scorebot::kMaxWireMessageSize + 1];
 };
 struct StateUpdateEvent {};
 

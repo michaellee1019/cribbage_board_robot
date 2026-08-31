@@ -30,4 +30,21 @@ constexpr uint32_t reconcileOperationId(uint32_t local, uint32_t replicated) {
     return std::max(local, replicated);
 }
 
+constexpr bool operationAcknowledged(uint32_t pending, uint32_t replicated) {
+    return pending != 0 && replicated >= pending;
+}
+
+enum class PendingDisposition { Keep, Clear, Restore };
+
+constexpr PendingDisposition pendingDisposition(
+    bool hasPending, bool acknowledged, bool gameChanged, bool leaderTermChanged) {
+    if (!hasPending) {
+        return PendingDisposition::Keep;
+    }
+    if (acknowledged || gameChanged) {
+        return PendingDisposition::Clear;
+    }
+    return leaderTermChanged ? PendingDisposition::Restore : PendingDisposition::Keep;
+}
+
 }  // namespace scorebot

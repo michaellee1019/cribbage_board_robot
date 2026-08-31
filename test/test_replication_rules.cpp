@@ -7,6 +7,7 @@
 
 using scorebot::Revision;
 using scorebot::RevisionOrder;
+using scorebot::PendingDisposition;
 
 int main() {
     assert(scorebot::compareRevision({2, 7}, {2, 7}) == RevisionOrder::Equal);
@@ -16,6 +17,20 @@ int main() {
     assert(scorebot::compareRevision({3, 0}, {2, 99}) == RevisionOrder::Newer);
     assert(scorebot::reconcileOperationId(3, 9) == 9);
     assert(scorebot::reconcileOperationId(11, 9) == 11);
+    assert(scorebot::operationAcknowledged(9, 9));
+    assert(scorebot::operationAcknowledged(9, 10));
+    assert(!scorebot::operationAcknowledged(9, 8));
+    assert(!scorebot::operationAcknowledged(0, 10));
+    assert(scorebot::pendingDisposition(false, false, false, true) ==
+           PendingDisposition::Keep);
+    assert(scorebot::pendingDisposition(true, true, false, false) ==
+           PendingDisposition::Clear);
+    assert(scorebot::pendingDisposition(true, false, true, true) ==
+           PendingDisposition::Clear);
+    assert(scorebot::pendingDisposition(true, false, false, true) ==
+           PendingDisposition::Restore);
+    assert(scorebot::pendingDisposition(true, false, false, false) ==
+           PendingDisposition::Keep);
     std::cout << "Replication-rule tests passed\n";
 }
 

@@ -4,6 +4,7 @@
 #include <Event.hpp>
 #include <BoardRole.hpp>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <Arduino.h>
 
@@ -23,7 +24,9 @@ public:
   BoardRole whosTurn;
   std::array<int32_t, 4> scores;
   uint8_t connectedMask;
+  uint8_t rosterMask;
   bool gameStarted;
+  uint32_t gameId;
   uint32_t term;
   uint32_t version;
   uint32_t leaderId;
@@ -36,7 +39,8 @@ public:
   bool pendingPass;
   String pendingMessage;
   uint32_t pendingSentMs;
-  uint32_t rotaryPressStartedMs;
+  uint32_t lastActivitySentMs;
+  std::atomic<uint32_t> rotaryPressStartedMs;
 };
 
 #endif // GAME_STATE_H

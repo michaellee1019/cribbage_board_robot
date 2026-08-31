@@ -9,9 +9,9 @@
 class OtaControlCallbacks;
 class OtaDataCallbacks;
 
-// A locally armed BLE firmware writer. The service is always discoverable, but
-// it accepts START only during the short physical-presence window opened by the
-// rotary-button gesture.
+// A locally armed BLE firmware writer. Player boards advertise the service
+// while waiting for their leaderboard; the leaderboard advertises only during
+// the physical-presence window opened by the rotary-button gesture.
 class OtaUpdate {
 public:
     OtaUpdate();
