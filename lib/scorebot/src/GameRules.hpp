@@ -23,6 +23,7 @@ struct Snapshot {
     std::array<int32_t, kPlayerCount> scores{};
     std::array<uint32_t, kPlayerCount> lastOperation{};
     uint8_t connectedMask{0};
+    uint8_t sleepingMask{0};
     uint8_t rosterMask{0};
     Player turn{Player::None};
     bool started{false};
@@ -58,6 +59,25 @@ inline Player nextConnected(Player current, const Snapshot& snapshot) {
     for (size_t offset = 1; offset <= kPlayerCount; ++offset) {
         const Player candidate = static_cast<Player>((start + offset) % kPlayerCount);
         if (isConnected(snapshot, candidate)) {
+            return candidate;
+        }
+    }
+    return Player::None;
+}
+
+inline Player nextTurnParticipant(Player current, const Snapshot& snapshot) {
+    // Intentional sleep removes a player from the live connection mask, but it
+    // must not remove that player from the frozen turn order. An unexpected
+    // disconnect has no sleeping bit and is still skipped.
+    const uint8_t eligibleMask = snapshot.connectedMask |
+        (snapshot.sleepingMask & snapshot.rosterMask);
+    if (eligibleMask == 0) {
+        return Player::None;
+    }
+    const size_t start = isPlayer(current) ? playerIndex(current) : kPlayerCount - 1;
+    for (size_t offset = 1; offset <= kPlayerCount; ++offset) {
+        const Player candidate = static_cast<Player>((start + offset) % kPlayerCount);
+        if ((eligibleMask & (1u << playerIndex(candidate))) != 0) {
             return candidate;
         }
     }
@@ -133,7 +153,7 @@ inline ApplyResult apply(Snapshot& snapshot, const ScoreAction& action) {
     snapshot.lastOperation[index] = action.operationId;
     const bool turnMayChange = action.passesTurn && snapshot.turn == action.player;
     if (turnMayChange) {
-        snapshot.turn = nextConnected(action.player, snapshot);
+        snapshot.turn = nextTurnParticipant(action.player, snapshot);
     }
     ++snapshot.version;
     return action.passesTurn && !turnMayChange

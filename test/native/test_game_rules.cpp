@@ -143,6 +143,31 @@ void passWrapsAndSkipsDisconnectedRoles() {
     assert(game.turn == Player::Red);  // White is not connected.
 }
 
+void sleepingPlayerKeepsItsPlaceInTurnOrder() {
+    Snapshot game = startedThreePlayerGame();
+    game.sleepingMask |= 1u << scorebot::playerIndex(Player::Blue);
+    assert(scorebot::disconnect(game, Player::Blue));
+
+    assert(scorebot::apply(game, {Player::Red, 0, true, 1}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Blue);
+
+    // The game waits at Blue until that player wakes and rejoins.
+    assert(scorebot::apply(game, {Player::Green, 0, true, 1}) ==
+           ApplyResult::AcceptedWithoutTurnChange);
+    assert(game.turn == Player::Blue);
+    game.sleepingMask &= ~(1u << scorebot::playerIndex(Player::Blue));
+    assert(scorebot::connect(game, Player::Blue));
+    assert(scorebot::apply(game, {Player::Blue, 0, true, 1}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Green);
+}
+
+void unexpectedDisconnectStillSkipsThatPlayer() {
+    Snapshot game = startedThreePlayerGame();
+    assert(scorebot::disconnect(game, Player::Blue));
+    assert(scorebot::apply(game, {Player::Red, 0, true, 1}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Green);
+}
+
 void operationsRequireAnActiveConnectedPlayer() {
     Snapshot game{};
     assert(scorebot::apply(game, {Player::Red, 1, false, 1}) == ApplyResult::GameNotStarted);
@@ -200,6 +225,8 @@ int main() {
     reconnectPreservesFrozenTurn();
     normalPassScoresAndAdvancesExactlyOnce();
     passWrapsAndSkipsDisconnectedRoles();
+    sleepingPlayerKeepsItsPlaceInTurnOrder();
+    unexpectedDisconnectStillSkipsThatPlayer();
     operationsRequireAnActiveConnectedPlayer();
     scoresCannotOverflow();
     completeMultiplayerLifecycle();

@@ -82,6 +82,7 @@ scorebot::Snapshot toRules(const GameState& state) {
         rules.lastOperation[index] = operationFor(state, role);
     }
     rules.connectedMask = state.connectedMask;
+    rules.sleepingMask = state.sleepingMask;
     rules.rosterMask = state.rosterMask;
     return rules;
 }
@@ -91,6 +92,7 @@ void fromRules(GameState& state, const scorebot::Snapshot& rules) {
     state.whosTurn = fromRulePlayer(rules.turn);
     state.version = rules.version;
     state.connectedMask = rules.connectedMask;
+    state.sleepingMask = rules.sleepingMask;
     state.rosterMask = rules.rosterMask;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
@@ -225,6 +227,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
     }
     const std::array<HT16Display*, 4> displays = {
         &coordinator->display1, &coordinator->display2, &coordinator->display3, &coordinator->display4};
+    const bool showSavedScore = scorebot::sleep::showSavedScore(millis());
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         const bool connected = (state.connectedMask & (1u << index)) != 0;
@@ -242,14 +245,18 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 displays[index]->print("PAIR");
                 break;
             case scorebot::LeaderboardDisplayMode::Rejoining:
-                if (scorebot::sleep::showSavedScore(millis())) {
+                if (showSavedScore) {
                     displays[index]->print(strFormat("%d", scoreFor(state, role)));
                 } else {
                     displays[index]->print("PAIR");
                 }
                 break;
             case scorebot::LeaderboardDisplayMode::Sleeping:
-                displays[index]->print("ZZZZ");
+                if (state.gameStarted && inRoster && showSavedScore) {
+                    displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                } else {
+                    displays[index]->print("ZZZZ");
+                }
                 break;
             case scorebot::LeaderboardDisplayMode::Blank:
                 displays[index]->clear();
