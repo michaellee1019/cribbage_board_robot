@@ -2,9 +2,8 @@
 #define GAME_STATE_H
 
 #include <Event.hpp>
-#include <list>
 #include <BoardRole.hpp>
-#include <map>
+#include <array>
 #include <cstdint>
 #include <Arduino.h>
 
@@ -22,14 +21,14 @@ public:
 
   int myScore;
   BoardRole whosTurn;
-  std::map<BoardRole, int> scores;
-  std::list<BoardRole> whosConnected;
+  std::array<int32_t, 4> scores;
+  uint8_t connectedMask;
   bool gameStarted;
   uint32_t term;
   uint32_t version;
   uint32_t leaderId;
   bool leaderless;
-  std::map<BoardRole, uint32_t> lastOperation;
+  std::array<uint32_t, 4> lastOperation;
   uint32_t localOperation;
   uint32_t lastReplicationMs;
   uint32_t pendingOperation;

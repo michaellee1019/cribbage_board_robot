@@ -16,6 +16,8 @@ constexpr uint32_t kLeaderTimeoutMs = 6000;
 constexpr uint16_t kMaxMessageSize = 240;
 constexpr uint32_t kScanDurationMs = 2000;
 constexpr uint32_t kScanBackoffMs = 5000;
+constexpr uint32_t kMaintenanceScanDurationMs = 1000;
+constexpr uint32_t kMaintenanceScanBackoffMs = 20000;
 constexpr size_t kPlayerCount = 4;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
 
@@ -58,11 +60,12 @@ public:
     void onConnect(NimBLEServer*, NimBLEConnInfo&) override {}
 
     void onDisconnect(NimBLEServer*, NimBLEConnInfo& connection, int) override {
+        owner.ota.onDisconnected(connection.getConnHandle());
         if (owner.coordinator->myRole() != BoardRole::Leader &&
             owner.leaderConnectionHandle.load() == connection.getConnHandle()) {
             owner.leaderConnectionHandle.store(kNoConnection);
             owner.leaderConnected.store(false);
-            owner.emit(EventType::BleLeaderLost);
+            owner.leaderLostPending.store(true);
         }
     }
 
@@ -121,10 +124,14 @@ MyBle::MyBle(Coordinator* coordinator)
       scanCallbacks(),
       ota(),
       peers(),
+      pendingLostPeers(),
+      pendingLostPeerCount(0),
       peersMutex(nullptr),
       lastLeaderActivityMs(0),
       leaderConnectionHandle(kNoConnection),
       leaderConnected(false),
+      leaderLostPending(false),
+      droppedMessages(0),
       lastScanStartedMs(0) {}
 
 MyBle::~MyBle() {
@@ -206,8 +213,11 @@ void MyBle::beginScan() {
     }
     NimBLEScan* scan = NimBLEDevice::getScan();
     const uint32_t now = millis();
-    if (scan->isScanning() || peerCount() >= kPlayerCount ||
-        now - lastScanStartedMs < kScanBackoffMs) {
+    const size_t peers = peerCount();
+    const uint32_t scanBackoffMs = peers == 0 ? kScanBackoffMs : kMaintenanceScanBackoffMs;
+    const uint32_t scanDurationMs = peers == 0 ? kScanDurationMs : kMaintenanceScanDurationMs;
+    if (scan->isScanning() || peers >= kPlayerCount ||
+        now - lastScanStartedMs < scanBackoffMs) {
         return;
     }
     scan->setScanCallbacks(scanCallbacks.get(), false);
@@ -215,7 +225,7 @@ void MyBle::beginScan() {
     scan->setInterval(100);
     scan->setWindow(30);
     scan->setMaxResults(0);
-    scan->start(kScanDurationMs, false, true);
+    scan->start(scanDurationMs, false, true);
     lastScanStartedMs = now;
 }
 
@@ -247,7 +257,7 @@ void MyBle::addPeer(NimBLEClient* client) {
             client->disconnect();
             return;
         }
-        peers.emplace(nodeId, Peer{nodeId, client, remoteDownlink});
+        peers.emplace(nodeId, Peer{nodeId, client, remoteDownlink, false});
     }
     if (!remoteUplink->subscribe(true,
         [this, nodeId](NimBLERemoteCharacteristic*, uint8_t* data, size_t length, bool) {
@@ -258,7 +268,6 @@ void MyBle::addPeer(NimBLEClient* client) {
         client->disconnect();
         return;
     }
-    emit(EventType::NewPeer, nodeId);
 }
 
 void MyBle::removePeer(NimBLEClient* client) {
@@ -274,7 +283,10 @@ void MyBle::removePeer(NimBLEClient* client) {
     }
     }
     if (nodeId != 0) {
-        emit(EventType::LostPeer, nodeId);
+        ScopedSemaphore lock(peersMutex);
+        if (pendingLostPeerCount < pendingLostPeers.size()) {
+            pendingLostPeers[pendingLostPeerCount++] = nodeId;
+        }
     }
 }
 
@@ -312,6 +324,51 @@ void MyBle::reconcilePeers() {
     }
     for (size_t index = 0; index < count; ++index) {
         removePeer(disconnected[index]);
+    }
+    flushLifecycleEvents();
+}
+
+void MyBle::flushLifecycleEvents() {
+    std::array<uint32_t, kPlayerCount> newPeers{};
+    std::array<uint32_t, kPlayerCount> lostPeers{};
+    size_t newCount = 0;
+    size_t lostCount = 0;
+    {
+        ScopedSemaphore lock(peersMutex);
+        for (const auto& [nodeId, peer] : peers) {
+            if (!peer.announced && newCount < newPeers.size()) {
+                newPeers[newCount++] = nodeId;
+            }
+        }
+        for (size_t index = 0; index < pendingLostPeerCount; ++index) {
+            lostPeers[lostCount++] = pendingLostPeers[index];
+        }
+    }
+
+    for (size_t index = 0; index < newCount; ++index) {
+        if (emit(EventType::NewPeer, newPeers[index])) {
+            ScopedSemaphore lock(peersMutex);
+            const auto peer = peers.find(newPeers[index]);
+            if (peer != peers.end()) {
+                peer->second.announced = true;
+            }
+        }
+    }
+    for (size_t index = 0; index < lostCount; ++index) {
+        if (!emit(EventType::LostPeer, lostPeers[index])) {
+            continue;
+        }
+        ScopedSemaphore lock(peersMutex);
+        for (size_t pending = 0; pending < pendingLostPeerCount; ++pending) {
+            if (pendingLostPeers[pending] != lostPeers[index]) {
+                continue;
+            }
+            for (size_t next = pending + 1; next < pendingLostPeerCount; ++next) {
+                pendingLostPeers[next - 1] = pendingLostPeers[next];
+            }
+            --pendingLostPeerCount;
+            break;
+        }
     }
 }
 
@@ -366,10 +423,16 @@ void MyBle::receive(uint32_t from, const uint8_t* data, size_t length, uint16_t 
     event.messageReceived.connectionHandle = connectionHandle;
     memcpy(event.messageReceived.message, data, length);
     event.messageReceived.message[length] = '\0';
-    xQueueSend(coordinator->eventQueue, &event, 0);
+    if (!enqueue(event)) {
+        ++droppedMessages;
+    }
 }
 
-void MyBle::emit(EventType type, uint32_t nodeId) {
+bool MyBle::enqueue(const Event& event) {
+    return xQueueSend(coordinator->eventQueue, &event, 0) == pdPASS;
+}
+
+bool MyBle::emit(EventType type, uint32_t nodeId) {
     Event event{};
     event.type = type;
     if (type == EventType::NewPeer) {
@@ -377,7 +440,7 @@ void MyBle::emit(EventType type, uint32_t nodeId) {
     } else if (type == EventType::LostPeer) {
         event.lostPeer.peerId = nodeId;
     }
-    xQueueSend(coordinator->eventQueue, &event, 0);
+    return enqueue(event);
 }
 
 void MyBle::loop() {
@@ -392,6 +455,9 @@ void MyBle::loop() {
     if (leaderConnected.load() && now - lastLeaderActivityMs.load() > kLeaderTimeoutMs) {
         leaderConnected.store(false);
         leaderConnectionHandle.store(kNoConnection);
-        emit(EventType::BleLeaderLost);
+        leaderLostPending.store(true);
+    }
+    if (leaderLostPending.load() && emit(EventType::BleLeaderLost)) {
+        leaderLostPending.store(false);
     }
 }

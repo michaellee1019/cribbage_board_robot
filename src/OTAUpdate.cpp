@@ -1,4 +1,5 @@
 #include <OtaUpdate.hpp>
+#include <OtaTransferRules.hpp>
 
 #include <Update.h>
 
@@ -16,14 +17,16 @@ constexpr char kOtaStatusUuid[] = "c6a861b3-2f9d-46bc-9a23-bb9c89a519be";
 constexpr uint32_t kArmWindowMs = 10 * 60 * 1000;
 constexpr uint32_t kRestartDelayMs = 750;
 constexpr uint16_t kChunkCapacity = 512;
+constexpr uint32_t kTransferTimeoutMs = 30000;
+constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
 }  // namespace
 
 class OtaControlCallbacks final : public NimBLECharacteristicCallbacks {
 public:
     explicit OtaControlCallbacks(OtaUpdate& owner) : owner(owner) {}
 
-    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
-        owner.handleControl(characteristic->getValue());
+    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override {
+        owner.handleControl(characteristic->getValue(), connection.getConnHandle());
     }
 
 private:
@@ -34,8 +37,8 @@ class OtaDataCallbacks final : public NimBLECharacteristicCallbacks {
 public:
     explicit OtaDataCallbacks(OtaUpdate& owner) : owner(owner) {}
 
-    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
-        owner.handleData(characteristic->getValue());
+    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override {
+        owner.handleData(characteristic->getValue(), connection.getConnHandle());
     }
 
 private:
@@ -44,9 +47,13 @@ private:
 
 OtaUpdate::OtaUpdate()
     : statusCharacteristic(nullptr),
+      server(nullptr),
       armUntilMs(0),
       expectedBytes(0),
       receivedBytes(0),
+      writerConnectionHandle(kNoConnection),
+      lastProgressMs(0),
+      timeoutDisconnectRequested(false),
       restartAtMs(0),
       armed(false),
       writing(false),
@@ -56,6 +63,7 @@ OtaUpdate::OtaUpdate()
 OtaUpdate::~OtaUpdate() = default;
 
 void OtaUpdate::setup(NimBLEServer* server) {
+    this->server = server;
     NimBLEService* service = server->createService(kOtaServiceUuid);
     NimBLECharacteristic* control = service->createCharacteristic(
         kOtaControlUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, 64);
@@ -100,22 +108,41 @@ void OtaUpdate::abort(const char* status) {
     armed.store(false);
     expectedBytes = 0;
     receivedBytes = 0;
+    writerConnectionHandle.store(kNoConnection);
+    lastProgressMs.store(0);
+    timeoutDisconnectRequested.store(false);
     setStatus(status);
 }
 
-void OtaUpdate::handleControl(const NimBLEAttValue& value) {
+void OtaUpdate::handleControl(const NimBLEAttValue& value, uint16_t connectionHandle) {
     const String command = String(value.c_str()).substring(0, value.length());
     if (command == "ABORT") {
+        if (writing.load() && !scorebot::otaTransferOwnedBy(
+                                  true, writerConnectionHandle.load(), connectionHandle)) {
+            setStatus("ERR:OWNER");
+            return;
+        }
         abort("ABORTED");
         return;
     }
     if (command == "COMMIT") {
-        if (!writing.load() || receivedBytes != expectedBytes || !Update.end(true)) {
+        if (!writing.load()) {
+            setStatus("ERR:NOT_WRITING");
+            return;
+        }
+        if (!scorebot::otaTransferOwnedBy(
+                true, writerConnectionHandle.load(), connectionHandle)) {
+            setStatus("ERR:OWNER");
+            return;
+        }
+        if (receivedBytes != expectedBytes || !Update.end(true)) {
             abort("ERR:COMMIT");
             return;
         }
         writing.store(false);
         armed.store(false);
+        writerConnectionHandle.store(kNoConnection);
+        lastProgressMs.store(0);
         setStatus("DONE");
         restartAtMs.store(millis() + kRestartDelayMs);
         return;
@@ -128,6 +155,10 @@ void OtaUpdate::handleControl(const NimBLEAttValue& value) {
         setStatus("ERR:NOT_ARMED");
         return;
     }
+    if (writing.load()) {
+        setStatus("ERR:BUSY");
+        return;
+    }
     const uint32_t size = static_cast<uint32_t>(strtoul(command.c_str() + 6, nullptr, 10));
     if (size == 0 || !Update.begin(size, U_FLASH)) {
         abort("ERR:START");
@@ -135,18 +166,28 @@ void OtaUpdate::handleControl(const NimBLEAttValue& value) {
     }
     expectedBytes = size;
     receivedBytes = 0;
+    writerConnectionHandle.store(connectionHandle);
+    lastProgressMs.store(millis());
+    timeoutDisconnectRequested.store(false);
     writing.store(true);
     setStatus("READY");
 }
 
-void OtaUpdate::handleData(const NimBLEAttValue& value) {
+void OtaUpdate::handleData(const NimBLEAttValue& value, uint16_t connectionHandle) {
     if (!writing.load()) {
         setStatus("ERR:NOT_WRITING");
         return;
     }
+    if (!scorebot::otaTransferOwnedBy(
+            writing.load(), writerConnectionHandle.load(), connectionHandle)) {
+        setStatus("ERR:OWNER");
+        return;
+    }
     const size_t length = value.length();
     std::array<uint8_t, kChunkCapacity> chunk{};
-    if (length == 0 || length > chunk.size() || receivedBytes + length > expectedBytes) {
+    if (length > chunk.size() || !scorebot::otaCanAppend(
+                                     writing.load(), writerConnectionHandle.load(), connectionHandle,
+                                     receivedBytes, expectedBytes, length)) {
         abort("ERR:WRITE");
         return;
     }
@@ -158,9 +199,24 @@ void OtaUpdate::handleData(const NimBLEAttValue& value) {
         return;
     }
     receivedBytes += length;
+    lastProgressMs.store(millis());
+}
+
+void OtaUpdate::onDisconnected(uint16_t connectionHandle) {
+    if (scorebot::otaTransferOwnedBy(
+            writing.load(), writerConnectionHandle.load(), connectionHandle)) {
+        abort(timeoutDisconnectRequested.load() ? "ERR:TIMEOUT" : "ABORTED");
+    }
 }
 
 void OtaUpdate::loop() {
+    if (server != nullptr && scorebot::otaTransferTimedOut(
+                              writing.load(), millis(), lastProgressMs.load(), kTransferTimeoutMs) &&
+        !timeoutDisconnectRequested.exchange(true)) {
+        if (!server->disconnect(writerConnectionHandle.load())) {
+            timeoutDisconnectRequested.store(false);
+        }
+    }
     if (armed.load() && !writing.load() && !isArmed()) {
         armed.store(false);
         setStatus("IDLE");

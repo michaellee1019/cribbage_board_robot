@@ -3,6 +3,7 @@
 #include <GameRules.hpp>
 #include <Messages.hpp>
 #include <Protocol.hpp>
+#include <ReplicationRules.hpp>
 #include <utils.hpp>
 
 #include <Preferences.h>
@@ -37,8 +38,20 @@ bool isPlayer(BoardRole role) {
     return roleIndex(role) < std::size(kPlayers);
 }
 
-bool contains(const std::list<BoardRole>& roles, BoardRole role) {
-    return std::find(roles.begin(), roles.end(), role) != roles.end();
+int32_t& scoreFor(GameState& state, BoardRole role) {
+    return state.scores.at(roleIndex(role));
+}
+
+const int32_t& scoreFor(const GameState& state, BoardRole role) {
+    return state.scores.at(roleIndex(role));
+}
+
+uint32_t& operationFor(GameState& state, BoardRole role) {
+    return state.lastOperation.at(roleIndex(role));
+}
+
+const uint32_t& operationFor(const GameState& state, BoardRole role) {
+    return state.lastOperation.at(roleIndex(role));
 }
 
 scorebot::Player toRulePlayer(BoardRole role) {
@@ -57,12 +70,10 @@ scorebot::Snapshot toRules(const GameState& state) {
     rules.version = state.version;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
-        rules.scores[index] = state.scores.at(role);
-        rules.lastOperation[index] = state.lastOperation.at(role);
-        if (contains(state.whosConnected, role)) {
-            rules.connectedMask |= 1u << index;
-        }
+        rules.scores[index] = scoreFor(state, role);
+        rules.lastOperation[index] = operationFor(state, role);
     }
+    rules.connectedMask = state.connectedMask;
     return rules;
 }
 
@@ -70,14 +81,11 @@ void fromRules(GameState& state, const scorebot::Snapshot& rules) {
     state.gameStarted = rules.started;
     state.whosTurn = fromRulePlayer(rules.turn);
     state.version = rules.version;
-    state.whosConnected.clear();
+    state.connectedMask = rules.connectedMask;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
-        state.scores[role] = rules.scores[index];
-        state.lastOperation[role] = rules.lastOperation[index];
-        if ((rules.connectedMask & (1u << index)) != 0) {
-            state.whosConnected.push_back(role);
-        }
+        scoreFor(state, role) = rules.scores[index];
+        operationFor(state, role) = rules.lastOperation[index];
     }
 }
 
@@ -93,23 +101,19 @@ String snapshotJson(const GameState& state) {
 
     JsonArray scores = document["scores"].to<JsonArray>();
     JsonArray operations = document["operations"].to<JsonArray>();
-    uint8_t connectedMask = 0;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
-        scores.add(state.scores.at(role));
-        operations.add(state.lastOperation.at(role));
-        if (contains(state.whosConnected, role)) {
-            connectedMask |= 1u << index;
-        }
+        scores.add(scoreFor(state, role));
+        operations.add(operationFor(state, role));
     }
-    document["connected"] = connectedMask;
+    document["connected"] = state.connectedMask;
 
     String encoded;
     serializeJson(document, encoded);
     return encoded;
 }
 
-enum class SnapshotDecodeResult { Invalid, Stale, Applied };
+enum class SnapshotDecodeResult { Invalid, Older, Equal, Applied };
 
 SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     JsonDocument document;
@@ -144,10 +148,13 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
             return SnapshotDecodeResult::Invalid;
         }
     }
-    // Heartbeats carry the current snapshot. Equal revisions prove liveness
-    // but must not cause another flash write.
-    if (term < state.term || (term == state.term && version <= state.version)) {
-        return SnapshotDecodeResult::Stale;
+    switch (scorebot::compareRevision({term, version}, {state.term, state.version})) {
+        case scorebot::RevisionOrder::Older:
+            return SnapshotDecodeResult::Older;
+        case scorebot::RevisionOrder::Equal:
+            return SnapshotDecodeResult::Equal;
+        case scorebot::RevisionOrder::Newer:
+            break;
     }
 
     state.term = term;
@@ -155,14 +162,11 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     state.leaderId = document["leader"].as<uint32_t>();
     state.gameStarted = document["started"] | false;
     state.whosTurn = turn;
-    state.whosConnected.clear();
+    state.connectedMask = static_cast<uint8_t>(connectedMask);
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
-        state.scores[role] = scores[index].as<int>();
-        state.lastOperation[role] = operations[index].as<uint32_t>();
-        if ((connectedMask & (1u << index)) != 0) {
-            state.whosConnected.push_back(role);
-        }
+        scoreFor(state, role) = scores[index].as<int32_t>();
+        operationFor(state, role) = operations[index].as<uint32_t>();
     }
     state.leaderless = false;
     return SnapshotDecodeResult::Applied;
@@ -193,7 +197,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
     const std::array<HT16Display*, 4> displays = {
         &coordinator->display1, &coordinator->display2, &coordinator->display3, &coordinator->display4};
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
-        displays[index]->print(strFormat("%d", state.scores.at(kPlayers[index])));
+        displays[index]->print(strFormat("%d", scoreFor(state, kPlayers[index])));
     }
 }
 
@@ -274,9 +278,9 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
         return;
     }
 
-    const uint8_t pin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
-    const uint8_t value = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
-    coordinator->buttonGrid.buttonGpio.clearInterrupts();
+    const ButtonGrid::Interrupt interrupt = coordinator->buttonGrid.consumeInterrupt();
+    const uint8_t pin = interrupt.pin;
+    const uint16_t value = interrupt.captured;
     if (value != ButtonGrid::intValReleased && value != ButtonGrid::intValReleased2) {
         return;
     }
@@ -365,20 +369,14 @@ void onLostPeer(GameState* state, const Event& event, Coordinator* coordinator) 
 GameState::GameState()
     : myScore(0),
       whosTurn(BoardRole::Unknown),
-      scores{{BoardRole::Player_Red, 0},
-             {BoardRole::Player_Blue, 0},
-             {BoardRole::Player_Green, 0},
-             {BoardRole::Player_White, 0}},
-      whosConnected(),
+      scores{},
+      connectedMask(0),
       gameStarted(false),
       term(0),
       version(0),
       leaderId(0),
       leaderless(true),
-      lastOperation{{BoardRole::Player_Red, 0},
-                    {BoardRole::Player_Blue, 0},
-                    {BoardRole::Player_Green, 0},
-                    {BoardRole::Player_White, 0}},
+      lastOperation{},
       localOperation(0),
       lastReplicationMs(0),
       pendingOperation(0),
@@ -471,19 +469,25 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                 onPlayerMessage(this, event, coordinator);
             } else {
                 const SnapshotDecodeResult decoded = decodeSnapshot(*this, json);
-                if (decoded == SnapshotDecodeResult::Invalid) {
+                if (decoded == SnapshotDecodeResult::Invalid ||
+                    decoded == SnapshotDecodeResult::Older) {
                     break;
                 }
                 const BoardRole myRole = coordinator->myRole();
                 if (isPlayer(myRole)) {
                     coordinator->ble.confirmLeader(event.messageReceived.connectionHandle);
+                    localOperation = scorebot::reconcileOperationId(
+                        localOperation, operationFor(*this, myRole));
                 }
-                if (decoded == SnapshotDecodeResult::Stale) {
+                if (decoded == SnapshotDecodeResult::Equal) {
+                    // A rebooted player commonly receives only equal revision
+                    // heartbeats. They prove the fixed leaderboard is live.
+                    leaderless = false;
+                    refreshDisplays(coordinator);
                     break;
                 }
                 if (isPlayer(myRole)) {
-                    localOperation = std::max(localOperation, lastOperation[myRole]);
-                    if (pendingOperation != 0 && lastOperation[myRole] >= pendingOperation) {
+                    if (pendingOperation != 0 && operationFor(*this, myRole) >= pendingOperation) {
                         myScore = 0;
                         coordinator->rotaryEncoder.reset();
                         pendingOperation = 0;

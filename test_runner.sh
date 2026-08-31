@@ -19,6 +19,10 @@ run_logic_tests() {
     "$test_dir/error_handler"
     g++ -std=c++17 -Ilib/scorebot/src test/test_game_rules.cpp -o "$test_dir/game_rules"
     "$test_dir/game_rules"
+    g++ -std=c++17 -Ilib/scorebot/src test/test_replication_rules.cpp -o "$test_dir/replication_rules"
+    "$test_dir/replication_rules"
+    g++ -std=c++17 -Ilib/scorebot/src test/test_ota_transfer_rules.cpp -o "$test_dir/ota_transfer_rules"
+    "$test_dir/ota_transfer_rules"
 }
 
 case "${1:-embedded}" in

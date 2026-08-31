@@ -22,18 +22,23 @@ public:
     void setup(NimBLEServer* server);
     void arm();
     bool isArmed() const;
+    void onDisconnected(uint16_t connectionHandle);
     void loop();
 
 private:
-    void handleControl(const NimBLEAttValue& value);
-    void handleData(const NimBLEAttValue& value);
+    void handleControl(const NimBLEAttValue& value, uint16_t connectionHandle);
+    void handleData(const NimBLEAttValue& value, uint16_t connectionHandle);
     void setStatus(const char* status);
     void abort(const char* status);
 
     NimBLECharacteristic* statusCharacteristic;
+    NimBLEServer* server;
     std::atomic<uint32_t> armUntilMs;
     uint32_t expectedBytes;
     uint32_t receivedBytes;
+    std::atomic<uint16_t> writerConnectionHandle;
+    std::atomic<uint32_t> lastProgressMs;
+    std::atomic<bool> timeoutDisconnectRequested;
     std::atomic<uint32_t> restartAtMs;
     std::atomic<bool> armed;
     std::atomic<bool> writing;
