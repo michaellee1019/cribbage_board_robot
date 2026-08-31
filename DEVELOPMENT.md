@@ -1,6 +1,6 @@
-# Cribbage Board Robot
+# Scorebot development guide
 
-ESP32-based mesh networked cribbage scoring system with multiple player devices and a leaderboard display.
+ESP32-based mesh-networked scoring system with player boards and a leaderboard.
 
 ## Project Overview
 

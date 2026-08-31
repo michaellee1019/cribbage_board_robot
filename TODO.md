@@ -1,4 +1,4 @@
-# Cribbage Board Robot - TODO Board
+# Scorebot TODO
 
 ## 🚨 Critical Issues
 
@@ -12,7 +12,7 @@
 
 ## 📋 Backlog
 
-### Core Features (from CLAUDE.md)
+### Core Features
 - [ ] SOS light when idle
 - [ ] IR receiver for configuration  
 - [ ] Brightness control based on turn/winning status

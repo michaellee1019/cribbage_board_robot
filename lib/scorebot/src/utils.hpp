@@ -4,8 +4,8 @@
 #include <Wire.h>
 #include <Arduino.h>
 
-// Debug macros - compile to nothing when CRIBBAGE_DEBUG=0 for maximum efficiency
-#if CRIBBAGE_DEBUG
+// Debug macros - compile to nothing when SCOREBOT_DEBUG=0 for maximum efficiency
+#if SCOREBOT_DEBUG
     #define DEBUG_PRINT(x) Serial.print(x)
     #define DEBUG_PRINTLN(x) Serial.println(x)
     #define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)

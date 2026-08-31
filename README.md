@@ -1,6 +1,6 @@
-# Cribbage Board Robot
+# Scorebot
 
-ESP32-based mesh networked cribbage scoring system with multiple player devices and a leaderboard display.
+ESP32-based mesh-networked scoring system with player boards and a leaderboard.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ pio project metadata --json-output -e <environment>
 - **Devices**: Multiple player scoring units + leaderboard controller
 - **Hardware**: 7-segment displays, rotary encoders, button grids, LEDs
 
-See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
 ## TODO Features
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Test runner script for Cribbage Board Robot
+# Test runner script for Scorebot
 # Makes it easy to run different types of tests
 
 set -e
 
-echo "🧪 Cribbage Board Robot Test Runner"
+echo "🧪 Scorebot Test Runner"
 echo "=================================="
 
 run_logic_tests() {
