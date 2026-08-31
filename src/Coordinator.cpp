@@ -153,7 +153,9 @@ void Coordinator::loop() {
     this->state.heartbeat(this);
     updateDisplayBrightness();
     const bool shouldSleep = scorebot::sleep::isDue(
-        millis(), awakeSinceMs, lastInteractionMs.load(), sleepBlocked());
+        millis(), awakeSinceMs, lastInteractionMs.load(), sleepBlocked(),
+        scorebot::sleep::idleTimeoutMs(
+            myRole() == BoardRole::Leader, state.myScore != 0));
     if (shouldSleep) {
         sleeping.store(true);
     }
@@ -165,7 +167,7 @@ void Coordinator::loop() {
 }
 
 bool Coordinator::sleepBlocked() const {
-    return state.myScore != 0 || state.pendingOperation != 0 ||
+    return state.pendingOperation != 0 ||
            state.rotaryPressStartedMs.load() != 0 ||
            pendingInputEvents.load(std::memory_order_acquire) != 0 ||
            !ble.sleepAllowed();
