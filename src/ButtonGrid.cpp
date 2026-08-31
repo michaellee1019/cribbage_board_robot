@@ -25,6 +25,8 @@ void ButtonGrid::setup() {
         buttonGpio.setupInterruptPin(pin, CHANGE);
     }
     pinMode(interruptPin, INPUT_PULLUP);
-    attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, CHANGE);
+    // MCP23x17 is configured active-low; reading INTCAP clears it and creates
+    // a rising edge, so react only to the asserted edge.
+    attachInterruptArg(digitalPinToInterrupt(interruptPin), buttonISR, this, FALLING);
     buttonGpio.clearInterrupts();
 }

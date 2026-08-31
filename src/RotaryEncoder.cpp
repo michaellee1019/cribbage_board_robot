@@ -5,7 +5,6 @@
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
     const auto* self = static_cast<RotaryEncoder*>(arg);
-    DEBUG_PRINTF("DEBUG: Rotary encoder ISR triggered:\n");
     Event event{};
     event.type = EventType::ButtonPressed;
     event.press.buttonName = ButtonName::RotaryEncoder;
@@ -45,7 +44,7 @@ void RotaryEncoder::setup() {
     ss.setGPIOInterrupts(mask, true);
     ss.enableEncoderInterrupt();
 
-    attachInterruptArg(digitalPinToInterrupt(SEESAW_INTERRUPT), rotaryEncoderISR, this, CHANGE);
+    attachInterruptArg(digitalPinToInterrupt(SEESAW_INTERRUPT), rotaryEncoderISR, this, FALLING);
 
     fade.setup();
     this->setColor(0x000000);

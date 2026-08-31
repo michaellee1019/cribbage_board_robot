@@ -14,12 +14,11 @@ class LightFade {
     static constexpr EventBits_t B_DISABLED = BIT1;
 
     Light& light;
-    bool fading;
     EventGroupHandle_t enableEvent;
 
 public:
     explicit LightFade(Light& light)
-        : light{light}, fading{false}, enableEvent{xEventGroupCreate()}
+        : light{light}, enableEvent{xEventGroupCreate()}
     {
         CHECK_POINTER(enableEvent, ErrorCode::EVENT_GROUP_CREATE_FAILED, "LightFade event group");
     }
@@ -37,12 +36,10 @@ public:
     }
 
     void blinkEnabled() {
-        fading = true;
         xEventGroupSetBits(enableEvent, B_ENABLED);
     }
 
     void blinkDisabled() {
-        fading = false;
         xEventGroupSetBits(enableEvent, B_DISABLED);
     }
 
@@ -59,6 +56,7 @@ private:
 
         int brightness = 0;
         bool fadingIn = true;
+        bool fading = false;
 
         while (true) {
             EventBits_t bits = xEventGroupWaitBits(
@@ -66,20 +64,20 @@ private:
                 B_ENABLED | B_DISABLED,
                 pdTRUE /*clear on exit*/,
                 pdFALSE /*wait for all bits*/,
-                0 /* ticks to wait*/
+                fading ? 0 : portMAX_DELAY
             );
 
             if (bits & B_ENABLED) {
-                controller->fading = true;
+                fading = true;
             }
-            else if (bits & B_DISABLED) {
-                controller->fading = false;
+            if (bits & B_DISABLED) {
+                fading = false;
                 controller->light.setBrightness(0);
                 brightness = 0;
                 fadingIn = true;
             }
 
-            if (controller->fading) {
+            if (fading) {
                 controller->light.setBrightness(brightness);
 
                 if (fadingIn) {

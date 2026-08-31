@@ -17,7 +17,9 @@
 
 template <typename... Args>
 String strFormat(const char* const format, Args... args) {
-    char buffer[10];
+    // Scores and diagnostic values may include a sign and a 32-bit magnitude.
+    // Keep this bounded, but large enough for every formatted value we display.
+    char buffer[24];
     std::snprintf(buffer, sizeof(buffer), format, args...);
     return {buffer};
 }
