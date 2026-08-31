@@ -15,7 +15,6 @@ public:
   void handleEvent(const Event& e, class Coordinator* coordinator);
   void restore();
   bool persist() const;
-  bool hasLeader() const;
   uint32_t nextOperationId();
   void heartbeat(class Coordinator* coordinator);
   void refreshDisplays(class Coordinator* coordinator) const;

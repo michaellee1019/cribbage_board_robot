@@ -5,6 +5,7 @@
 #include <GameRules.hpp>
 #include <LeaderboardUiRules.hpp>
 #include <LightColorRules.hpp>
+#include <MessageAuthorityRules.hpp>
 #include <Messages.hpp>
 #include <OtaTransferRules.hpp>
 #include <PlayerUiRules.hpp>
@@ -233,7 +234,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 displays[index]->print(strFormat("%d", scoreFor(state, role)));
                 break;
             case scorebot::LeaderboardDisplayMode::LobbyName:
-                displays[index]->print(getRoleConfig(getNodeIdForRole(role)).name.c_str());
+                displays[index]->print(getRoleConfig(getNodeIdForRole(role)).name);
                 break;
             case scorebot::LeaderboardDisplayMode::Pairing:
                 displays[index]->print("PAIR");
@@ -452,7 +453,7 @@ void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordina
     }
     const PlayerMessage message = PlayerMessage::fromJson(json);
     const uint32_t sender = event.messageReceived.peerId;
-    const BoardRoleConfig senderConfig = getRoleConfig(sender);
+    const BoardRoleConfig& senderConfig = getRoleConfig(sender);
     if (!isPlayer(senderConfig.role) || message.fromNodeId != sender ||
         message.gameId != state->gameId || !state->gameStarted) {
         rejectAndResync(*state, coordinator, sender);
@@ -572,10 +573,6 @@ bool GameState::persist() const {
     return stored;
 }
 
-bool GameState::hasLeader() const {
-    return !leaderless && leaderId != 0;
-}
-
 uint32_t GameState::nextOperationId() {
     return ++localOperation;
 }
@@ -629,9 +626,6 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
         case EventType::ButtonPressed:
             onButtonPress(this, event.press, coordinator);
             break;
-        case EventType::BleConnected:
-            leaderless = false;
-            break;
         case EventType::BleLeaderLost:
             if (coordinator->myRole() != BoardRole::Leader) {
                 leaderless = true;
@@ -651,6 +645,14 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
             } else if (PlayerActivityMessage::isPlayerActivityMessage(json)) {
                 onPlayerActivityMessage(this, event, coordinator);
             } else {
+                // State replication is one-way. Never let a player uplink
+                // replace authoritative leaderboard state, regardless of the
+                // identity embedded in its JSON payload.
+                if (!scorebot::mayAcceptSnapshot(
+                        coordinator->myRole(),
+                        getRoleConfig(event.messageReceived.peerId).role)) {
+                    break;
+                }
                 const bool wasGameStarted = gameStarted;
                 const uint32_t previousGameId = gameId;
                 const uint32_t previousTerm = term;
@@ -708,7 +710,5 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
             }
             break;
         }
-        case EventType::StateUpdate:
-            break;
     }
 }

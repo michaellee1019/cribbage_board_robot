@@ -37,6 +37,7 @@ ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
 
 void ButtonGrid::prepareForSleep() {
     detachInterrupt(digitalPinToInterrupt(interruptPin));
-    I2cBus::Guard guard;
-    buttonGpio.clearInterrupts();
+    // Do not clear the peripheral latch here. An input arriving during the
+    // sleep handoff must keep the active-low line asserted so EXT1 wakes the
+    // board immediately instead of losing that interaction.
 }

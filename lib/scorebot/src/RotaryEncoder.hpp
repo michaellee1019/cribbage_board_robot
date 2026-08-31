@@ -21,8 +21,6 @@ public:
 
     explicit RotaryEncoder(Coordinator* coordinator);
     /** Clears the interrupt flag. */
-    int32_t position();
-    /** Clears the interrupt flag. */
     int32_t delta();
     void setup();
     void setupStatusPixelOnly();

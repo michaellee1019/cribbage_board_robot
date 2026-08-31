@@ -1,6 +1,8 @@
 #pragma once
 
 #include <NimBLEDevice.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include <atomic>
 #include <cstdint>
@@ -34,6 +36,7 @@ private:
 
     NimBLECharacteristic* statusCharacteristic;
     NimBLEServer* server;
+    SemaphoreHandle_t statusMutex;
     std::atomic<uint32_t> armUntilMs;
     uint32_t expectedBytes;
     uint32_t receivedBytes;

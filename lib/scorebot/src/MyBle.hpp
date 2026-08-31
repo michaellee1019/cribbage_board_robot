@@ -4,8 +4,10 @@
 #include <NimBLEDevice.h>
 #include <Event.hpp>
 #include <OtaUpdate.hpp>
+#include <Protocol.hpp>
 
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/semphr.h>
 
 #include <atomic>
@@ -36,7 +38,6 @@ public:
     void freezeRoster(uint8_t rosterMask);
     void openRoster();
     void armOta();
-    bool otaArmed() const;
     bool sleepAllowed() const;
     void shutdownForSleep();
     bool sendBroadcast(const String& message);
@@ -55,6 +56,13 @@ private:
         bool announced;
     };
 
+    struct TxRequest {
+        uint32_t nodeId;
+        uint16_t length;
+        bool broadcast;
+        char message[scorebot::kMaxWireMessageSize];
+    };
+
     Coordinator* coordinator;
     uint32_t peerId;
     NimBLEServer* server;
@@ -70,11 +78,12 @@ private:
     std::array<uint32_t, 4> pendingLostPeers;
     size_t pendingLostPeerCount;
     SemaphoreHandle_t peersMutex;
+    QueueHandle_t txQueue;
     std::atomic<uint32_t> lastLeaderActivityMs;
     std::atomic<uint16_t> leaderConnectionHandle;
     std::atomic<bool> leaderConnected;
     std::atomic<bool> leaderLostPending;
-    std::atomic<uint32_t> droppedMessages;
+    std::atomic<bool> otaArmRequested;
     std::atomic<bool> rosterFrozen;
     std::atomic<uint8_t> rosterMask;
     std::atomic<bool> connectionPending;
@@ -90,7 +99,11 @@ private:
     void addPeer(NimBLEClient* client);
     void removePeer(NimBLEClient* client);
     void reconcilePeers();
+    void disconnectExcludedPeers();
     void flushLifecycleEvents();
+    void drainTransmissions();
+    bool transmitTo(uint32_t nodeId, const char* message, size_t length);
+    bool enqueueTransmission(uint32_t nodeId, const String& message, bool broadcast);
     bool hasPeer(NimBLEClient* client) const;
     bool peerIsBackedOff(const NimBLEAddress& address) const;
     void backOffPeer(const NimBLEAddress& address);

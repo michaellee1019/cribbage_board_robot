@@ -2,9 +2,6 @@
 #define BOARDROLE_H
 
 #include <cstdint>
-#include <string>
-#include <optional>
-#include <map>
 
 enum class BoardRole {
     Unknown,
@@ -15,26 +12,17 @@ enum class BoardRole {
     Player_White,
 };
 
-class BoardRoleConfig {
-public:
-    BoardRole role;
-    uint32_t nodeId;
-    std::string name;
-    int playerNumber;
-    uint32_t color;
-    // Default constructor
-    BoardRoleConfig() : role(BoardRole::Unknown), nodeId(0), name("UNKNOWN"), playerNumber(-1) {}
-    
-    // Parameterized constructor
-    BoardRoleConfig(BoardRole r, uint32_t nodeId, const std::string& n, int num, uint32_t c) 
-        : role(r), nodeId(nodeId), name(n), playerNumber(num), color(c) {}
+struct BoardRoleConfig {
+    BoardRole role{BoardRole::Unknown};
+    uint32_t nodeId{0};
+    uint64_t baseMac{0};
+    const char* name{"UNKNOWN"};
+    int8_t playerNumber{-1};
+    uint32_t color{0};
 };
 
-// Function declarations
-BoardRoleConfig getRoleConfig(uint32_t nodeId);
+const BoardRoleConfig& getRoleConfig(uint32_t nodeId);
+const BoardRoleConfig& getRoleConfigForBluetoothMac(uint64_t bluetoothMac, uint8_t offset);
 uint32_t getNodeIdForRole(BoardRole role);
-
-// External variable declaration
-extern std::map<uint32_t, BoardRoleConfig> boardRoleConfig;
 
 #endif // BOARDROLE_H

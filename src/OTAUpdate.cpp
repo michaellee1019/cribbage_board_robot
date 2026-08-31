@@ -1,4 +1,5 @@
 #include <OtaUpdate.hpp>
+#include <ErrorHandler.hpp>
 #include <OtaTransferRules.hpp>
 
 #include <Update.h>
@@ -19,6 +20,17 @@ constexpr uint32_t kRestartDelayMs = 750;
 constexpr uint16_t kChunkCapacity = 512;
 constexpr uint32_t kTransferTimeoutMs = 30000;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
+
+class StatusGuard final {
+public:
+    explicit StatusGuard(SemaphoreHandle_t mutex) : mutex(mutex) {
+        xSemaphoreTake(mutex, portMAX_DELAY);
+    }
+    ~StatusGuard() { xSemaphoreGive(mutex); }
+
+private:
+    SemaphoreHandle_t mutex;
+};
 }  // namespace
 
 class OtaControlCallbacks final : public NimBLECharacteristicCallbacks {
@@ -48,6 +60,7 @@ private:
 OtaUpdate::OtaUpdate()
     : statusCharacteristic(nullptr),
       server(nullptr),
+      statusMutex(nullptr),
       armUntilMs(0),
       expectedBytes(0),
       receivedBytes(0),
@@ -60,17 +73,28 @@ OtaUpdate::OtaUpdate()
       controlCallbacks(),
       dataCallbacks() {}
 
-OtaUpdate::~OtaUpdate() = default;
+OtaUpdate::~OtaUpdate() {
+    if (statusMutex != nullptr) {
+        vSemaphoreDelete(statusMutex);
+    }
+}
 
 void OtaUpdate::setup(NimBLEServer* server) {
     this->server = server;
+    statusMutex = xSemaphoreCreateMutex();
+    CHECK_POINTER(statusMutex, ErrorCode::SEMAPHORE_CREATE_FAILED, "OTA status mutex");
     NimBLEService* service = server->createService(kOtaServiceUuid);
+    CHECK_POINTER(service, ErrorCode::MEMORY_ALLOCATION_FAILED, "OTA BLE service");
     NimBLECharacteristic* control = service->createCharacteristic(
         kOtaControlUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, 64);
     NimBLECharacteristic* data = service->createCharacteristic(
         kOtaDataUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, kChunkCapacity);
     statusCharacteristic = service->createCharacteristic(
         kOtaStatusUuid, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 64);
+    CHECK_POINTER(control, ErrorCode::MEMORY_ALLOCATION_FAILED, "OTA control characteristic");
+    CHECK_POINTER(data, ErrorCode::MEMORY_ALLOCATION_FAILED, "OTA data characteristic");
+    CHECK_POINTER(statusCharacteristic, ErrorCode::MEMORY_ALLOCATION_FAILED,
+                  "OTA status characteristic");
     controlCallbacks = std::make_unique<OtaControlCallbacks>(*this);
     dataCallbacks = std::make_unique<OtaDataCallbacks>(*this);
     control->setCallbacks(controlCallbacks.get());
@@ -100,6 +124,7 @@ void OtaUpdate::setStatus(const char* status) {
     if (statusCharacteristic == nullptr) {
         return;
     }
+    StatusGuard guard(statusMutex);
     statusCharacteristic->setValue(status);
     statusCharacteristic->notify();
 }

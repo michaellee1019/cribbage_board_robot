@@ -45,11 +45,14 @@ namespace scorebot::deep_sleep {
 
 void handleTimerWake(Coordinator& coordinator) {
     const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    if (cause == ESP_SLEEP_WAKEUP_EXT1) {
+    if (cause == ESP_SLEEP_WAKEUP_EXT1 || cause == ESP_SLEEP_WAKEUP_TIMER) {
         // EXT1 leaves wake pads in RTC-IO mode. Restore ordinary GPIO ownership
-        // before the input drivers configure interrupts on them again.
+        // before checking them or configuring their interrupts. Timer wake also
+        // needs this because EXT1 was armed during the same sleep interval.
         ESP_ERROR_CHECK(rtc_gpio_deinit(GPIO_NUM_7));
         ESP_ERROR_CHECK(rtc_gpio_deinit(GPIO_NUM_8));
+    }
+    if (cause == ESP_SLEEP_WAKEUP_EXT1) {
         return;
     }
     if (cause != ESP_SLEEP_WAKEUP_TIMER) {
@@ -88,8 +91,9 @@ void handleTimerWake(Coordinator& coordinator) {
     coordinator.display3.sleep();
     coordinator.display4.sleep();
 
-    // Clear old edge latches. A new press during shutdown asserts the active-
-    // low line and causes an immediate GPIO wake instead of being lost.
+    // Detach CPU ISRs but preserve peripheral edge latches. A new press during
+    // shutdown keeps its active-low line asserted and causes an immediate GPIO
+    // wake instead of being lost.
     coordinator.buttonGrid.prepareForSleep();
     coordinator.rotaryEncoder.prepareForSleep();
     coordinator.ble.shutdownForSleep();

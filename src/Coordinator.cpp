@@ -54,14 +54,23 @@ Coordinator::Coordinator() :
 }
 
 BoardRole Coordinator::myRole() {
-    auto config = myRoleConfig();
-    return config ? config->role : BoardRole::Unknown;
+    return myRoleConfig().role;
 }
 
-std::optional<BoardRoleConfig> Coordinator::myRoleConfig() {
-    uint32_t myPeerId = ble.getMyPeerId();
-    auto it = boardRoleConfig.find(myPeerId);
-    return it != boardRoleConfig.end() ? std::make_optional(it->second) : std::nullopt;
+const BoardRoleConfig& Coordinator::myRoleConfig() {
+    return getRoleConfig(ble.getMyPeerId());
+}
+
+void Coordinator::serviceStateHeartbeat() {
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    if (!sleeping.load()) {
+        state.heartbeat(this);
+    }
+    xSemaphoreGive(stateMutex);
+}
+
+bool Coordinator::enqueueEvent(const Event& event) {
+    return xQueueSend(eventQueue, &event, 0) == pdPASS;
 }
 
 void Coordinator::setup() {
@@ -157,7 +166,9 @@ void Coordinator::loop() {
 
 bool Coordinator::sleepBlocked() const {
     return state.myScore != 0 || state.pendingOperation != 0 ||
-           state.rotaryPressStartedMs.load() != 0 || !ble.sleepAllowed();
+           state.rotaryPressStartedMs.load() != 0 ||
+           pendingInputEvents.load(std::memory_order_acquire) != 0 ||
+           !ble.sleepAllowed();
 }
 
 void Coordinator::noteInteraction() {
@@ -216,7 +227,7 @@ void Coordinator::updateDisplayBrightness() {
             lastTurnSegmentBrightness = pulse.segmentBrightness;
         }
         const uint32_t color = scorebot::scaleRgb(
-            myRoleConfig()->color, pulse.lightLevel);
+            myRoleConfig().color, pulse.lightLevel);
         if (color != lastTurnLightColor) {
             rotaryEncoder.setColor(color);
             lastTurnLightColor = color;

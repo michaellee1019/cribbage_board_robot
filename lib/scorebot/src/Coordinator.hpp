@@ -16,15 +16,17 @@
 #include <BoardRole.hpp>
 
 class Coordinator {
-public:
+private:
     QueueHandle_t eventQueue;
     SemaphoreHandle_t stateMutex;
+    GameState state;
+
+public:
     std::atomic<uint8_t> pendingInputEvents;
     HT16Display display1;
     HT16Display display2;
     HT16Display display3;
     HT16Display display4;
-    GameState state;
     ButtonGrid buttonGrid;
     RotaryEncoder rotaryEncoder;
     MyBle ble;
@@ -37,7 +39,9 @@ public:
     void setPlayerTurnAnimation(bool enabled);
     void setLeaderboardTurnColor(uint32_t color);
     BoardRole myRole();
-    std::optional<BoardRoleConfig> myRoleConfig();
+    const BoardRoleConfig& myRoleConfig();
+    void serviceStateHeartbeat();
+    bool enqueueEvent(const Event& event);
 
     friend void dispatcherTask(void*);
 

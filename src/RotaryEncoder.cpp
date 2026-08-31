@@ -12,11 +12,6 @@ void IRAM_ATTR rotaryEncoderISR(void* arg) {
 RotaryEncoder::RotaryEncoder(Coordinator *coordinator)
     : coordinator{coordinator} {}
 
-int32_t RotaryEncoder::position() {
-    I2cBus::Guard guard;
-    return ss.getEncoderPosition();
-}
-
 int32_t RotaryEncoder::delta() {
     I2cBus::Guard guard;
     return ss.getEncoderDelta();
@@ -65,9 +60,8 @@ void RotaryEncoder::setupStatusPixelOnly() {
 
 void RotaryEncoder::prepareForSleep() {
     detachInterrupt(digitalPinToInterrupt(SEESAW_INTERRUPT));
-    // Both reads clear any already-latched encoder/switch interrupts.
-    (void)delta();
-    (void)pressed();
+    // Preserve any interrupt latched during the sleep handoff. Its active-low
+    // output then causes an immediate EXT1 wake; normal setup clears/reset it.
 }
 
 void RotaryEncoder::setColor(uint32_t color) {
