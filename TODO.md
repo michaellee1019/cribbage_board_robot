@@ -3,11 +3,11 @@
 ## 🚨 Critical Issues
 
 ### Security & Stability
-- [ ] **MEMORY LEAK**: Fix String object lifecycle in WiFi queue (`src/MyWifi.cpp:34-56`)
 - [ ] **INFINITE HANG**: Add timeout to hardware initialization loop in `src/HT16Display.cpp:6-8`
+- [ ] **HARDWARE TEST**: Measure connection recovery and battery life with five BLE boards.
+- [ ] **HARDWARE TEST**: Exercise USB and physically armed BLE OTA updates on every board before field use.
 
 ### Thread Safety
-- [ ] **RACE CONDITION**: Replace volatile `ackReceived` with atomic operations in `src/MyWifi.cpp:18,23`
 - [ ] **ISR SAFETY**: Simplify ISR handlers in `src/ButtonGrid.cpp:5-12` and `src/RotaryEncoder.cpp:4-11`
 
 ## 📋 Backlog
@@ -16,14 +16,12 @@
 - [ ] SOS light when idle
 - [ ] IR receiver for configuration  
 - [ ] Brightness control based on turn/winning status
-- [ ] Score commitment vs turn passing logic
 - [ ] Leaderboard buttons functionality
 
 ### Code Quality Improvements
-- [ ] Create typedef for node/peer ID type (`src/MyWifi.cpp:22`)
+- [ ] Create typedef for node/peer ID type (`lib/scorebot/src/MyBle.hpp`)
 - [ ] Implement failure modes for RTButton timer creation (`lib/scorebot/src/RTButton.hpp:43`)
 - [ ] Implement failure modes for RTButton task creation (`lib/scorebot/src/RTButton.hpp:78`)
-- [ ] Add exception handling for `std::stoi()` in `src/GameState.cpp:37`
 - [ ] Fix buffer size in `lib/scorebot/src/utils.hpp:8-12` (10 bytes too small)
 
 ### Type Safety & Consistency
@@ -32,10 +30,8 @@
 - [ ] Make GameState members private with const accessors (`lib/scorebot/src/GameState.hpp:13-15`)
 
 ### Architecture & Design
-- [ ] Extract magic numbers to named constants (`src/MyWifi.cpp:10-12,19,67`)
-- [ ] Implement proper RAII or cleanup for FreeRTOS resources (`src/MyWifi.cpp:17-18`)
-- [ ] Decouple GameState from Coordinator components (`src/GameState.cpp:63-75`)
-- [ ] Add display state tracking to avoid redundant updates (`src/GameState.cpp:64-74`)
+- [ ] Decouple GameState from Coordinator components (`src/GameState.cpp`)
+- [ ] Add display state tracking to avoid redundant updates (`src/GameState.cpp`)
 
 ## 🔄 In Progress
 
@@ -50,8 +46,6 @@
 ## 🧹 Commented-Out Code to Review
 
 ### Potentially Unfinished Features
-- [ ] **WiFi Retry Logic**: Review commented-out retry/ack system in `src/MyWifi.cpp:42-54`
-- [ ] **Event Visitor Pattern**: Evaluate commented-out EventVisitor implementation in `lib/scorebot/src/Event.hpp:38-54`
 - [ ] **Input Handling**: Review commented-out encoder/button code in `src/GameState.cpp:19-20`
 
 ### Library Dependencies

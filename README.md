@@ -1,6 +1,6 @@
 # Scorebot
 
-ESP32-based mesh-networked scoring system with player boards and a leaderboard.
+ESP32-based BLE scoring system with battery-powered player boards and a leaderboard.
 
 ## Quick Start
 
@@ -11,6 +11,14 @@ brew install platformio
 
 ### Build and Upload
 ```bash
+# Update a physically armed board over the Mac's Bluetooth connection. With
+# multiple boards nearby, specify its BLE id shown as Scorebot-<id>.
+brew install just uv
+just flash <board-id>
+
+# First install or USB recovery for a directly connected board.
+just usb-flash
+
 # Upload to specific device using convenience script
 ./run.sh red         # Upload to red player device
 ./run.sh blue        # Upload to blue player device  
@@ -53,11 +61,36 @@ pio project metadata --json-output -e <environment>
 
 - **Platform**: ESP32 (Seeed XIAO ESP32S3)
 - **Framework**: Arduino/PlatformIO  
-- **Architecture**: Mesh network using painlessMesh library
+- **Architecture**: BLE star — the leaderboard is the central and player boards are peripherals
 - **Devices**: Multiple player scoring units + leaderboard controller
 - **Hardware**: 7-segment displays, rotary encoders, button grids, LEDs
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
+
+## Reliability and recovery
+
+- Every accepted score or turn action is an atomic, versioned commit on the leaderboard.
+- The committed snapshot is persisted locally and replicated to connected player boards. Each board retains its latest snapshot in flash, so a rebooted board reconnects and resumes the game state.
+- Player requests carry a monotonic operation ID. Repeated notifications are ignored, and an out-of-turn pass is rejected without changing a score.
+- A player may submit an add/correction while it is another player's turn; only the active player may pass the turn. This lets accidental scoring be corrected without weakening turn control.
+- If the leaderboard is unavailable, player boards show `dEGr` and reject new game actions. They resume automatically when the leaderboard reconnects; this prevents competing versions of the score while preserving the last committed state.
+
+## BLE OTA updates
+
+After initially flashing firmware by USB, an individual board can be updated from the laptop without joining a Wi-Fi network:
+
+1. Hold and release that board's rotary button for at least three seconds. Its display shows `OTA ` and opens a ten-minute update window.
+2. On the laptop, run `just flash <board-id>` (the board advertises as `Scorebot-<board-id>`). If it is the only Scorebot board nearby, `just flash` selects it automatically.
+
+To update every board at once, locally arm each board first and run `just flash-all`. The laptop updates them sequentially and reports any board that was not armed or could not be reached.
+
+The board accepts an update only during that local window. This physical-presence gate prevents a nearby BLE device from starting an update by itself.
+
+On macOS, allow the terminal application running `just` to use Bluetooth if macOS asks. The update script uses the operating system's native CoreBluetooth support through Bleak; it does not join the game BLE network or require Wi-Fi.
+
+## Wire protocol
+
+The BLE service and every game message carry a wire-protocol version. A leaderboard refuses to add a player board with a different version; snapshots and score requests with a mismatched or absent version are ignored. Update all boards with `just flash-all` before expecting them to participate in the same game.
 
 ## TODO Features
 

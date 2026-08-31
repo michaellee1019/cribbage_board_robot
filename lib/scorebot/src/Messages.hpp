@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Protocol.hpp>
 #include <utils.hpp>
 
 struct PlayerMessage {
@@ -21,6 +22,7 @@ struct PlayerMessage {
     String toJson() const {
         JsonDocument doc;
         doc["type"] = "player";
+        doc["protocol"] = scorebot::kWireProtocolVersion;
         doc["score"] = score;
         doc["turnPassed"] = turnPassed;
         doc["fromNodeId"] = fromNodeId;
@@ -51,6 +53,8 @@ struct PlayerMessage {
         return error == DeserializationError::Ok && 
                doc["type"].is<const char*>() && 
                doc["type"] == "player" &&
+               doc["protocol"].is<uint16_t>() &&
+               doc["protocol"].as<uint16_t>() == scorebot::kWireProtocolVersion &&
                doc["score"].is<int>() &&
                doc["turnPassed"].is<bool>() &&
                doc["fromNodeId"].is<unsigned int>() &&

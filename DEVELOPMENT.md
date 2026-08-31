@@ -1,12 +1,12 @@
 # Scorebot development guide
 
-ESP32-based mesh-networked scoring system with player boards and a leaderboard.
+ESP32-based BLE scoring system with player boards and a leaderboard.
 
 ## Project Overview
 
 - **Platform**: ESP32 (Seeed XIAO ESP32S3)
 - **Framework**: Arduino/PlatformIO
-- **Architecture**: Mesh network using painlessMesh library
+- **Architecture**: BLE star, with the leaderboard acting as central
 - **Devices**: Multiple player scoring units + leaderboard controller
 - **Hardware**: 7-segment displays, rotary encoders, button grids, LEDs
 
@@ -17,6 +17,7 @@ ESP32-based mesh-networked scoring system with player boards and a leaderboard.
 brew install platformio
 
 # Build and upload to specific device
+just usb-flash    # USB flash the directly connected board
 ./run.sh red    # Upload to red player device
 ./run.sh blue   # Upload to blue player device  
 ./run.sh controller  # Upload to controller/leaderboard
@@ -34,7 +35,7 @@ pio run -t upload -t monitor -e blue
 - `controller` - Leaderboard/controller device
 
 ### Key Libraries
-- `painlessMesh` - Mesh networking
+- `NimBLE-Arduino` - Low-power BLE central/peripheral transport
 - `Wire` - I2C communication
 - `Adafruit seesaw Library` - Hardware interface
 - `Adafruit MCP23017` - GPIO expander
@@ -45,7 +46,7 @@ pio run -t upload -t monitor -e blue
 ### Core Components
 - **Coordinator** (`src/Coordinator.cpp`) - Main orchestrator, handles events and coordinates all subsystems
 - **GameState** (`src/GameState.cpp`) - Manages scoring state and turn logic
-- **MyWifi** (`src/MyWifi.cpp`) - Mesh networking and device communication
+- **MyBle** (`src/MyBle.cpp`) - BLE star transport and device communication
 - **ButtonGrid** (`src/ButtonGrid.cpp`) - Input handling from button matrix
 - **RotaryEncoder** (`src/RotaryEncoder.cpp`) - Score input via rotary encoder
 - **HT16Display** (`src/HT16Display.cpp`) - 7-segment display management
@@ -60,6 +61,9 @@ pio run -t upload -t monitor -e blue
 
 ### Building & Uploading
 ```bash
+# Update an armed board over the Mac's Bluetooth connection
+just flash <board-id>
+
 # Quick upload and monitor
 ./run.sh <environment>
 
@@ -77,6 +81,8 @@ pio run -t upload -e <environment>
 ```bash
 # Run logic tests (no hardware needed)
 ./test_runner.sh logic
+# or
+just test
 
 # Run tests on ESP32 hardware
 pio test -e test_embedded
@@ -156,7 +162,7 @@ clang-format -i ./**/*.{hpp,cpp}
 - Display values and coordinates
 
 ### Common Pitfalls
-- Check peer type consistency in mesh networking code
+- Check stable chip-ID/role assignments when provisioning new boards
 - Verify display coordinate types match library expectations
 - Use explicit casts when necessary and document why
 
@@ -165,7 +171,7 @@ clang-format -i ./**/*.{hpp,cpp}
 ### Device Types
 - **Player Units**: Score input (rotary encoder, buttons), local display
 - **Leaderboard**: Central display showing all player scores
-- **Mesh Network**: Devices communicate game state changes
+- **BLE Star**: Devices communicate through the leaderboard; player boards enter `dEGr` mode if it is unavailable
 
 ### Ports (varies by device)
 ```ini
@@ -188,5 +194,5 @@ monitor_port = /dev/cu.usbmodem2101
 ## Files to Check
 - `platformio.ini` - Build configuration and environments
 - `src/main.cpp` - Entry point (minimal, delegates to Coordinator)
-- `secret.h` - WiFi credentials and device-specific config
+- `src/BoardRole.cpp` - Stable device-ID-to-role assignments
 - `lib/scorebot/src/` - Header files with class definitions

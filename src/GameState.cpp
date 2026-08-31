@@ -2,6 +2,7 @@
 #include <GameState.hpp>
 #include <GameRules.hpp>
 #include <Messages.hpp>
+#include <Protocol.hpp>
 #include <utils.hpp>
 
 #include <Preferences.h>
@@ -83,6 +84,7 @@ void fromRules(GameState& state, const scorebot::Snapshot& rules) {
 String snapshotJson(const GameState& state) {
     JsonDocument document;
     document["type"] = "state";
+    document["protocol"] = scorebot::kWireProtocolVersion;
     document["term"] = state.term;
     document["version"] = state.version;
     document["leader"] = state.leaderId;
@@ -113,6 +115,8 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     JsonDocument document;
     if (deserializeJson(document, json) != DeserializationError::Ok ||
         document["type"] != "state" ||
+        !document["protocol"].is<uint16_t>() ||
+        document["protocol"].as<uint16_t>() != scorebot::kWireProtocolVersion ||
         !document["term"].is<uint32_t>() || !document["version"].is<uint32_t>() ||
         !document["leader"].is<uint32_t>() || !document["scores"].is<JsonArray>() ||
         !document["operations"].is<JsonArray>()) {

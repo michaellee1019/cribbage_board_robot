@@ -3,6 +3,7 @@
 #include <BoardRole.hpp>
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
+#include <Protocol.hpp>
 
 #include <array>
 
@@ -10,6 +11,7 @@ constexpr char kServiceUuid[] = "c6a8619e-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kIdentityUuid[] = "c6a8619f-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kUplinkUuid[] = "c6a861a0-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kDownlinkUuid[] = "c6a861a1-2f9d-46bc-9a23-bb9c89a519be";
+constexpr char kProtocolUuid[] = "c6a861a2-2f9d-46bc-9a23-bb9c89a519be";
 constexpr uint32_t kLeaderTimeoutMs = 6000;
 constexpr uint16_t kMaxMessageSize = 240;
 constexpr uint32_t kScanDurationMs = 2000;
@@ -174,6 +176,9 @@ void MyBle::setup() {
     NimBLECharacteristic* identity = service->createCharacteristic(
         kIdentityUuid, NIMBLE_PROPERTY::READ, sizeof(peerId));
     identity->setValue(peerId);
+    NimBLECharacteristic* protocol = service->createCharacteristic(
+        kProtocolUuid, NIMBLE_PROPERTY::READ, sizeof(scorebot::kWireProtocolVersion));
+    protocol->setValue(scorebot::kWireProtocolVersion);
     uplink = service->createCharacteristic(
         kUplinkUuid, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, kMaxMessageSize);
     downlink = service->createCharacteristic(
@@ -221,15 +226,17 @@ void MyBle::addPeer(NimBLEClient* client) {
         return;
     }
     NimBLERemoteCharacteristic* identity = service->getCharacteristic(kIdentityUuid);
+    NimBLERemoteCharacteristic* protocol = service->getCharacteristic(kProtocolUuid);
     NimBLERemoteCharacteristic* remoteUplink = service->getCharacteristic(kUplinkUuid);
     NimBLERemoteCharacteristic* remoteDownlink = service->getCharacteristic(kDownlinkUuid);
-    if (identity == nullptr || remoteUplink == nullptr || remoteDownlink == nullptr) {
+    if (identity == nullptr || protocol == nullptr || remoteUplink == nullptr || remoteDownlink == nullptr) {
         client->disconnect();
         return;
     }
 
     const uint32_t nodeId = identity->readValue<uint32_t>();
-    if (nodeId == 0 || nodeId == peerId || !isPlayerRole(getRoleConfig(nodeId).role)) {
+    if (protocol->readValue<uint16_t>() != scorebot::kWireProtocolVersion ||
+        nodeId == 0 || nodeId == peerId || !isPlayerRole(getRoleConfig(nodeId).role)) {
         client->disconnect();
         return;
     }

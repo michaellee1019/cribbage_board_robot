@@ -11,7 +11,9 @@ constexpr char kOtaServiceUuid[] = "c6a861b0-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaControlUuid[] = "c6a861b1-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaDataUuid[] = "c6a861b2-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaStatusUuid[] = "c6a861b3-2f9d-46bc-9a23-bb9c89a519be";
-constexpr uint32_t kArmWindowMs = 120000;
+// A full set is updated sequentially over BLE. Ten minutes gives every
+// locally armed board time to receive the image without changing radio duty.
+constexpr uint32_t kArmWindowMs = 10 * 60 * 1000;
 constexpr uint32_t kRestartDelayMs = 750;
 constexpr uint16_t kChunkCapacity = 512;
 }  // namespace
