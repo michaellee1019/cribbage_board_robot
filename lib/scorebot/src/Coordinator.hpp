@@ -5,7 +5,7 @@
 #include <freertos/queue.h>
 
 #include <GameState.hpp>
-#include <MyWifi.hpp>
+#include <MyBle.hpp>
 #include <ButtonGrid.hpp>
 #include <RotaryEncoder.hpp>
 #include <HT16Display.hpp>
@@ -14,7 +14,6 @@
 class Coordinator {
 public:
     QueueHandle_t eventQueue;
-    Scheduler scheduler;
     HT16Display display1;
     HT16Display display2;
     HT16Display display3;
@@ -22,7 +21,7 @@ public:
     GameState state;
     ButtonGrid buttonGrid;
     RotaryEncoder rotaryEncoder;
-    MyWifi wifi;
+    MyBle ble;
 
     Coordinator();
     void setup();

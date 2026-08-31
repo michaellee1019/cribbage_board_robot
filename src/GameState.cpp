@@ -1,448 +1,501 @@
 #include <Coordinator.hpp>
 #include <GameState.hpp>
+#include <GameRules.hpp>
 #include <Messages.hpp>
 #include <utils.hpp>
 
+#include <Preferences.h>
+
+#include <algorithm>
+#include <array>
+
+namespace {
+constexpr char kStateNamespace[] = "scorebot";
+constexpr char kStateKey[] = "state";
+constexpr uint32_t kReplicationPeriodMs = 1500;
+constexpr uint32_t kOperationRetryMs = 1000;
+constexpr uint32_t kOtaArmHoldMs = 3000;
+
+constexpr BoardRole kPlayers[] = {
+    BoardRole::Player_Red,
+    BoardRole::Player_Blue,
+    BoardRole::Player_Green,
+    BoardRole::Player_White,
+};
+
+size_t roleIndex(BoardRole role) {
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        if (kPlayers[index] == role) {
+            return index;
+        }
+    }
+    return std::size(kPlayers);
+}
+
+bool isPlayer(BoardRole role) {
+    return roleIndex(role) < std::size(kPlayers);
+}
+
+bool contains(const std::list<BoardRole>& roles, BoardRole role) {
+    return std::find(roles.begin(), roles.end(), role) != roles.end();
+}
+
+scorebot::Player toRulePlayer(BoardRole role) {
+    const size_t index = roleIndex(role);
+    return index < std::size(kPlayers) ? static_cast<scorebot::Player>(index) : scorebot::Player::None;
+}
+
+BoardRole fromRulePlayer(scorebot::Player player) {
+    return scorebot::isPlayer(player) ? kPlayers[scorebot::playerIndex(player)] : BoardRole::Unknown;
+}
+
+scorebot::Snapshot toRules(const GameState& state) {
+    scorebot::Snapshot rules{};
+    rules.started = state.gameStarted;
+    rules.turn = toRulePlayer(state.whosTurn);
+    rules.version = state.version;
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        const BoardRole role = kPlayers[index];
+        rules.scores[index] = state.scores.at(role);
+        rules.lastOperation[index] = state.lastOperation.at(role);
+        if (contains(state.whosConnected, role)) {
+            rules.connectedMask |= 1u << index;
+        }
+    }
+    return rules;
+}
+
+void fromRules(GameState& state, const scorebot::Snapshot& rules) {
+    state.gameStarted = rules.started;
+    state.whosTurn = fromRulePlayer(rules.turn);
+    state.version = rules.version;
+    state.whosConnected.clear();
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        const BoardRole role = kPlayers[index];
+        state.scores[role] = rules.scores[index];
+        state.lastOperation[role] = rules.lastOperation[index];
+        if ((rules.connectedMask & (1u << index)) != 0) {
+            state.whosConnected.push_back(role);
+        }
+    }
+}
+
+String snapshotJson(const GameState& state) {
+    JsonDocument document;
+    document["type"] = "state";
+    document["term"] = state.term;
+    document["version"] = state.version;
+    document["leader"] = state.leaderId;
+    document["started"] = state.gameStarted;
+    document["turn"] = static_cast<uint8_t>(state.whosTurn);
+
+    JsonArray scores = document["scores"].to<JsonArray>();
+    JsonArray operations = document["operations"].to<JsonArray>();
+    uint8_t connectedMask = 0;
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        const BoardRole role = kPlayers[index];
+        scores.add(state.scores.at(role));
+        operations.add(state.lastOperation.at(role));
+        if (contains(state.whosConnected, role)) {
+            connectedMask |= 1u << index;
+        }
+    }
+    document["connected"] = connectedMask;
+
+    String encoded;
+    serializeJson(document, encoded);
+    return encoded;
+}
+
+enum class SnapshotDecodeResult { Invalid, Stale, Applied };
+
+SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
+    JsonDocument document;
+    if (deserializeJson(document, json) != DeserializationError::Ok ||
+        document["type"] != "state" ||
+        !document["term"].is<uint32_t>() || !document["version"].is<uint32_t>() ||
+        !document["leader"].is<uint32_t>() || !document["scores"].is<JsonArray>() ||
+        !document["operations"].is<JsonArray>()) {
+        return SnapshotDecodeResult::Invalid;
+    }
+
+    const uint32_t term = document["term"].as<uint32_t>();
+    const uint32_t version = document["version"].as<uint32_t>();
+    if (document["leader"].as<uint32_t>() != getNodeIdForRole(BoardRole::Leader)) {
+        return SnapshotDecodeResult::Invalid;
+    }
+    JsonArray scores = document["scores"].as<JsonArray>();
+    JsonArray operations = document["operations"].as<JsonArray>();
+    if (scores.size() != std::size(kPlayers) || operations.size() != std::size(kPlayers)) {
+        return SnapshotDecodeResult::Invalid;
+    }
+    const uint32_t connectedMask = document["connected"] | 0;
+    const BoardRole turn = static_cast<BoardRole>(document["turn"] | 0);
+    if ((connectedMask & ~0x0fu) != 0 ||
+        (turn != BoardRole::Unknown && !isPlayer(turn))) {
+        return SnapshotDecodeResult::Invalid;
+    }
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        if (!scores[index].is<int32_t>() || !operations[index].is<uint32_t>()) {
+            return SnapshotDecodeResult::Invalid;
+        }
+    }
+    // Heartbeats carry the current snapshot. Equal revisions prove liveness
+    // but must not cause another flash write.
+    if (term < state.term || (term == state.term && version <= state.version)) {
+        return SnapshotDecodeResult::Stale;
+    }
+
+    state.term = term;
+    state.version = version;
+    state.leaderId = document["leader"].as<uint32_t>();
+    state.gameStarted = document["started"] | false;
+    state.whosTurn = turn;
+    state.whosConnected.clear();
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        const BoardRole role = kPlayers[index];
+        state.scores[role] = scores[index].as<int>();
+        state.lastOperation[role] = operations[index].as<uint32_t>();
+        if ((connectedMask & (1u << index)) != 0) {
+            state.whosConnected.push_back(role);
+        }
+    }
+    state.leaderless = false;
+    return SnapshotDecodeResult::Applied;
+}
+
+void setPlayerDisplay(const GameState& state, Coordinator* coordinator) {
+    if (coordinator->myRole() == BoardRole::Leader) {
+        return;
+    }
+    if (state.leaderless) {
+        coordinator->display1.print("dEGr");
+        coordinator->rotaryEncoder.setColor(0x000000);
+    } else if (state.gameStarted && state.whosTurn == coordinator->myRole()) {
+        coordinator->display1.print("BEEF");
+        coordinator->rotaryEncoder.setColor(coordinator->myRoleConfig()->color);
+    } else if (state.myScore == 0) {
+        coordinator->display1.print("----");
+        coordinator->rotaryEncoder.setColor(0x000000);
+    } else {
+        coordinator->display1.print(strFormat("%d", state.myScore));
+    }
+}
+
+void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        return;
+    }
+    const std::array<HT16Display*, 4> displays = {
+        &coordinator->display1, &coordinator->display2, &coordinator->display3, &coordinator->display4};
+    for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        displays[index]->print(strFormat("%d", state.scores.at(kPlayers[index])));
+    }
+}
+
+void replicate(const GameState& state, Coordinator* coordinator) {
+    coordinator->ble.sendBroadcast(snapshotJson(state));
+}
+
+void commit(GameState& state, Coordinator* coordinator) {
+    state.leaderId = coordinator->ble.getMyPeerId();
+    state.leaderless = false;
+    if (!state.persist()) {
+        FATAL_ERROR(ErrorCode::STATE_PERSIST_FAILED, "leader game-state commit");
+        return;
+    }
+    state.refreshDisplays(coordinator);
+    replicate(state, coordinator);
+}
+
+void rejectAndResync(const GameState& state, Coordinator* coordinator, uint32_t sender) {
+    coordinator->ble.sendTo(sender, snapshotJson(state));
+}
+
+void sendPlayerOperation(GameState* state, Coordinator* coordinator, bool passesTurn) {
+    if (!state->gameStarted || !coordinator->ble.hasLeader() || state->leaderless ||
+        state->pendingOperation != 0) {
+        setPlayerDisplay(*state, coordinator);
+        return;
+    }
+    if (passesTurn && state->whosTurn != coordinator->myRole()) {
+        return;
+    }
+    const uint32_t operationId = state->nextOperationId();
+    PlayerMessage message(state->myScore, passesTurn, coordinator->ble.getMyPeerId(), operationId);
+    const String encoded = message.toJson();
+    if (coordinator->ble.sendTo(getNodeIdForRole(BoardRole::Leader), encoded)) {
+        state->pendingOperation = operationId;
+        state->pendingScore = state->myScore;
+        state->pendingPass = passesTurn;
+        state->pendingMessage = encoded;
+        state->pendingSentMs = millis();
+        coordinator->display1.print("WAIT");
+    }
+}
+
+void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator* coordinator) {
+    const BoardRole role = coordinator->myRole();
+    if (event.buttonName == ButtonName::RotaryEncoder) {
+        if (coordinator->rotaryEncoder.pressed()) {
+            if (state->rotaryPressStartedMs == 0) {
+                state->rotaryPressStartedMs = millis();
+            }
+            return;
+        }
+
+        if (state->rotaryPressStartedMs != 0) {
+            const uint32_t heldMs = millis() - state->rotaryPressStartedMs;
+            state->rotaryPressStartedMs = 0;
+            if (heldMs >= kOtaArmHoldMs) {
+                coordinator->ble.armOta();
+                coordinator->display1.print("OTA ");
+                coordinator->rotaryEncoder.setColor(0x004040);
+            } else if (role != BoardRole::Leader && state->pendingOperation == 0) {
+                // A short rotary press is the existing quick-score action. It
+                // remains legal off-turn so an accidental score can be fixed.
+                sendPlayerOperation(state, coordinator, false);
+            }
+            return;
+        }
+
+        if (role == BoardRole::Leader || state->pendingOperation != 0) {
+            return;
+        }
+        const int32_t delta = coordinator->rotaryEncoder.delta();
+        if (delta != 0 && !state->leaderless) {
+            state->myScore += delta;
+            setPlayerDisplay(*state, coordinator);
+        }
+        return;
+    }
+
+    const uint8_t pin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
+    const uint8_t value = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
+    coordinator->buttonGrid.buttonGpio.clearInterrupts();
+    if (value != ButtonGrid::intValReleased && value != ButtonGrid::intValReleased2) {
+        return;
+    }
+
+    if (role == BoardRole::Leader) {
+        scorebot::Snapshot rules = toRules(*state);
+        if (pin == 0 && scorebot::start(rules)) {
+            fromRules(*state, rules);
+            commit(*state, coordinator);
+        }
+        return;
+    }
+
+    if (state->leaderless || state->pendingOperation != 0) {
+        setPlayerDisplay(*state, coordinator);
+        return;
+    }
+    if (pin == ButtonGrid::add) {
+        if (state->myScore != 0) {
+            sendPlayerOperation(state, coordinator, false);
+        }
+    } else if (pin == ButtonGrid::negone) {
+        --state->myScore;
+    } else if (pin == ButtonGrid::plusone) {
+        ++state->myScore;
+    } else if (pin == ButtonGrid::plusfive) {
+        state->myScore += 5;
+    } else if (pin == ButtonGrid::okPin) {
+        sendPlayerOperation(state, coordinator, true);
+        return;
+    }
+    setPlayerDisplay(*state, coordinator);
+}
+
+void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        return;
+    }
+    const String json = event.messageReceived.message;
+    if (!PlayerMessage::isPlayerMessage(json)) {
+        return;
+    }
+    const PlayerMessage message = PlayerMessage::fromJson(json);
+    const uint32_t sender = event.messageReceived.peerId;
+    const BoardRoleConfig senderConfig = getRoleConfig(sender);
+    if (!isPlayer(senderConfig.role) || message.fromNodeId != sender || !state->gameStarted) {
+        rejectAndResync(*state, coordinator, sender);
+        return;
+    }
+    scorebot::Snapshot rules = toRules(*state);
+    const scorebot::ApplyResult result = scorebot::apply(
+        rules, {toRulePlayer(senderConfig.role), message.score, message.turnPassed, message.operationId});
+    if (result != scorebot::ApplyResult::Accepted) {
+        rejectAndResync(*state, coordinator, sender);
+        return;
+    }
+    fromRules(*state, rules);
+    commit(*state, coordinator);
+}
+
+void onNewPeer(GameState* state, const Event& event, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        return;
+    }
+    scorebot::Snapshot rules = toRules(*state);
+    if (scorebot::connect(rules, toRulePlayer(getRoleConfig(event.newPeer.peerId).role))) {
+        fromRules(*state, rules);
+        commit(*state, coordinator);
+    } else {
+        rejectAndResync(*state, coordinator, event.newPeer.peerId);
+    }
+}
+
+void onLostPeer(GameState* state, const Event& event, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        return;
+    }
+    scorebot::Snapshot rules = toRules(*state);
+    if (scorebot::disconnect(rules, toRulePlayer(getRoleConfig(event.lostPeer.peerId).role))) {
+        fromRules(*state, rules);
+        commit(*state, coordinator);
+    }
+}
+}  // namespace
+
 GameState::GameState()
-    : myScore{0},
-      whosTurn{BoardRole::Unknown},
+    : myScore(0),
+      whosTurn(BoardRole::Unknown),
       scores{{BoardRole::Player_Red, 0},
              {BoardRole::Player_Blue, 0},
              {BoardRole::Player_Green, 0},
              {BoardRole::Player_White, 0}},
-      whosConnected{},
-      gameStarted{false} {}
+      whosConnected(),
+      gameStarted(false),
+      term(0),
+      version(0),
+      leaderId(0),
+      leaderless(true),
+      lastOperation{{BoardRole::Player_Red, 0},
+                    {BoardRole::Player_Blue, 0},
+                    {BoardRole::Player_Green, 0},
+                    {BoardRole::Player_White, 0}},
+      localOperation(0),
+      lastReplicationMs(0),
+      pendingOperation(0),
+      pendingScore(0),
+      pendingPass(false),
+      pendingMessage(),
+      pendingSentMs(0),
+      rotaryPressStartedMs(0) {}
 
-BoardRole getNextTurn(BoardRole currentRole, GameState* state) {
-    // Turn order: RED -> BLUE -> GREEN -> WHITE -> RED (loops)
-    // But skip players that aren't connected
-    BoardRole nextRole;
-    switch (currentRole) {
-        case BoardRole::Player_Red:
-            nextRole = BoardRole::Player_Blue;
-            break;
-        case BoardRole::Player_Blue:
-            nextRole = BoardRole::Player_Green;
-            break;
-        case BoardRole::Player_Green:
-            nextRole = BoardRole::Player_White;
-            break;
-        case BoardRole::Player_White:
-            nextRole = BoardRole::Player_Red;
-            break;
-        default:
-            nextRole = BoardRole::Player_Red;  // Default to RED
-            break;
-    }
-
-    // Return the next connected player
-    if (std::find(state->whosConnected.begin(), state->whosConnected.end(), nextRole) ==
-        state->whosConnected.end()) {
-        return getNextTurn(nextRole, state);
-    }
-
-    // Fallback: return the next role
-    return nextRole;
-}
-
-void broadcastNextTurnMessage(GameState* state, Coordinator* coordinator, BoardRole nextRole, uint32_t nextNodeId, BoardRoleConfig nextRoleConfig) {
-    // Only leader should call this
-    if (coordinator->myRole() != BoardRole::Leader)
+void GameState::restore() {
+    Preferences preferences;
+    if (!preferences.begin(kStateNamespace, true)) {
         return;
-
-    DEBUG_PRINTF("DEBUG: Current turn before change: %d (%s)\n",
-                  (int)state->whosTurn,
-                  getRoleConfig(getNodeIdForRole(state->whosTurn)).name.c_str());
-
-    DEBUG_PRINTF("DEBUG: Next turn calculated: %d (%s), NodeID: %u\n",
-                  (int)nextRole,
-                  nextRoleConfig.name.c_str(),
-                  nextNodeId);
-
-    if (nextNodeId != 0) {
-        state->whosTurn = nextRole;  // Update current turn
-        String nextPlayerName = getRoleConfig(nextNodeId).name.c_str();
-
-        TurnMessage turnMsg(nextNodeId, nextPlayerName);
-        String jsonStr = turnMsg.toJson();
-
-        coordinator->wifi.sendTo(nextNodeId, jsonStr);
-
-        DEBUG_PRINTF(
-            "Broadcasting next turn: %s (NodeID: %u)\n", nextPlayerName.c_str(), nextNodeId);
-
-        // TODO: Update brightness for leader displays
-        // updateDisplayBrightness();
-    } else {
-        DEBUG_PRINTF("Warning: Next player role %d not found in connected nodes\n", (int)nextRole);
+    }
+    const String saved = preferences.getString(kStateKey, "");
+    preferences.end();
+    if (!saved.isEmpty()) {
+        decodeSnapshot(*this, saved);
     }
 }
 
-
-void onButtonPress(GameState* state, const ButtonPressEvent& e, Coordinator* coordinator) {
-    DEBUG_PRINTF("DEBUG: Button pressed event started\n");
-
-    uint8_t intPin = coordinator->buttonGrid.buttonGpio.getLastInterruptPin();
-    uint8_t intVal = coordinator->buttonGrid.buttonGpio.getCapturedInterrupt();
-    coordinator->buttonGrid.buttonGpio.clearInterrupts();
-
-    if (e.buttonName == ButtonName::RotaryEncoder) {
-        if (coordinator->rotaryEncoder.pressed()) {
-            DEBUG_PRINTF("DEBUG: Rotary encoder pressed\n");
-            // OK button: Submit current score but don't pass turn
-            uint32_t myNodeId = coordinator->wifi.getMyPeerId();
-            PlayerMessage msg(state->myScore, false, myNodeId);
-            String jsonStr = msg.toJson();
-            uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
-            coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-            DEBUG_PRINTF("Sent score update without turn pass: %s\n", jsonStr.c_str());
-
-            // Reset current score to 0 after submission
-            state->myScore = 0;
-            coordinator->rotaryEncoder.reset();
-
-            coordinator->display1.print("----");
-            return;
-        } else {
-            // Reading the delta clears the interrupt.
-            int32_t rotaryDelta = coordinator->rotaryEncoder.delta();
-            DEBUG_PRINTF("DEBUG: Rotary encoder delta: %d\n", rotaryDelta);
-
-            if (rotaryDelta == 0) {
-                return;
-            }
-
-            state->myScore += rotaryDelta;
-
-            coordinator->display1.print(
-                strFormat("%d", state->myScore));  // Will correctly show negative numbers
-            DEBUG_PRINTF("Display updated to %d for %s (reason: building score)\n",
-                          state->myScore,
-                          coordinator->myRoleConfig()->name.c_str());
-            return;
-        }
+bool GameState::persist() const {
+    Preferences preferences;
+    if (!preferences.begin(kStateNamespace, false)) {
+        return false;
     }
- 
-    DEBUG_PRINTF("DEBUG: Button pressed: intPin=%d, intVal=%d\n", intPin, intVal);
-
-    if (intVal == ButtonGrid::intValReleased || intVal == ButtonGrid::intValReleased2) {
-        // Handle leader board buttons (only 4 buttons: pins 0-3)
-        if (coordinator->myRole() == BoardRole::Leader) {
-            if (intPin == 0 && !state->gameStarted) {  // Button 0 starts the game
-                if (state->whosConnected.size() == 0) {
-                    DEBUG_PRINTF("DEBUG: No connected players, skipping game start\n");
-                    return;
-                }
-                state->gameStarted = true;
-                BoardRole nextRole = getNextTurn(state->whosTurn, state);
-                uint32_t nextNodeId = getNodeIdForRole(nextRole);
-                BoardRoleConfig nextRoleConfig = getRoleConfig(nextNodeId);
-                coordinator->rotaryEncoder.setColor(nextRoleConfig.color);
-
-                broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
-
-                std::map<BoardRole, HT16Display*> roleToDisplayMap = {
-                    {BoardRole::Player_Red, &coordinator->display1},
-                    {BoardRole::Player_Blue, &coordinator->display2},
-                    {BoardRole::Player_Green, &coordinator->display3},
-                    {BoardRole::Player_White, &coordinator->display4}};
-
-                for (const auto& role : state->whosConnected) {
-                    BoardRoleConfig thisRoleConfig = getRoleConfig(getNodeIdForRole(role));
-                    roleToDisplayMap[role]->print(0);
-                }
-
-                return;
-            }
-            // TODO: Implement: Reset
-        }
-        // Handle player board buttons
-        else {
-            if (intPin == ButtonGrid::add) {
-                // ADD button: Submit current score without passing turn (can be done anytime)
-                if (state->myScore != 0) {
-                    uint32_t myNodeId = coordinator->wifi.getMyPeerId();
-                    PlayerMessage msg(state->myScore, false, myNodeId);  // Pass actual nodeId
-                    String jsonStr = msg.toJson();
-                    uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
-                    coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-                    DEBUG_PRINTF("Sent score update (no turn pass): %s\n", jsonStr.c_str());
-
-                    // Reset current score to 0 after submission
-                    state->myScore = 0;
-                    coordinator->rotaryEncoder.reset();
-
-                    // TODO: Keep BEEF displayed if it's still my turn
-                    if (state->gameStarted && state->whosTurn == coordinator->myRole()) {
-                        coordinator->display1.print("BEEF");
-                        Serial.printf("Keeping BEEF display - still my turn after ADD\n");
-                    }
-                } else {
-                    DEBUG_PRINTF("No score to add\n");
-                }
-            } else if (intPin == ButtonGrid::negone) {
-                state->myScore--;
-            } else if (intPin == ButtonGrid::plusone) {
-                state->myScore++;
-            } else if (intPin == ButtonGrid::plusfive) {
-                state->myScore += 5;
-            } else if (intPin == ButtonGrid::okPin) {
-                // OK button: Submit current score AND pass turn
-                uint32_t myNodeId = coordinator->wifi.getMyPeerId();
-                PlayerMessage msg(state->myScore, true, myNodeId);  // Pass actual nodeId
-                String jsonStr = msg.toJson();
-                uint32_t leaderNodeId = getNodeIdForRole(BoardRole::Leader);
-                coordinator->wifi.sendTo(leaderNodeId, jsonStr);
-                DEBUG_PRINTF("Sent score update with turn pass: %s\n", jsonStr.c_str());
-
-                // Reset current score to 0 after submission
-                state->myScore = 0;
-                coordinator->rotaryEncoder.reset();
-                coordinator->rotaryEncoder.setColor(0x000000);
-            }
-            // Only update display if we're building a score or have reset to 0
-            // Don't overwrite BEEF or other turn indicators
-            if (intPin == ButtonGrid::negone || intPin == ButtonGrid::plusone ||
-                intPin == ButtonGrid::plusfive ||
-                (intPin == ButtonGrid::add && state->myScore == 0) ||
-                (intPin == ButtonGrid::okPin && state->myScore == 0)) {
-
-                // Display "----" when currentScore is 0, otherwise show the score (including
-                // negative)
-                if (state->myScore == 0) {
-                    coordinator->display1.print("----");
-                    DEBUG_PRINTF("Display updated to ---- for %s (reason: score=0)\n",
-                                  coordinator->myRoleConfig()->name.c_str());
-                } else {
-                    coordinator->display1.print(
-                        strFormat("%d", state->myScore));  // Will correctly show negative numbers
-                    DEBUG_PRINTF("Display updated to %d for %s (reason: building score)\n",
-                                  state->myScore,
-                                  coordinator->myRoleConfig()->name.c_str());
-                }
-            } else {
-                DEBUG_PRINTF("Display NOT updated for %s (preserving current display)\n",
-                              coordinator->myRoleConfig()->name.c_str());
-            }
-        }
-    }
+    const String encoded = snapshotJson(*this);
+    const bool stored = preferences.putString(kStateKey, encoded) == encoded.length();
+    preferences.end();
+    return stored;
 }
 
-
-void updateLeaderboardConnDisplay(GameState* state, Coordinator* coordinator) {
-    // Update leaderboard display
-    std::map<BoardRole, HT16Display*> roleToDisplayMap = {
-        {BoardRole::Player_Red, &coordinator->display1},
-        {BoardRole::Player_Blue, &coordinator->display2},
-        {BoardRole::Player_Green, &coordinator->display3},
-        {BoardRole::Player_White, &coordinator->display4}};
-
-    for (const auto& role : state->whosConnected) {
-        BoardRoleConfig thisRoleConfig = getRoleConfig(getNodeIdForRole(role));
-        roleToDisplayMap[role]->print(thisRoleConfig.name.c_str());
-    }
+bool GameState::hasLeader() const {
+    return !leaderless && leaderId != 0;
 }
 
-void onMessageReceived(GameState* state, const Event& e, Coordinator* coordinator) {
-    uint32_t from = e.messageReceived.peerId;
-    String message = e.messageReceived.wifiMessage;
-    DEBUG_PRINTF("[Received from=%u] [%s]\n", from, message.c_str());
-
-    if (PlayerMessage::isPlayerMessage(message)) {
-        PlayerMessage playerMsg = PlayerMessage::fromJson(message);
-        BoardRoleConfig fromRoleConfig = getRoleConfig(playerMsg.fromNodeId);
-
-        if (coordinator->myRole() != BoardRole::Leader) {
-            DEBUG_PRINTF("DEBUG: Ignoring player message from %s (not leader)\n",
-                          fromRoleConfig.name.c_str());
-            return;
-        }
-
-        // TODO: the from is wrong, type conversion error?
-        // Validate that the message's fromNodeId matches the actual sender
-        if (playerMsg.fromNodeId != from) {
-            DEBUG_PRINTF(
-                "WARNING: Message fromNodeId (%u) doesn't match sender (%u). Using sender.\n",
-                playerMsg.fromNodeId,
-                from);
-            // Continue processing with the correct 'from' value
-        }
-
-        if (playerMsg.fromNodeId == 0) {
-            DEBUG_PRINTF("WARNING: Message fromNodeId is 0. Ignoring.\n");
-            return;
-        }
-
-        DEBUG_PRINTF("Parsed PlayerMessage: Score=%d, TurnPassed=%s, FromNode=%u (%s)\n",
-                      playerMsg.score,
-                      playerMsg.turnPassed ? "YES" : "NO",
-                      playerMsg.fromNodeId,
-                      fromRoleConfig.name.c_str());
-
-        // IGNORE score submissions before game starts
-        if (!state->gameStarted) {
-            DEBUG_PRINTF("Game not started yet - ignoring score submission from %s\n",
-                          fromRoleConfig.name.c_str());
-
-            if (coordinator->myRole() == BoardRole::Leader) {
-                if (std::find(state->whosConnected.begin(),
-                              state->whosConnected.end(),
-                              fromRoleConfig.role) == state->whosConnected.end()) {
-                    DEBUG_PRINTF("DEBUG: Adding %s to connected players\n",
-                                  fromRoleConfig.name.c_str());
-                    state->whosConnected.push_back(fromRoleConfig.role);
-                    updateLeaderboardConnDisplay(state, coordinator);
-                }
-            }
-
-            return;  // Exit early, don't process the score
-        }
-
-        if (coordinator->myRole() == BoardRole::Leader) {
-            // Update leaderboard - use 'from' (the actual sender) not playerMsg.fromNodeId
-            state->scores[fromRoleConfig.role] += playerMsg.score;
-
-            DEBUG_PRINTF("Updated leaderboard for %s: Total=%d, Offset=%d\n",
-                          fromRoleConfig.name.c_str(),
-                          state->scores[fromRoleConfig.role],
-                          playerMsg.score);
-
-            // Display on leader board (only if leader)
-            std::map<BoardRole, HT16Display*> roleToDisplayMap = {
-                {BoardRole::Player_Red, &coordinator->display1},
-                {BoardRole::Player_Blue, &coordinator->display2},
-                {BoardRole::Player_Green, &coordinator->display3},
-                {BoardRole::Player_White, &coordinator->display4}};
-
-            roleToDisplayMap[fromRoleConfig.role]->print(
-                strFormat("%d", state->scores[fromRoleConfig.role]));
-
-            // Turn management: if player passed turn, broadcast next player
-            if (playerMsg.turnPassed && state->gameStarted) {
-                DEBUG_PRINTF("Player %s passed their turn!\n", fromRoleConfig.name.c_str());
-
-
-
-                // Only process turn passing if it's actually their turn
-                uint32_t currentTurnNodeId = getNodeIdForRole(state->whosTurn);
-                DEBUG_PRINTF("DEBUG: Current turn role: %d, NodeID: %u\n",
-                              (int)state->whosTurn,
-                              currentTurnNodeId);
-                DEBUG_PRINTF("DEBUG: Message sender NodeID: %u\n", from);
-
-                if (from == currentTurnNodeId) {
-                    BoardRole nextRole = getNextTurn(state->whosTurn, state);
-                    uint32_t nextNodeId = getNodeIdForRole(nextRole);
-                    BoardRoleConfig nextRoleConfig = getRoleConfig(nextNodeId);
-        
-                    coordinator->rotaryEncoder.setColor(nextRoleConfig.color);
-                    DEBUG_PRINTF("Turn pass confirmed for current player\n");
-                    broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
-                    // broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
-                    // broadcastNextTurnMessage(state, coordinator, nextRole, nextNodeId, nextRoleConfig);
-
-                } else {
-                    DEBUG_PRINTF(
-                        "Turn pass ignored - not current player's turn (current: %u, sender: %u)\n",
-                        currentTurnNodeId,
-                        from);
-                }
-            } else if (!playerMsg.turnPassed && state->gameStarted) {
-                // Player added score but didn't pass turn - remind all players of current turn
-                DEBUG_PRINTF("Player %s added score but didn't pass turn - refreshing displays\n",
-                              fromRoleConfig.name.c_str());
-
-                // Send current turn reminder to all players
-                // TODO: Do we actually need this?
-                uint32_t currentTurnNodeId = getNodeIdForRole(state->whosTurn);
-                String currentTurnName = getRoleConfig(currentTurnNodeId).name.c_str();
-                TurnMessage turnMsg(currentTurnNodeId, currentTurnName);
-                String jsonStr = turnMsg.toJson();
-                coordinator->wifi.sendBroadcast(jsonStr);
-                DEBUG_PRINTF("Sent turn reminder: %s\n", jsonStr.c_str());
-            }
-        }
-    } else if (TurnMessage::isTurnMessage(message)) {
-        TurnMessage turnMsg = TurnMessage::fromJson(message);
-
-        DEBUG_PRINTF("Parsed TurnMessage: NextPlayer=%s (NodeID: %u)\n",
-                      turnMsg.nextPlayerName.c_str(),
-                      turnMsg.nextPlayerNodeId);
-        DEBUG_PRINTF("My NodeID: %u, My Role: %s\n",
-                      coordinator->wifi.getMyPeerId(),
-                      coordinator->myRoleConfig()->name.c_str());
-
-        // Validate nodeId is not 0
-        if (turnMsg.nextPlayerNodeId == 0) {
-            DEBUG_PRINTF("ERROR: Turn message has invalid nodeId 0!\n");
-            return;
-        }
-
-        // Check if it's my turn
-        if (turnMsg.nextPlayerNodeId == coordinator->wifi.getMyPeerId()) {
-            DEBUG_PRINTLN("IT'S MY TURN! Displaying BEEF");
-            coordinator->display1.print("BEEF");
-            coordinator->rotaryEncoder.setColor(coordinator->myRoleConfig()->color);
-            DEBUG_PRINTF("Set display to BEEF for %s\n",
-                          coordinator->myRoleConfig()->name.c_str());
-        } else {
-            DEBUG_PRINTF("It's %s's turn (not mine), keeping current display\n",
-                          turnMsg.nextPlayerName.c_str());
-            // When it's not my turn and game has started, show "----"
-            if (state->gameStarted && coordinator->myRole() != BoardRole::Leader) {
-                coordinator->display1.print("----");
-                DEBUG_PRINTF("Set display to ---- (not my turn)\n");
-            }
-        }
-
-        // Update brightness for all displays
-        // TODO: update brightness based on turn
-        // updateDisplayBrightness();
-    } else {
-        DEBUG_PRINTLN("Received unknown message format");
-    }
+uint32_t GameState::nextOperationId() {
+    return ++localOperation;
 }
 
-void onNewPeer(GameState* state, const Event& e, Coordinator* coordinator) {
+void GameState::refreshDisplays(Coordinator* coordinator) const {
+    setLeaderboardDisplays(*this, coordinator);
+    setPlayerDisplay(*this, coordinator);
+}
+
+void GameState::heartbeat(Coordinator* coordinator) {
+    const uint32_t now = millis();
     if (coordinator->myRole() != BoardRole::Leader) {
+        // A notification can be received while the leader is briefly busy. Keep
+        // the original operation id and retry until a newer snapshot commits it.
+        if (pendingOperation != 0 && coordinator->ble.hasLeader() &&
+            now - pendingSentMs >= kOperationRetryMs && !pendingMessage.isEmpty()) {
+            if (coordinator->ble.sendTo(getNodeIdForRole(BoardRole::Leader), pendingMessage)) {
+                pendingSentMs = now;
+            }
+        }
         return;
     }
-
-    uint32_t newPeerId = e.newPeer.peerId;
-    DEBUG_PRINTF("New peer connected: %u\n", newPeerId);
-
-    if (state->gameStarted) {
-        DEBUG_PRINTF("Game already started, ignoring new peer\n");
-        return;
-    }
-
-    BoardRoleConfig config = getRoleConfig(newPeerId);
-    if (config.role != BoardRole::Leader) {
-        state->whosConnected.push_back(config.role);
-        updateLeaderboardConnDisplay(state, coordinator);
+    if (now - lastReplicationMs >= kReplicationPeriodMs) {
+        leaderId = coordinator->ble.getMyPeerId();
+        leaderless = false;
+        replicate(*this, coordinator);
+        lastReplicationMs = now;
     }
 }
 
-void onLostPeer(GameState* state, const Event& e, Coordinator* coordinator) {
-    // TODO: Implement later
-}
-
-void GameState::handleEvent(const Event& e, Coordinator* coordinator) {
-    switch (e.type) {
+void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
+    switch (event.type) {
         case EventType::ButtonPressed:
-            onButtonPress(this, e.press, coordinator);
+            onButtonPress(this, event.press, coordinator);
             break;
-        case EventType::WifiConnected:
+        case EventType::BleConnected:
+            leaderless = false;
+            break;
+        case EventType::BleLeaderLost:
+            if (coordinator->myRole() != BoardRole::Leader) {
+                leaderless = true;
+                refreshDisplays(coordinator);
+            }
             break;
         case EventType::NewPeer:
-            onNewPeer(this, e, coordinator);
+            onNewPeer(this, event, coordinator);
             break;
         case EventType::LostPeer:
-            onLostPeer(this, e, coordinator);
+            onLostPeer(this, event, coordinator);
             break;
-        case EventType::MessageReceived:
-            onMessageReceived(this, e, coordinator);
+        case EventType::MessageReceived: {
+            const String json = event.messageReceived.message;
+            if (PlayerMessage::isPlayerMessage(json)) {
+                onPlayerMessage(this, event, coordinator);
+            } else {
+                const SnapshotDecodeResult decoded = decodeSnapshot(*this, json);
+                if (decoded == SnapshotDecodeResult::Invalid) {
+                    break;
+                }
+                const BoardRole myRole = coordinator->myRole();
+                if (isPlayer(myRole)) {
+                    coordinator->ble.confirmLeader(event.messageReceived.connectionHandle);
+                }
+                if (decoded == SnapshotDecodeResult::Stale) {
+                    break;
+                }
+                if (isPlayer(myRole)) {
+                    localOperation = std::max(localOperation, lastOperation[myRole]);
+                    if (pendingOperation != 0 && lastOperation[myRole] >= pendingOperation) {
+                        myScore = 0;
+                        coordinator->rotaryEncoder.reset();
+                        pendingOperation = 0;
+                        pendingScore = 0;
+                        pendingPass = false;
+                        pendingMessage = "";
+                        pendingSentMs = 0;
+                    }
+                }
+                if (!persist()) {
+                    FATAL_ERROR(ErrorCode::STATE_PERSIST_FAILED, "player state replication");
+                }
+                refreshDisplays(coordinator);
+            }
             break;
+        }
         case EventType::StateUpdate:
             break;
     }

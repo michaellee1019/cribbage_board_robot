@@ -8,10 +8,11 @@ struct PlayerMessage {
     int32_t score;
     bool turnPassed;
     uint32_t fromNodeId;
+    uint32_t operationId;
     
     // Constructor
-    PlayerMessage(int32_t s = 0, bool t = false, uint32_t nodeId = 0) 
-        : score(s), turnPassed(t), fromNodeId(nodeId) {
+    PlayerMessage(int32_t s = 0, bool t = false, uint32_t nodeId = 0, uint32_t operation = 0)
+        : score(s), turnPassed(t), fromNodeId(nodeId), operationId(operation) {
         DEBUG_PRINTF("DEBUG PlayerMessage created: score=%d, turnPassed=%s, fromNodeId=%u\n", 
                      s, t ? "true" : "false", nodeId);
     }
@@ -23,6 +24,7 @@ struct PlayerMessage {
         doc["score"] = score;
         doc["turnPassed"] = turnPassed;
         doc["fromNodeId"] = fromNodeId;
+        doc["operationId"] = operationId;
         
         String output;
         serializeJson(doc, output);
@@ -37,7 +39,8 @@ struct PlayerMessage {
         return PlayerMessage(
             doc["score"].as<int32_t>(),
             doc["turnPassed"].as<bool>(),
-            doc["fromNodeId"].as<uint32_t>()
+            doc["fromNodeId"].as<uint32_t>(),
+            doc["operationId"].as<uint32_t>()
         );
     }
     
@@ -50,7 +53,8 @@ struct PlayerMessage {
                doc["type"] == "player" &&
                doc["score"].is<int>() &&
                doc["turnPassed"].is<bool>() &&
-               doc["fromNodeId"].is<unsigned int>();
+               doc["fromNodeId"].is<unsigned int>() &&
+               doc["operationId"].is<unsigned int>();
     }
 };
 
@@ -116,4 +120,3 @@ struct TurnMessage {
                doc["nextPlayerNodeId"].is<unsigned int>();  // More specific type check
     }
 };
-

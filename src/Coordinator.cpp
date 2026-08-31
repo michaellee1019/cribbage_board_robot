@@ -2,7 +2,7 @@
 
 #include "Event.hpp"
 #include "ErrorHandler.hpp"
-#include <MyWifi.hpp>
+#include <MyBle.hpp>
 #include <utils.hpp>
 
 [[noreturn]]
@@ -18,15 +18,14 @@ void dispatcherTask(void* param) {
 
 
 Coordinator::Coordinator() :
-    eventQueue{xQueueCreate(10, sizeof(Event))},
-    scheduler{},
+    eventQueue{xQueueCreate(32, sizeof(Event))},
     display1{},
     display2{},
     display3{},
     display4{},
     buttonGrid{this},
     rotaryEncoder{this},
-    wifi{this}
+    ble{this}
 {
     CHECK_POINTER(eventQueue, ErrorCode::QUEUE_CREATE_FAILED, "Coordinator event queue");
 }
@@ -37,7 +36,7 @@ BoardRole Coordinator::myRole() {
 }
 
 std::optional<BoardRoleConfig> Coordinator::myRoleConfig() {
-    uint32_t myPeerId = wifi.getMyPeerId();
+    uint32_t myPeerId = ble.getMyPeerId();
     auto it = boardRoleConfig.find(myPeerId);
     return it != boardRoleConfig.end() ? std::make_optional(it->second) : std::nullopt;
 }
@@ -57,8 +56,21 @@ void Coordinator::setup() {
     // print i2c devices for debugging hardware
     printI2CDevices();
 
-    // Note: wifi.setup() must be called before myRole() is called.
-    wifi.setup();
+    // BLE identity is the device's factory MAC-derived id, so it must be initialized first.
+    ble.setup();
+    state.restore();
+    if (myRole() == BoardRole::Leader) {
+        state.leaderId = ble.getMyPeerId();
+        state.leaderless = false;
+        ++state.term;
+        if (!state.persist()) {
+            FATAL_ERROR(ErrorCode::STATE_PERSIST_FAILED, "leader startup state");
+        }
+    } else {
+        // A saved replica is useful for recovery, but is never authority while
+        // this board is waiting for a live leaderboard connection.
+        state.leaderless = !ble.hasLeader();
+    }
 
     display1.setup(0x70);
     display1.print("----");
@@ -73,12 +85,14 @@ void Coordinator::setup() {
     
     buttonGrid.setup();
     rotaryEncoder.setup();
+    state.refreshDisplays(this);
 
     BaseType_t taskResult = xTaskCreate(dispatcherTask, "dispatcher", 4096, this, 2, nullptr);
     CHECK_FREERTOS_RESULT(taskResult, ErrorCode::TASK_CREATE_FAILED, "Coordinator dispatcher task");
 }
 
 void Coordinator::loop() {
-    this->wifi.loop();
+    this->ble.loop();
+    this->state.heartbeat(this);
+    delay(5);  // let the idle task run instead of continuously spinning a CPU core
 }
-

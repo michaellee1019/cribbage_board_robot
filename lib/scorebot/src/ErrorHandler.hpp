@@ -8,14 +8,15 @@ enum class ErrorCode {
     QUEUE_CREATE_FAILED,
     TASK_CREATE_FAILED,
     HARDWARE_INIT_FAILED,
-    WIFI_INIT_FAILED,
+    BLE_INIT_FAILED,
     MEMORY_ALLOCATION_FAILED,
     SEMAPHORE_CREATE_FAILED,
     EVENT_GROUP_CREATE_FAILED,
     TIMER_CREATE_FAILED,
     I2C_INIT_FAILED,
     DISPLAY_INIT_FAILED,
-    ENCODER_INIT_FAILED
+    ENCODER_INIT_FAILED,
+    STATE_PERSIST_FAILED
 };
 
 class ErrorHandler {
@@ -76,8 +77,8 @@ public:
                 return "Failed to create FreeRTOS task";
             case ErrorCode::HARDWARE_INIT_FAILED:
                 return "Hardware initialization failed";
-            case ErrorCode::WIFI_INIT_FAILED:
-                return "WiFi initialization failed";
+            case ErrorCode::BLE_INIT_FAILED:
+                return "BLE initialization failed";
             case ErrorCode::MEMORY_ALLOCATION_FAILED:
                 return "Memory allocation failed";
             case ErrorCode::SEMAPHORE_CREATE_FAILED:
@@ -92,6 +93,8 @@ public:
                 return "Display initialization failed";
             case ErrorCode::ENCODER_INIT_FAILED:
                 return "Encoder initialization failed";
+            case ErrorCode::STATE_PERSIST_FAILED:
+                return "Failed to persist game state";
             default:
                 return "Unknown error";
         }
