@@ -5,6 +5,15 @@
 
 namespace scorebot {
 
+inline constexpr uint32_t kOtaPurple = 0xff00ff;
+inline constexpr uint32_t kOtaBlinkIntervalMs = 250;
+
+constexpr uint32_t otaIndicatorColor(bool writing, uint32_t nowMs) {
+    return !writing || ((nowMs / kOtaBlinkIntervalMs) & 1u) == 0
+               ? kOtaPurple
+               : 0;
+}
+
 constexpr bool otaArmHoldReached(bool pressed, uint32_t nowMs,
                                  uint32_t pressStartedMs, uint32_t holdMs) {
     return pressed && pressStartedMs != 0 &&

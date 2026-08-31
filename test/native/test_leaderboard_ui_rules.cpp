@@ -6,17 +6,27 @@
 using scorebot::LeaderboardDisplayMode;
 
 int main() {
-    assert(scorebot::leaderboardDisplayMode(false, false, false) ==
+    assert(scorebot::leaderboardDisplayMode(false, false, false, false) ==
            LeaderboardDisplayMode::Pairing);
-    assert(scorebot::leaderboardDisplayMode(false, true, false) ==
+    assert(scorebot::leaderboardDisplayMode(false, true, false, false) ==
            LeaderboardDisplayMode::LobbyName);
-    assert(scorebot::leaderboardDisplayMode(true, true, true) ==
+    assert(scorebot::leaderboardDisplayMode(true, true, true, false) ==
            LeaderboardDisplayMode::Score);
-    assert(scorebot::leaderboardDisplayMode(true, false, true) ==
+    assert(scorebot::leaderboardDisplayMode(true, false, true, false) ==
            LeaderboardDisplayMode::Rejoining);
-    assert(scorebot::leaderboardDisplayMode(true, true, false) ==
+    assert(scorebot::leaderboardDisplayMode(true, true, false, false) ==
            LeaderboardDisplayMode::Blank);
-    assert(scorebot::leaderboardDisplayMode(true, false, false) ==
+    assert(scorebot::leaderboardDisplayMode(true, false, false, false) ==
+           LeaderboardDisplayMode::Blank);
+    assert(scorebot::leaderboardDisplayMode(false, true, false, true) ==
+           LeaderboardDisplayMode::Sleeping);
+    assert(scorebot::leaderboardDisplayMode(false, false, false, true) ==
+           LeaderboardDisplayMode::Sleeping);
+    assert(scorebot::leaderboardDisplayMode(true, true, true, true) ==
+           LeaderboardDisplayMode::Sleeping);
+    assert(scorebot::leaderboardDisplayMode(true, false, true, true) ==
+           LeaderboardDisplayMode::Sleeping);
+    assert(scorebot::leaderboardDisplayMode(true, false, false, true) ==
            LeaderboardDisplayMode::Blank);
     std::cout << "Leaderboard UI-rule tests passed\n";
 }

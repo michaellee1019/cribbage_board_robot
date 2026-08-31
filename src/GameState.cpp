@@ -228,8 +228,10 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         const bool connected = (state.connectedMask & (1u << index)) != 0;
+        const bool sleeping = (state.sleepingMask & (1u << index)) != 0;
         const bool inRoster = (state.rosterMask & (1u << index)) != 0;
-        switch (scorebot::leaderboardDisplayMode(state.gameStarted, connected, inRoster)) {
+        switch (scorebot::leaderboardDisplayMode(
+            state.gameStarted, connected, inRoster, sleeping)) {
             case scorebot::LeaderboardDisplayMode::Score:
                 displays[index]->print(strFormat("%d", scoreFor(state, role)));
                 break;
@@ -245,6 +247,9 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 } else {
                     displays[index]->print("PAIR");
                 }
+                break;
+            case scorebot::LeaderboardDisplayMode::Sleeping:
+                displays[index]->print("ZZZZ");
                 break;
             case scorebot::LeaderboardDisplayMode::Blank:
                 displays[index]->clear();
@@ -331,9 +336,7 @@ void sendPlayerOperation(GameState* state, Coordinator* coordinator, bool passes
 }
 
 void showOtaArmed(Coordinator* coordinator) {
-    coordinator->ble.armOta();
-    coordinator->display1.print("OTA ");
-    coordinator->rotaryEncoder.setColor(0x004040);
+    coordinator->armOta();
 }
 
 void resetLeaderboard(GameState* state, Coordinator* coordinator) {
@@ -501,12 +504,39 @@ void onPlayerActivityMessage(
     coordinator->noteInteraction();
 }
 
+void onPlayerSleepMessage(
+    GameState* state, const Event& event, Coordinator* coordinator) {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        return;
+    }
+    const PlayerSleepMessage message =
+        PlayerSleepMessage::fromJson(event.messageReceived.message);
+    const uint32_t sender = event.messageReceived.peerId;
+    const BoardRole senderRole = getRoleConfig(sender).role;
+    const scorebot::Player player = toRulePlayer(senderRole);
+    if (!scorebot::isPlayer(player) || message.fromNodeId != sender ||
+        !scorebot::isConnected(toRules(*state), player)) {
+        return;
+    }
+    state->sleepingMask |= static_cast<uint8_t>(
+        1u << scorebot::playerIndex(player));
+    DEBUG_PRINTF("Player sleeping: from=%08lx\n",
+                 static_cast<unsigned long>(sender));
+    state->refreshDisplays(coordinator);
+}
+
 void onNewPeer(GameState* state, const Event& event, Coordinator* coordinator) {
     if (coordinator->myRole() != BoardRole::Leader) {
         return;
     }
+    const scorebot::Player player =
+        toRulePlayer(getRoleConfig(event.newPeer.peerId).role);
+    if (scorebot::isPlayer(player)) {
+        state->sleepingMask &= static_cast<uint8_t>(
+            ~(1u << scorebot::playerIndex(player)));
+    }
     scorebot::Snapshot rules = toRules(*state);
-    if (scorebot::connect(rules, toRulePlayer(getRoleConfig(event.newPeer.peerId).role))) {
+    if (scorebot::connect(rules, player)) {
         fromRules(*state, rules);
         commit(*state, coordinator);
     } else {
@@ -531,6 +561,7 @@ GameState::GameState()
       whosTurn(BoardRole::Unknown),
       scores{},
       connectedMask(0),
+      sleepingMask(0),
       rosterMask(0),
       gameStarted(false),
       gameId(0),
@@ -644,6 +675,8 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                 onPlayerMessage(this, event, coordinator);
             } else if (PlayerActivityMessage::isPlayerActivityMessage(json)) {
                 onPlayerActivityMessage(this, event, coordinator);
+            } else if (PlayerSleepMessage::isPlayerSleepMessage(json)) {
+                onPlayerSleepMessage(this, event, coordinator);
             } else {
                 // State replication is one-way. Never let a player uplink
                 // replace authoritative leaderboard state, regardless of the

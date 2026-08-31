@@ -23,6 +23,7 @@ public:
   BoardRole whosTurn;
   std::array<int32_t, 4> scores;
   uint8_t connectedMask;
+  uint8_t sleepingMask;
   uint8_t rosterMask;
   bool gameStarted;
   uint32_t gameId;

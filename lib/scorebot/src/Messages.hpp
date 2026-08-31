@@ -106,3 +106,40 @@ struct PlayerActivityMessage {
                doc["game"].is<unsigned int>();
     }
 };
+
+// Best-effort presence hint sent immediately before a player turns its radio
+// off for deep sleep. Repeating this message lets the leaderboard distinguish
+// an intentional sleep from an unexpected disconnect.
+struct PlayerSleepMessage {
+    uint32_t fromNodeId;
+
+    explicit PlayerSleepMessage(uint32_t nodeId = 0) : fromNodeId(nodeId) {}
+
+    String toJson() const {
+        JsonDocument doc;
+        doc["type"] = "status";
+        doc["protocol"] = scorebot::kWireProtocolVersion;
+        doc["fromNodeId"] = fromNodeId;
+        doc["state"] = "sleep";
+        String output;
+        serializeJson(doc, output);
+        return output;
+    }
+
+    static PlayerSleepMessage fromJson(const String& jsonStr) {
+        JsonDocument doc;
+        deserializeJson(doc, jsonStr);
+        return PlayerSleepMessage(doc["fromNodeId"].as<uint32_t>());
+    }
+
+    static bool isPlayerSleepMessage(const String& jsonStr) {
+        JsonDocument doc;
+        const DeserializationError error = deserializeJson(doc, jsonStr);
+        return error == DeserializationError::Ok &&
+               doc["type"].is<const char*>() && doc["type"] == "status" &&
+               doc["protocol"].is<uint16_t>() &&
+               doc["protocol"].as<uint16_t>() == scorebot::kWireProtocolVersion &&
+               doc["fromNodeId"].is<unsigned int>() &&
+               doc["state"].is<const char*>() && doc["state"] == "sleep";
+    }
+};

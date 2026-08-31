@@ -39,6 +39,8 @@ public:
     void freezeRoster(uint8_t rosterMask);
     void openRoster();
     void armOta();
+    bool otaActive() const;
+    bool otaWriting() const;
     bool sleepAllowed() const;
     void shutdownForSleep();
     bool sendBroadcast(const String& message);
@@ -86,6 +88,7 @@ private:
     std::atomic<bool> leaderConnected;
     std::atomic<bool> leaderLostPending;
     std::atomic<bool> otaArmRequested;
+    bool otaTransportActive;
     std::atomic<bool> rosterFrozen;
     std::atomic<uint8_t> rosterMask;
     std::atomic<bool> connectionPending;
@@ -114,6 +117,10 @@ private:
     void backOffPeer(const NimBLEAddress& address, uint32_t durationMs);
     void recordLinkLoss(NimBLEClient* client = nullptr);
     void keepExistingPeersAlive();
+    void enterOtaTransportMode();
+    void maintainOtaTransportMode();
+    void exitOtaTransportMode();
+    void updateAdvertising(bool otaOnly);
     size_t peerCount() const;
     void beginScan();
     void startPendingConnection();

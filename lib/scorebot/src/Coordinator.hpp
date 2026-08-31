@@ -14,6 +14,7 @@
 #include <RotaryEncoder.hpp>
 #include <HT16Display.hpp>
 #include <BoardRole.hpp>
+#include <UsbConnection.hpp>
 
 class Coordinator {
 private:
@@ -30,12 +31,15 @@ public:
     ButtonGrid buttonGrid;
     RotaryEncoder rotaryEncoder;
     MyBle ble;
+    UsbConnectionMonitor usbConnection;
 
     Coordinator();
     void setup();
     void loop();
     void enqueueInputFromISR(ButtonName buttonName);
     void noteInteraction();
+    void armOta();
+    bool otaModeActive() const;
     void setPlayerTurnAnimation(bool enabled);
     void setLeaderboardTurnColor(uint32_t color);
     BoardRole myRole();
@@ -58,9 +62,13 @@ private:
     // Start true so the first update applies the idle target after display setup.
     bool displaysAreActive{true};
     std::atomic<bool> sleeping{false};
+    std::atomic<bool> otaUiActive{false};
+    uint32_t lastOtaLightColor{0xffffffff};
 
     void flushInputEvents();
     void updateDisplayBrightness();
+    void showOtaUi();
+    void finishOtaUi();
     bool sleepBlocked() const;
 };
 

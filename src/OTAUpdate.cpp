@@ -9,7 +9,6 @@
 #include <cstring>
 
 namespace {
-constexpr char kOtaServiceUuid[] = "c6a861b0-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaControlUuid[] = "c6a861b1-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaDataUuid[] = "c6a861b2-2f9d-46bc-9a23-bb9c89a519be";
 constexpr char kOtaStatusUuid[] = "c6a861b3-2f9d-46bc-9a23-bb9c89a519be";
@@ -83,7 +82,7 @@ void OtaUpdate::setup(NimBLEServer* server) {
     this->server = server;
     statusMutex = xSemaphoreCreateMutex();
     CHECK_POINTER(statusMutex, ErrorCode::SEMAPHORE_CREATE_FAILED, "OTA status mutex");
-    NimBLEService* service = server->createService(kOtaServiceUuid);
+    NimBLEService* service = server->createService(scorebot::kOtaServiceUuid);
     CHECK_POINTER(service, ErrorCode::MEMORY_ALLOCATION_FAILED, "OTA BLE service");
     NimBLECharacteristic* control = service->createCharacteristic(
         kOtaControlUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, 64);
@@ -114,6 +113,10 @@ void OtaUpdate::arm() {
 bool OtaUpdate::isArmed() const {
     return armed.load() &&
            static_cast<int32_t>(armUntilMs.load() - millis()) > 0;
+}
+
+bool OtaUpdate::isActive() const {
+    return isArmed() || writing.load() || restartAtMs.load() != 0;
 }
 
 bool OtaUpdate::isWriting() const {

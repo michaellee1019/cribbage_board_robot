@@ -12,43 +12,28 @@ flash-all:
     pio run -e controller
     uv run --with bleak python3 tools/ota_ble.py --all .pio/build/controller/firmware.bin
 
-# Flash one directly connected board using only macOS USB serial devices.
-usb-flash:
+# Flash one directly connected ESP32-S3 board. With multiple supported boards,
+# pass the same eight-digit id used by the Scorebot BLE device name.
+usb-flash device_id="":
     #!/usr/bin/env bash
     set -euo pipefail
 
+    # Finish the potentially slow build before asking the user to wake a board.
+    pio run -e controller
+
     timeout_seconds="${SCOREBOT_USB_FLASH_TIMEOUT_SECONDS:-120}"
-    deadline=$((SECONDS + timeout_seconds))
-    echo "Waiting up to ${timeout_seconds} seconds for a USB serial board..."
+    echo "Waiting up to ${timeout_seconds} seconds for a stable ESP32-S3 USB connection."
+    echo "If the board is asleep, press any board control once to wake it."
+    echo "If no port appears, use a data-capable cable, then hold BOOT, tap RESET, and release BOOT."
+    port="$(python3 tools/usb_port.py --id "{{ device_id }}" --timeout "$timeout_seconds")"
 
-    while true; do
-        ports=()
-        while IFS= read -r port; do
-            ports+=("$port")
-        done < <(find /dev -maxdepth 1 -type c \( \
-            -name 'cu.usbmodem*' -o \
-            -name 'cu.usbserial*' -o \
-            -name 'cu.wchusbserial*' -o \
-            -name 'cu.SLAB_USBtoUART*' \
-        \) -print | sort)
-
-        if (( ${#ports[@]} == 1 )); then
-            break
-        fi
-        if (( ${#ports[@]} > 1 )); then
-            echo "Found multiple USB serial devices; unplug all but the board to flash:" >&2
-            printf '  %s\n' "${ports[@]}" >&2
-            exit 1
-        fi
-        if (( SECONDS >= deadline )); then
-            echo "No USB serial board appeared within ${timeout_seconds} seconds." >&2
-            exit 1
-        fi
-        sleep 0.25
-    done
-
-    echo "Flashing ${ports[0]}"
-    pio run -e controller -t upload --upload-port "${ports[0]}"
+    echo "Flashing ${port} at the configured reliable upload speed..."
+    if ! pio run -e controller -t upload --upload-port "$port"; then
+        echo "USB flash failed. Close any serial monitor and retry." >&2
+        echo "For recovery: hold BOOT, tap RESET, release BOOT, then rerun this command." >&2
+        exit 1
+    fi
+    echo "USB flash complete. If BOOT+RESET recovery was used and the app does not start, tap RESET once."
 
 # Build only.
 build:

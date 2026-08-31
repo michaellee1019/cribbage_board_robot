@@ -16,8 +16,10 @@ brew install platformio
 brew install just uv
 just flash <board-id>
 
-# First install or USB recovery for a directly connected board.
+# First install or USB recovery for a directly connected board. If more than
+# one supported board is connected, pass its eight-digit Scorebot id.
 just usb-flash
+just usb-flash <board-id>
 
 # Build without uploading.
 just build
@@ -74,23 +76,31 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
 - In the lobby, the leaderboard shows the names of connected players. Press its **ADD/Start** button to freeze that roster and start with Red, or the first connected color after Red.
 - A paired player in the lobby shows idle dashes. During gameplay, **-1**, **+1**, **+5**, or the rotary encoder build a visible score delta. **ADD** submits it without changing the turn. **OK** also submits it; if that player owns the turn, OK advances it and clears `GO` and the turn light immediately while the leaderboard confirms the operation.
-- During gameplay, a temporarily disconnected rostered board alternates `PAIR` with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
-- A temporary disconnect or deep-sleep cycle never advances the turn. If the active board is asleep, the game waits for that same board to rejoin.
+- During gameplay, an unexpectedly disconnected rostered board alternates `PAIR` with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
+- A temporary disconnect or deep-sleep cycle never advances the turn. A player sends three sleep notices before turning off its Bluetooth radio, so the leaderboard shows `ZZZZ` for an intentionally sleeping board and reserves `PAIR` for an unexpected disconnect. If the active board is asleep, the game waits for that same board to rejoin.
 - Player boards enter deep sleep after five idle minutes, or twenty minutes when they contain a locally entered score that has not been submitted; the leaderboard waits ten minutes. The first local control action on a sleeping board is wake-only: it wakes and rejoins without also changing a score or starting/resetting a game. The leaderboard and player boards are woken independently.
 - The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. While the leaderboard is awake, player interaction wakes its displays and turn light; after five quiet seconds they fade to their minimum visible levels. Deep-sleeping boards are woken independently with a local control press.
 - On dual-core ESP32-S3 boards, the Bluetooth controller and NimBLE host are pinned to radio Core 0. The Arduino loop, UI dispatcher, I2C input/display work, and non-blocking fades run on application Core 1; BLE callbacks only copy gameplay messages into the application queue.
 - During a game, briefly press the leaderboard's rotary encoder to zero every score and return to an open lobby. Holding it for three seconds still arms OTA. Persisted scores survive ordinary power cycles until this explicit reset.
 
+## USB flashing
+
+Use a data-capable USB-C cable and run `just usb-flash`. The command builds the firmware before waiting for a board, ignores unrelated serial devices, and starts the upload only after the same supported ESP32-S3 USB port is visible in two consecutive checks. If multiple Scorebot boards are connected, use `just usb-flash <board-id>` with the eight hexadecimal digits from its `Scorebot-<board-id>` name.
+
+An awake board connected to an active USB computer will not enter deep sleep, even when no serial monitor is open. If the board was already asleep when the cable was connected, press any board control once; that first action remains wake-only, and the USB connection will then keep the board awake for flashing.
+
+A charging-only cable, wall charger, or suspended computer does not provide a detectable active USB data connection. If ordinary enumeration fails, close any serial monitor, hold **BOOT**, tap **RESET**, then release **BOOT** and rerun the command. A board placed into download mode manually may need one final **RESET** tap after the write completes. The upload remains limited to 57,600 baud because that setting is more reliable through multi-port USB-C hubs.
+
 ## BLE OTA updates
 
 After initially flashing firmware by USB, an individual board can be updated from the laptop without joining a Wi-Fi network:
 
-1. Hold that board's rotary button for at least three seconds. Its display shows `OTA ` as soon as the hold is recognized and opens a ten-minute update window.
+1. Hold that board's rotary button for at least three seconds. Its displays switch to full-brightness `OTA ` and its light turns purple as soon as the hold is recognized, opening a ten-minute update window.
 2. On the laptop, run `just flash <board-id>` (the board advertises as `Scorebot-<board-id>`). If it is the only Scorebot board nearby, `just flash` selects it automatically.
 
 To update every board at once, locally arm each board first and run `just flash-all`. The laptop updates them sequentially and reports any board that was not armed or could not be reached.
 
-The board accepts an update only during that local window. This physical-presence gate prevents a nearby BLE device from starting an update by itself.
+The board accepts an update only during that local window. OTA is an exclusive mode: normal game traffic, player pairing, input, display fading, and deep sleep remain suspended for the entire window. Bluetooth runs at maximum transmit power, the light stays solid purple while waiting, and it blinks purple while firmware is being received. Normal pairing and UI behavior resume if the window expires or a transfer aborts. This physical-presence gate prevents a nearby BLE device from starting an update by itself.
 
 On macOS, allow the terminal application running `just` to use Bluetooth if macOS asks. The update script uses the operating system's native CoreBluetooth support through Bleak; it does not join the game BLE network or require Wi-Fi.
 

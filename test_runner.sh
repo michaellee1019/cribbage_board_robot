@@ -30,6 +30,7 @@ run_logic_tests() {
         test/native/test_visual_feedback_rules.cpp
         test/native/test_ble_power_rules.cpp
         test/native/test_sleep_rules.cpp
+        test/native/test_usb_connection_rules.cpp
         test/native/test_message_authority_rules.cpp
     )
     local source binary
@@ -43,6 +44,7 @@ run_logic_tests() {
             -I. -Ilib/scorebot/src "$source" "${extra_sources[@]}" -o "$binary"
         "$binary"
     done
+    python3 test/test_usb_port.py
 }
 
 case "${1:-embedded}" in

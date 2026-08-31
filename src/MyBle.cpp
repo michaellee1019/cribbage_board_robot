@@ -4,6 +4,7 @@
 #include <BoardIdentity.hpp>
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
+#include <Messages.hpp>
 #include <Protocol.hpp>
 #include <utils.hpp>
 
@@ -34,6 +35,11 @@ constexpr uint16_t kSteadyTimeout = 600;
 constexpr size_t kPlayerCount = 4;
 constexpr size_t kTxQueueDepth = 8;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
+constexpr uint8_t kSleepMessageCount = 3;
+// The steady connection interval can be as long as 125 ms. Leaving a full
+// interval after every notification, including the last one, gives the radio
+// time to put each queued packet on air before it is deinitialized.
+constexpr uint32_t kSleepMessageGapMs = 150;
 
 #if CONFIG_ESP32S3_UNIVERSAL_MAC_ADDRESSES == 2
 constexpr uint8_t kBluetoothMacOffset = 1;
@@ -209,6 +215,7 @@ MyBle::MyBle(Coordinator* coordinator)
       leaderConnected(false),
       leaderLostPending(false),
       otaArmRequested(false),
+      otaTransportActive(false),
       rosterFrozen(false),
       rosterMask(0),
       connectionPending(false),
@@ -270,11 +277,118 @@ void MyBle::armOta() {
     otaArmRequested.store(true);
 }
 
+bool MyBle::otaActive() const {
+    return otaArmRequested.load() || ota.isActive();
+}
+
+bool MyBle::otaWriting() const {
+    return ota.isWriting();
+}
+
 bool MyBle::sleepAllowed() const {
-    return !otaArmRequested.load() && !ota.isArmed() && !ota.isWriting();
+    return !otaActive();
+}
+
+void MyBle::enterOtaTransportMode() {
+    otaTransportActive = true;
+    if (txQueue != nullptr) {
+        xQueueReset(txQueue);
+    }
+    connectionRequested.store(false);
+    if (pendingConnectionClient.load() == nullptr) {
+        connectionPending.store(false);
+        connectionAttemptStartedMs.store(0);
+    }
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) {
+        scan->stop();
+    }
+
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    if (advertising->isAdvertising()) {
+        advertising->stop();
+    }
+    (void)advertising->removeServiceUUID(kServiceUuid);
+    (void)advertising->addServiceUUID(scorebot::kOtaServiceUuid);
+
+    const int8_t maximumPower = scorebot::ble_power::kMaximumConnectionPowerDbm;
+    (void)NimBLEDevice::setPower(maximumPower);
+    (void)NimBLEDevice::setPower(maximumPower, NimBLETxPowerType::Connection);
+    (void)NimBLEDevice::setPower(maximumPower, NimBLETxPowerType::Advertise);
+    (void)NimBLEDevice::setPower(maximumPower, NimBLETxPowerType::Scan);
+    maintainOtaTransportMode();
+    updateAdvertising(true);
+}
+
+void MyBle::maintainOtaTransportMode() {
+    if (coordinator->myRole() != BoardRole::Leader) {
+        const uint16_t connection = leaderConnectionHandle.load();
+        if (server != nullptr && connection != kNoConnection) {
+            (void)server->disconnect(connection);
+        }
+        return;
+    }
+
+    for (NimBLEClient* client : NimBLEDevice::getConnectedClients()) {
+        if (!client->isConnected()) {
+            continue;
+        }
+        {
+            ScopedSemaphore lock(peersMutex);
+            for (NimBLEClient*& intentional : intentionalDisconnects) {
+                if (intentional == client) {
+                    break;
+                }
+                if (intentional == nullptr) {
+                    intentional = client;
+                    break;
+                }
+            }
+        }
+        (void)client->disconnect();
+    }
+}
+
+void MyBle::exitOtaTransportMode() {
+    otaTransportActive = false;
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    if (advertising->isAdvertising()) {
+        advertising->stop();
+    }
+    (void)advertising->removeServiceUUID(scorebot::kOtaServiceUuid);
+    (void)advertising->addServiceUUID(kServiceUuid);
+    (void)NimBLEDevice::setPower(connectionPowerDbm.load());
+    (void)NimBLEDevice::setPower(
+        connectionPowerDbm.load(), NimBLETxPowerType::Connection);
+    updateAdvertising(false);
+}
+
+void MyBle::updateAdvertising(bool otaOnly) {
+    if (server == nullptr) {
+        return;
+    }
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    const bool unpairedPlayer = coordinator->myRole() != BoardRole::Leader &&
+                                server->getConnectedCount() == 0;
+    const bool shouldAdvertise = otaOnly || unpairedPlayer;
+    if (shouldAdvertise && !advertising->isAdvertising()) {
+        advertising->start();
+    } else if (!shouldAdvertise && advertising->isAdvertising()) {
+        advertising->stop();
+    }
 }
 
 void MyBle::shutdownForSleep() {
+    if (coordinator->myRole() != BoardRole::Leader && hasLeader()) {
+        const String message = PlayerSleepMessage(peerId).toJson();
+        // Notifications are unacknowledged, so make the final few packets all
+        // carry the same intent before turning the controller off.
+        for (uint8_t attempt = 0; attempt < kSleepMessageCount; ++attempt) {
+            (void)transmitTo(
+                getNodeIdForRole(BoardRole::Leader), message.c_str(), message.length());
+            delay(kSleepMessageGapMs);
+        }
+    }
     // deinit(false) stops the host and controller without running destructors
     // against application-owned callback objects during the final sleep path.
     NimBLEDevice::deinit(false);
@@ -952,6 +1066,21 @@ void MyBle::loop() {
         ota.arm();
     }
     ota.loop();
+    if (ota.isActive()) {
+        if (!otaTransportActive) {
+            enterOtaTransportMode();
+        } else {
+            maintainOtaTransportMode();
+            updateAdvertising(true);
+        }
+        return;
+    }
+    if (otaTransportActive) {
+        // Resume pairing on the following loop. This gives Coordinator one
+        // iteration to restore the normal UI before lifecycle events arrive.
+        exitOtaTransportMode();
+        return;
+    }
     if (coordinator->myRole() == BoardRole::Leader) {
         disconnectExcludedPeers();
     }
@@ -970,15 +1099,7 @@ void MyBle::loop() {
     }
     if (server != nullptr && now - lastAdvertisingCheckMs >= 1000) {
         lastAdvertisingCheckMs = now;
-        NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
-        const bool unpairedPlayer = coordinator->myRole() != BoardRole::Leader &&
-                                    server->getConnectedCount() == 0;
-        const bool shouldAdvertise = unpairedPlayer || ota.isArmed();
-        if (shouldAdvertise && !advertising->isAdvertising()) {
-            advertising->start();
-        } else if (!shouldAdvertise && advertising->isAdvertising()) {
-            advertising->stop();
-        }
+        updateAdvertising(false);
     }
     if (coordinator->myRole() == BoardRole::Leader) {
         reconcilePeers();

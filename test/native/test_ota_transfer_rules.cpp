@@ -6,6 +6,13 @@
 #include <iostream>
 
 int main() {
+    assert(scorebot::otaIndicatorColor(false, 0) == scorebot::kOtaPurple);
+    assert(scorebot::otaIndicatorColor(false, 9999) == scorebot::kOtaPurple);
+    assert(scorebot::otaIndicatorColor(true, 0) == scorebot::kOtaPurple);
+    assert(scorebot::otaIndicatorColor(true, 249) == scorebot::kOtaPurple);
+    assert(scorebot::otaIndicatorColor(true, 250) == 0);
+    assert(scorebot::otaIndicatorColor(true, 499) == 0);
+    assert(scorebot::otaIndicatorColor(true, 500) == scorebot::kOtaPurple);
     assert(!scorebot::otaArmHoldReached(true, 3000, 0, 3000));
     assert(!scorebot::otaArmHoldReached(true, 3999, 1000, 3000));
     assert(scorebot::otaArmHoldReached(true, 4000, 1000, 3000));

@@ -8,6 +8,10 @@
 #include <cstdint>
 #include <memory>
 
+namespace scorebot {
+inline constexpr char kOtaServiceUuid[] = "c6a861b0-2f9d-46bc-9a23-bb9c89a519be";
+}
+
 class OtaControlCallbacks;
 class OtaDataCallbacks;
 
@@ -24,6 +28,7 @@ public:
     void setup(NimBLEServer* server);
     void arm();
     bool isArmed() const;
+    bool isActive() const;
     bool isWriting() const;
     void onDisconnected(uint16_t connectionHandle);
     void loop();

@@ -11,6 +11,7 @@ from bleak import BleakClient, BleakScanner
 
 
 SERVICE_UUID = "c6a8619e-2f9d-46bc-9a23-bb9c89a519be"
+OTA_SERVICE_UUID = "c6a861b0-2f9d-46bc-9a23-bb9c89a519be"
 IDENTITY_UUID = "c6a8619f-2f9d-46bc-9a23-bb9c89a519be"
 CONTROL_UUID = "c6a861b1-2f9d-46bc-9a23-bb9c89a519be"
 DATA_UUID = "c6a861b2-2f9d-46bc-9a23-bb9c89a519be"
@@ -42,7 +43,11 @@ async def find_scorebot_devices():
     for device, advertisement in discovered.values():
         reported_name = advertisement.local_name or ""
         advertised_services = {uuid.casefold() for uuid in advertisement.service_uuids or []}
-        if reported_name.startswith("Scorebot-") or SERVICE_UUID.casefold() in advertised_services:
+        if (
+            reported_name.startswith("Scorebot-")
+            or SERVICE_UUID.casefold() in advertised_services
+            or OTA_SERVICE_UUID.casefold() in advertised_services
+        ):
             candidates[device.address] = (device, reported_name)
 
     boards = []

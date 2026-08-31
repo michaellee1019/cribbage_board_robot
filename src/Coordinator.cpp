@@ -5,6 +5,7 @@
 #include <MyBle.hpp>
 #include <I2cBus.hpp>
 #include <LightColorRules.hpp>
+#include <OtaTransferRules.hpp>
 #include <VisualFeedbackRules.hpp>
 #include <DeepSleep.hpp>
 #include <SleepRules.hpp>
@@ -28,7 +29,7 @@ void dispatcherTask(void* param) {
     while (true) {
         if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
             xSemaphoreTake(coordinator->stateMutex, portMAX_DELAY);
-            if (!coordinator->sleeping.load()) {
+            if (!coordinator->sleeping.load() && !coordinator->otaModeActive()) {
                 coordinator->state.handleEvent(e, coordinator);
             }
             xSemaphoreGive(coordinator->stateMutex);
@@ -63,7 +64,7 @@ const BoardRoleConfig& Coordinator::myRoleConfig() {
 
 void Coordinator::serviceStateHeartbeat() {
     xSemaphoreTake(stateMutex, portMAX_DELAY);
-    if (!sleeping.load()) {
+    if (!sleeping.load() && !otaModeActive()) {
         state.heartbeat(this);
     }
     xSemaphoreGive(stateMutex);
@@ -78,6 +79,7 @@ void Coordinator::setup() {
     // Enable serial and wait for 5s delay to allow serial monitor to connect
 
     Serial.begin(115200);
+    usbConnection.begin();
     if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
         delay(5000);  // Ensure see the serial messages from the beginning on cold boot.
     }
@@ -147,10 +149,16 @@ void Coordinator::setup() {
 }
 
 void Coordinator::loop() {
+    usbConnection.poll();
     flushInputEvents();
     this->ble.loop();
     xSemaphoreTake(stateMutex, portMAX_DELAY);
-    this->state.heartbeat(this);
+    if (otaUiActive.load() && !ble.otaActive()) {
+        finishOtaUi();
+    }
+    if (!otaUiActive.load()) {
+        this->state.heartbeat(this);
+    }
     updateDisplayBrightness();
     const bool shouldSleep = scorebot::sleep::isDue(
         millis(), awakeSinceMs, lastInteractionMs.load(), sleepBlocked(),
@@ -161,7 +169,15 @@ void Coordinator::loop() {
     }
     xSemaphoreGive(stateMutex);
     if (shouldSleep) {
-        scorebot::deep_sleep::enter(*this);
+        // USB can be connected just as the idle timeout expires. Give the
+        // native controller one final, short enumeration window before any
+        // peripherals are shut down. This runs only at an actual sleep edge.
+        if (usbConnection.connectionAppearsWithin(
+                scorebot::usb::kFinalSleepProbeMs)) {
+            sleeping.store(false);
+        } else {
+            scorebot::deep_sleep::enter(*this);
+        }
     }
     delay(5);  // let the idle task run instead of continuously spinning a CPU core
 }
@@ -170,11 +186,25 @@ bool Coordinator::sleepBlocked() const {
     return state.pendingOperation != 0 ||
            state.rotaryPressStartedMs.load() != 0 ||
            pendingInputEvents.load(std::memory_order_acquire) != 0 ||
+           usbConnection.connected() ||
            !ble.sleepAllowed();
 }
 
 void Coordinator::noteInteraction() {
     lastInteractionMs.store(millis());
+}
+
+void Coordinator::armOta() {
+    // Publish exclusive UI intent before asking the BLE-owner loop to arm.
+    // That closes the dispatcher gate immediately after the hold event.
+    otaUiActive.store(true);
+    pendingInputEvents.store(0);
+    ble.armOta();
+    showOtaUi();
+}
+
+bool Coordinator::otaModeActive() const {
+    return otaUiActive.load();
 }
 
 void Coordinator::setPlayerTurnAnimation(bool enabled) {
@@ -192,12 +222,18 @@ void Coordinator::setLeaderboardTurnColor(uint32_t color) {
 void Coordinator::enqueueInputFromISR(ButtonName buttonName) {
     static_assert(std::atomic<uint8_t>::is_always_lock_free,
                   "input-event coalescing must remain ISR-safe");
+    if (otaUiActive.load(std::memory_order_relaxed)) {
+        return;
+    }
     const uint8_t bit = buttonName == ButtonName::GPIOButtons ? 1u : 2u;
     pendingInputEvents.fetch_or(bit, std::memory_order_relaxed);
 }
 
 void Coordinator::flushInputEvents() {
     uint8_t pending = pendingInputEvents.exchange(0, std::memory_order_acq_rel);
+    if (otaUiActive.load()) {
+        return;
+    }
     while (pending != 0) {
         const ButtonName buttonName = (pending & 1u) != 0
                                           ? ButtonName::GPIOButtons
@@ -216,6 +252,14 @@ void Coordinator::flushInputEvents() {
 
 void Coordinator::updateDisplayBrightness() {
     const uint32_t now = millis();
+    if (otaUiActive.load()) {
+        const uint32_t color = scorebot::otaIndicatorColor(ble.otaWriting(), now);
+        if (color != lastOtaLightColor) {
+            rotaryEncoder.setColor(color);
+            lastOtaLightColor = color;
+        }
+        return;
+    }
     if (myRole() != BoardRole::Leader && playerTurnAnimationActive.load()) {
         if (!turnAnimationWasActive) {
             lastTurnSegmentBrightness = 0xff;
@@ -277,4 +321,41 @@ void Coordinator::updateDisplayBrightness() {
             lastLeaderboardLightColor = color;
         }
     }
+}
+
+void Coordinator::showOtaUi() {
+    setPlayerTurnAnimation(false);
+    setLeaderboardTurnColor(0);
+    display1.setBrightnessNow(display_brightness::kActiveBrightness);
+    display1.print("OTA ");
+    if (myRole() == BoardRole::Leader) {
+        display2.setBrightnessNow(display_brightness::kActiveBrightness);
+        display3.setBrightnessNow(display_brightness::kActiveBrightness);
+        display4.setBrightnessNow(display_brightness::kActiveBrightness);
+        display2.print("OTA ");
+        display3.print("OTA ");
+        display4.print("OTA ");
+    }
+    rotaryEncoder.setColor(scorebot::kOtaPurple);
+    lastOtaLightColor = scorebot::kOtaPurple;
+    turnAnimationWasActive = false;
+    displaysAreActive = true;
+}
+
+void Coordinator::finishOtaUi() {
+    otaUiActive.store(false);
+    lastOtaLightColor = 0xffffffff;
+    lastTurnLightColor = 0xffffffff;
+    lastLeaderboardLightColor = 0xffffffff;
+    rotaryEncoder.setColor(0x000000);
+    state.refreshDisplays(this);
+
+    const bool active = display_brightness::isInteractionActive(
+        millis(), lastInteractionMs.load());
+    const uint8_t target = display_brightness::targetFor(active);
+    display1.setTargetBrightness(target);
+    display2.setTargetBrightness(target);
+    display3.setTargetBrightness(target);
+    display4.setTargetBrightness(target);
+    displaysAreActive = active;
 }
