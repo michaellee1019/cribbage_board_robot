@@ -2,6 +2,8 @@
 
 #include <BoardRole.hpp>
 #include <BoardIdentity.hpp>
+#include <BleService.hpp>
+#include <DisplayPeerRules.hpp>
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
 #include <Messages.hpp>
@@ -10,11 +12,12 @@
 
 #include <array>
 
-constexpr char kServiceUuid[] = "c6a8619e-2f9d-46bc-9a23-bb9c89a519be";
-constexpr char kIdentityUuid[] = "c6a8619f-2f9d-46bc-9a23-bb9c89a519be";
-constexpr char kUplinkUuid[] = "c6a861a0-2f9d-46bc-9a23-bb9c89a519be";
-constexpr char kDownlinkUuid[] = "c6a861a1-2f9d-46bc-9a23-bb9c89a519be";
-constexpr char kProtocolUuid[] = "c6a861a2-2f9d-46bc-9a23-bb9c89a519be";
+using scorebot::kBluetoothMacOffset;
+using scorebot::kDownlinkUuid;
+using scorebot::kIdentityUuid;
+using scorebot::kProtocolUuid;
+using scorebot::kUplinkUuid;
+constexpr const char* kServiceUuid = scorebot::kGameServiceUuid;
 constexpr uint32_t kLeaderTimeoutMs = 15000;
 constexpr uint32_t kScanDurationMs = 5000;
 constexpr uint32_t kScanBackoffMs = 1000;
@@ -36,6 +39,8 @@ constexpr uint16_t kSteadyMaxInterval = 24;
 constexpr uint16_t kSteadyLatency = 0;
 constexpr uint16_t kSteadyTimeout = 400;
 constexpr size_t kPlayerCount = 4;
+// Four scoring boards plus one passive LED-wall display.
+constexpr size_t kMaxConnectedBoards = kPlayerCount + 1;
 constexpr size_t kTxQueueDepth = 8;
 constexpr uint16_t kNoConnection = BLE_HS_CONN_HANDLE_NONE;
 constexpr uint8_t kSleepMessageCount = 3;
@@ -43,12 +48,6 @@ constexpr uint8_t kSleepMessageCount = 3;
 // interval after every notification, including the last one, gives the radio
 // time to put each queued packet on air before it is deinitialized.
 constexpr uint32_t kSleepMessageGapMs = 150;
-
-#if CONFIG_ESP32S3_UNIVERSAL_MAC_ADDRESSES == 2
-constexpr uint8_t kBluetoothMacOffset = 1;
-#else
-constexpr uint8_t kBluetoothMacOffset = 2;
-#endif
 
 class ScopedSemaphore final {
 public:
@@ -548,7 +547,10 @@ void MyBle::beginScan() {
     const size_t targetPeers = rosterFrozen.load()
                                    ? static_cast<size_t>(__builtin_popcount(rosterMask.load()))
                                    : kPlayerCount;
-    if (scan->isScanning() || peers >= targetPeers ||
+    // Keep the existing maintenance cadence until the wall display joins.
+    // Scanning stops once the roster and that one display are both present.
+    const bool displayConnected = hasDisplayPeer();
+    if (scan->isScanning() || (peers >= targetPeers && displayConnected) ||
         (lastScanStartedMs != 0 && now - lastScanStartedMs < scanBackoffMs)) {
         return;
     }
@@ -704,22 +706,25 @@ void MyBle::addPeer(NimBLEClient* client) {
 
     const uint32_t nodeId = identity->readValue<uint32_t>();
     const NimBLEAddress transportAddress = client->getPeerAddress();
+    const uint64_t bluetoothMac = static_cast<uint64_t>(transportAddress);
     const uint32_t transportNodeId = transportAddress.isPublic()
                                          ? getRoleConfigForBluetoothMac(
-                                               static_cast<uint64_t>(transportAddress),
-                                               kBluetoothMacOffset).nodeId
+                                               bluetoothMac, kBluetoothMacOffset).nodeId
                                          : 0;
     const uint16_t remoteProtocol = protocol->readValue<uint16_t>();
     const BoardRole role = getRoleConfig(nodeId).role;
     const uint8_t playerMask = roleMask(role);
-    const bool rosterRejected =
-        rosterFrozen.load() && (rosterMask.load() & playerMask) == 0;
-    if (remoteProtocol != scorebot::kWireProtocolVersion || nodeId == 0 ||
-        nodeId != transportNodeId ||
-        nodeId == peerId || !isPlayerRole(role) ||
-        rosterRejected) {
+    const bool protocolOk = remoteProtocol == scorebot::kWireProtocolVersion;
+    const bool displayPeer = protocolOk && transportAddress.isPublic() &&
+                             nodeId != peerId &&
+                             scorebot::isDisplaySubscriber(nodeId, bluetoothMac, role);
+    const bool knownPlayer = protocolOk && nodeId != 0 && nodeId == transportNodeId &&
+                             nodeId != peerId && isPlayerRole(role);
+    const bool rosterRejected = knownPlayer && rosterFrozen.load() &&
+                                (rosterMask.load() & playerMask) == 0;
+    if ((!knownPlayer && !displayPeer) || rosterRejected) {
         DEBUG_PRINTF(
-            "BLE: rejected player identity=%08lx protocol=%u expected=%u frozen=%d roster=0x%02x\n",
+            "BLE: rejected peer identity=%08lx protocol=%u expected=%u frozen=%d roster=0x%02x\n",
             static_cast<unsigned long>(nodeId), static_cast<unsigned>(remoteProtocol),
             static_cast<unsigned>(scorebot::kWireProtocolVersion), rosterFrozen.load(),
             static_cast<unsigned>(rosterMask.load()));
@@ -738,11 +743,13 @@ void MyBle::addPeer(NimBLEClient* client) {
         ScopedSemaphore lock(peersMutex);
         // Re-check under the peer lock: Start may freeze the roster after
         // service discovery's earlier check but before this insertion.
-        rejectedAfterFreeze = rosterFrozen.load() &&
+        rejectedAfterFreeze = !displayPeer && rosterFrozen.load() &&
                               (rosterMask.load() & playerMask) == 0;
         duplicate = peers.count(nodeId) != 0;
         if (!rejectedAfterFreeze && !duplicate) {
-            peers.emplace(nodeId, Peer{nodeId, client, remoteDownlink, false});
+            // A display is already announced so it never becomes a player.
+            peers.emplace(
+                nodeId, Peer{nodeId, client, remoteDownlink, displayPeer, displayPeer});
         }
     }
     if (rejectedAfterFreeze || duplicate) {
@@ -774,7 +781,8 @@ void MyBle::addPeer(NimBLEClient* client) {
     connectionSettledMs.store(millis());
     finishPendingConnection(client);
     DEBUG_PRINTF(
-        "BLE: registered player %08lx join=%lu ms rssi=%d dBm steady=%d\n",
+        "BLE: registered %s %08lx join=%lu ms rssi=%d dBm steady=%d\n",
+        displayPeer ? "display" : "player",
         static_cast<unsigned long>(nodeId), static_cast<unsigned long>(joinMs),
         rssi, steadyParamsRequested);
 }
@@ -790,17 +798,19 @@ void MyBle::finishPendingConnection(NimBLEClient* client) {
 void MyBle::removePeer(NimBLEClient* client) {
     connectionSettledMs.store(millis());
     uint32_t nodeId = 0;
+    bool display = false;
     {
         ScopedSemaphore lock(peersMutex);
         for (auto it = peers.begin(); it != peers.end(); ++it) {
             if (it->second.client == client) {
                 nodeId = it->first;
+                display = it->second.display;
                 peers.erase(it);
                 break;
             }
         }
     }
-    if (nodeId != 0) {
+    if (nodeId != 0 && !display) {
         DEBUG_PRINTF("BLE: removed player %08lx\n", static_cast<unsigned long>(nodeId));
         ScopedSemaphore lock(peersMutex);
         bool alreadyPending = false;
@@ -878,10 +888,16 @@ void MyBle::keepExistingPeersAlive() {
 
 size_t MyBle::peerCount() const {
     ScopedSemaphore lock(peersMutex);
-    if (!rosterFrozen.load()) {
-        return peers.size();
-    }
     size_t count = 0;
+    if (!rosterFrozen.load()) {
+        for (const auto& [nodeId, peer] : peers) {
+            (void)nodeId;
+            if (!peer.display) {
+                ++count;
+            }
+        }
+        return count;
+    }
     const uint8_t allowed = rosterMask.load();
     for (const auto& [nodeId, peer] : peers) {
         (void)peer;
@@ -890,6 +906,17 @@ size_t MyBle::peerCount() const {
         }
     }
     return count;
+}
+
+bool MyBle::hasDisplayPeer() const {
+    ScopedSemaphore lock(peersMutex);
+    for (const auto& [nodeId, peer] : peers) {
+        (void)nodeId;
+        if (peer.display) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void MyBle::disconnectExcludedPeers() {
@@ -902,6 +929,9 @@ void MyBle::disconnectExcludedPeers() {
     {
         ScopedSemaphore lock(peersMutex);
         for (const auto& [nodeId, peer] : peers) {
+            if (peer.display) {
+                continue;
+            }
             if ((allowed & roleMask(getRoleConfig(nodeId).role)) == 0 &&
                 count < excluded.size()) {
                 excluded[count++] = peer.client;
@@ -937,7 +967,7 @@ void MyBle::reconcilePeers() {
         }
     }
 
-    std::array<NimBLEClient*, kPlayerCount> disconnected{};
+    std::array<NimBLEClient*, kMaxConnectedBoards> disconnected{};
     size_t count = 0;
     {
         ScopedSemaphore lock(peersMutex);
@@ -1094,20 +1124,21 @@ bool MyBle::transmitTo(uint32_t nodeId, const char* message, size_t length) {
         return uplink->notify(connection);
     }
 
-    if (rosterFrozen.load() &&
-        (rosterMask.load() & roleMask(getRoleConfig(nodeId).role)) == 0) {
-        return false;
-    }
-
+    bool display = false;
     NimBLEClient* client = nullptr;
     NimBLERemoteCharacteristic* remoteDownlink = nullptr;
     {
         ScopedSemaphore lock(peersMutex);
         const auto peer = peers.find(nodeId);
         if (peer != peers.end()) {
+            display = peer->second.display;
             client = peer->second.client;
             remoteDownlink = peer->second.downlink;
         }
+    }
+    if (rosterFrozen.load() && !display &&
+        (rosterMask.load() & roleMask(getRoleConfig(nodeId).role)) == 0) {
+        return false;
     }
     // BLE writes can synchronously wait on the NimBLE host task (especially
     // above one ATT packet). Never hold peersMutex across that wait because
@@ -1144,15 +1175,14 @@ void MyBle::drainTransmissions() {
             succeeded = transmitTo(target, request.message, request.length);
             anySucceeded = succeeded;
         } else {
-            std::array<uint32_t, kPlayerCount> nodeIds{};
+            std::array<uint32_t, kMaxConnectedBoards> nodeIds{};
             size_t count = 0;
             const bool frozen = rosterFrozen.load();
             const uint8_t allowed = rosterMask.load();
             {
                 ScopedSemaphore lock(peersMutex);
                 for (const auto& [nodeId, peer] : peers) {
-                    (void)peer;
-                    if (frozen &&
+                    if (frozen && !peer.display &&
                         (allowed & roleMask(getRoleConfig(nodeId).role)) == 0) {
                         continue;
                     }

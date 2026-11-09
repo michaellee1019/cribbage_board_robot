@@ -39,6 +39,14 @@ usb-flash device_id="":
 build:
     pio run -e controller
 
+# Build the passive LED-wall score bridge. Flash it to ESP32 6 over USB.
+build-ledwall:
+    pio run -d ledwall -e ledwall
+
+# Build the same bridge for a Seeed XIAO ESP32S3.
+build-ledwall-xiao:
+    pio run -d ledwall -e ledwall_xiao
+
 # Run the lightweight rules tests without hardware.
 test:
     ./test_runner.sh logic

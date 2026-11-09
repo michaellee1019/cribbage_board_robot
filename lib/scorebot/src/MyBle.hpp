@@ -70,6 +70,7 @@ private:
         NimBLEClient* client;
         NimBLERemoteCharacteristic* downlink;
         bool announced;
+        bool display;
     };
 
     struct TxRequest {
@@ -155,6 +156,7 @@ private:
     void exitOtaTransportMode();
     void updateAdvertising(bool otaOnly);
     size_t peerCount() const;
+    bool hasDisplayPeer() const;
     void beginScan();
     void startPendingConnection();
     void recoverStalledConnection();
