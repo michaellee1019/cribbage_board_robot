@@ -35,6 +35,7 @@ run_logic_tests() {
         test/native/test_sleep_rules.cpp
         test/native/test_usb_connection_rules.cpp
         test/native/test_message_authority_rules.cpp
+        test/native/test_display_peer_rules.cpp
     )
     local source binary
     for source in "${sources[@]}"; do
