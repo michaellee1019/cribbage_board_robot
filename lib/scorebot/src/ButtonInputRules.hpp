@@ -13,9 +13,10 @@ enum class ButtonAction : uint8_t {
     Ok,
 };
 
-// Player boards expose five switches on MCP pins 0..4. The four-button
-// leaderboard is physically wired left-to-right on pins 1, 3, 0, 2, so pin 2
-// is its OK button and it has no +5 switch.
+// These are logical button indexes. On the player PCB they map to GPIO
+// 4, 5, 6, 7, and 8. The leaderboard still uses the MCP23017, wired
+// left-to-right on pins 1, 3, 0, 2, so pin 2 is its OK button and it has
+// no +5 switch.
 constexpr ButtonAction buttonActionForPin(bool leaderboard, uint8_t pin) {
     if (leaderboard) {
         switch (pin) {
@@ -47,9 +48,9 @@ constexpr ButtonAction buttonActionForPin(bool leaderboard, uint8_t pin) {
     }
 }
 
-// The MCP23017 inputs use pull-ups, so the captured bit is low on press and
-// high on release. Acting on the captured press works even when the release
-// occurs before the latched interrupt has been serviced.
+// Captured bits are active-low, matching the external pull-ups. Acting on the
+// captured press works even when the release occurs before the latched
+// interrupt has been serviced.
 constexpr bool buttonCapturedPressed(uint8_t pin, uint16_t captured) {
     return pin < 16 && (captured & (static_cast<uint16_t>(1u) << pin)) == 0;
 }

@@ -17,9 +17,14 @@ public:
 private:
     Adafruit_seesaw ss{};
     seesaw_NeoPixel sspixel{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
+    bool directInputs{false};
+    volatile int32_t detentCount{0};
+    volatile int8_t quarterCount{0};
+    volatile uint8_t encoderState{0};
 public:
 
     explicit RotaryEncoder(Coordinator* coordinator);
+    friend void rotaryEncoderISR(void* arg);
     /** Clears the interrupt flag. */
     int32_t delta();
     void setup();

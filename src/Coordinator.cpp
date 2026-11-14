@@ -8,7 +8,9 @@
 #include <LightColorRules.hpp>
 #include <OtaTransferRules.hpp>
 #include <VisualFeedbackRules.hpp>
+#include <BoardIdentity.hpp>
 #include <DeepSleep.hpp>
+#include <PlayerBoard.hpp>
 #include <SleepRules.hpp>
 #include <utils.hpp>
 #include <esp_sleep.h>
@@ -180,7 +182,21 @@ void Coordinator::setup() {
         Serial.setTimeout(1);
     }
     // may need an i2c lock because Wire.h almost certainly buffers.
-    Wire.begin(5, 6);
+    const bool playerBoard = scorebot::usesPlayerBoardHardware();
+    const uint32_t boardId = scorebot::boardIdFromEfuseMac(ESP.getEfuseMac());
+    Serial.printf(
+        "Board id %08x uses %s PCB\n",
+        static_cast<unsigned>(boardId),
+        playerBoard ? "player" : "leaderboard");
+    if (playerBoard) {
+        // The HT16K33 and the side LEDs are powered by the boost. It has to be
+        // up before the display is addressed.
+        scorebot::enablePlayerBoost();
+        delay(20);
+        Wire.begin(scorebot::player_pins::kSda, scorebot::player_pins::kScl);
+    } else {
+        Wire.begin(5, 6);
+    }
     CHECK_FREERTOS_RESULT(I2cBus::initialize() ? pdPASS : pdFAIL,
                           ErrorCode::SEMAPHORE_CREATE_FAILED, "I2C mutex");
     // print i2c devices for debugging hardware
