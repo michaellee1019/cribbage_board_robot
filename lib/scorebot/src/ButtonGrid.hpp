@@ -24,6 +24,10 @@ private:
 
 
     static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
+    bool directInputs{false};
+    volatile uint16_t directPressed{0};
+    volatile uint8_t directPin{0};
+    volatile uint16_t directCaptured{0xffff};
 
     friend void buttonISR(void*);
 
