@@ -23,6 +23,9 @@ struct BoardRoleConfig {
 
 const BoardRoleConfig& getRoleConfig(uint32_t nodeId);
 const BoardRoleConfig& getRoleConfigForBluetoothMac(uint64_t bluetoothMac, uint8_t offset);
+// Chips leave the factory with either two or four allocated MACs, so the
+// public Bluetooth address is the base address plus 1 or plus 2.
+const BoardRoleConfig& getRoleConfigForBluetoothMac(uint64_t bluetoothMac);
 uint32_t getNodeIdForRole(BoardRole role);
 
 #endif // BOARDROLE_H

@@ -44,12 +44,6 @@ constexpr uint8_t kSleepMessageCount = 3;
 // time to put each queued packet on air before it is deinitialized.
 constexpr uint32_t kSleepMessageGapMs = 150;
 
-#if CONFIG_ESP32S3_UNIVERSAL_MAC_ADDRESSES == 2
-constexpr uint8_t kBluetoothMacOffset = 1;
-#else
-constexpr uint8_t kBluetoothMacOffset = 2;
-#endif
-
 class ScopedSemaphore final {
 public:
     explicit ScopedSemaphore(SemaphoreHandle_t semaphore) : semaphore(semaphore) {
@@ -84,8 +78,7 @@ public:
         const NimBLEAddress address = connection.getAddress();
         const uint32_t sender = address.isPublic()
                                     ? getRoleConfigForBluetoothMac(
-                                          static_cast<uint64_t>(address),
-                                          kBluetoothMacOffset).nodeId
+                                          static_cast<uint64_t>(address)).nodeId
                                     : 0;
         owner.receive(sender, value.data(), value.length(), connection.getConnHandle());
     }
@@ -706,8 +699,7 @@ void MyBle::addPeer(NimBLEClient* client) {
     const NimBLEAddress transportAddress = client->getPeerAddress();
     const uint32_t transportNodeId = transportAddress.isPublic()
                                          ? getRoleConfigForBluetoothMac(
-                                               static_cast<uint64_t>(transportAddress),
-                                               kBluetoothMacOffset).nodeId
+                                               static_cast<uint64_t>(transportAddress)).nodeId
                                          : 0;
     const uint16_t remoteProtocol = protocol->readValue<uint16_t>();
     const BoardRole role = getRoleConfig(nodeId).role;
@@ -718,10 +710,29 @@ void MyBle::addPeer(NimBLEClient* client) {
         nodeId != transportNodeId ||
         nodeId == peerId || !isPlayerRole(role) ||
         rosterRejected) {
+        const char* rejectReason = "unknown";
+        if (remoteProtocol != scorebot::kWireProtocolVersion) {
+            rejectReason = "protocol";
+        } else if (nodeId == 0 || !isPlayerRole(role)) {
+            rejectReason = "unknown-board";
+        } else if (nodeId != transportNodeId) {
+            rejectReason = "address";
+        } else if (nodeId == peerId) {
+            rejectReason = "self";
+        } else if (rosterRejected) {
+            rejectReason = "roster";
+        }
+        const std::string addressText = transportAddress.toString();
         DEBUG_PRINTF(
-            "BLE: rejected player identity=%08lx protocol=%u expected=%u frozen=%d roster=0x%02x\n",
-            static_cast<unsigned long>(nodeId), static_cast<unsigned>(remoteProtocol),
-            static_cast<unsigned>(scorebot::kWireProtocolVersion), rosterFrozen.load(),
+            "BLE: rejected player identity=%08lx transport=%08lx addr=%s public=%d protocol=%u expected=%u reason=%s frozen=%d roster=0x%02x\n",
+            static_cast<unsigned long>(nodeId),
+            static_cast<unsigned long>(transportNodeId),
+            addressText.c_str(),
+            transportAddress.isPublic() ? 1 : 0,
+            static_cast<unsigned>(remoteProtocol),
+            static_cast<unsigned>(scorebot::kWireProtocolVersion),
+            rejectReason,
+            rosterFrozen.load(),
             static_cast<unsigned>(rosterMask.load()));
         // A cached handle can become stale after player OTA. Delete it and
         // allow the next scan to retry with a fresh database immediately.

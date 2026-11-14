@@ -15,6 +15,8 @@ int main() {
     // uses base + 1. The full address is allowlisted, not just its node-ID tail.
     assert(getRoleConfigForBluetoothMac(0x983daeea17bdULL, 1).role == BoardRole::Leader);
     assert(getRoleConfigForBluetoothMac(0x44b176c3cfc1ULL, 1).role == BoardRole::Player_Red);
+    assert(getRoleConfigForBluetoothMac(0x44b176c3cfc1ULL).role == BoardRole::Player_Red);
+    assert(getRoleConfigForBluetoothMac(0x44b176c3cfc2ULL).role == BoardRole::Player_Red);
     assert(getRoleConfigForBluetoothMac(0x64e83350c4b9ULL, 1).role == BoardRole::Player_Blue);
     assert(getRoleConfigForBluetoothMac(0x983daeea17beULL, 1).role == BoardRole::Unknown);
 

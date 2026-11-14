@@ -29,6 +29,14 @@ const BoardRoleConfig& getRoleConfigForBluetoothMac(uint64_t bluetoothMac, uint8
     return kUnknownRole;
 }
 
+const BoardRoleConfig& getRoleConfigForBluetoothMac(uint64_t bluetoothMac) {
+    const BoardRoleConfig& plusOne = getRoleConfigForBluetoothMac(bluetoothMac, 1);
+    if (plusOne.role != BoardRole::Unknown) {
+        return plusOne;
+    }
+    return getRoleConfigForBluetoothMac(bluetoothMac, 2);
+}
+
 uint32_t getNodeIdForRole(BoardRole role) {
     for (const BoardRoleConfig& config : kBoardRoles) {
         if (config.role == role) {
