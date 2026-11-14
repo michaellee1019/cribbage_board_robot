@@ -6,6 +6,8 @@
 #include <utils.hpp>
 
 #include <Adafruit_NeoPixel.h>
+#include <esp_timer.h>
+#include <rom/ets_sys.h>
 #include <soc/gpio_struct.h>
 
 namespace {
@@ -33,30 +35,96 @@ uint8_t encoderBitsFromLevel(uint32_t level) {
 uint8_t encoderBits() {
     return encoderBitsFromLevel(GPIO.in);
 }
+
+inline uint32_t IRAM_ATTR cpuCycleCount() {
+    uint32_t cycles;
+    asm volatile("rsr %0, ccount" : "=a"(cycles));
+    return cycles;
+}
+
+// SK6812 / WS2812 bit times at 240 MHz. GPIO48 is outside the low GPIO
+// register, and the ESP32-S3 RMT channel is too small to hold eight pixels,
+// so the strip is shifted out directly.
+constexpr uint32_t kLedPinMask = 1u << (scorebot::player_pins::kNeoPixel - 32);
+constexpr uint32_t kZeroHighCycles = 70;    // 0.29 us
+constexpr uint32_t kZeroPeriodCycles = 300; // 1.25 us
+constexpr uint32_t kOneHighCycles = 168;    // 0.70 us
+constexpr uint32_t kOnePeriodCycles = 300;
+
+void IRAM_ATTR showSideLeds(const uint8_t* data, int nbytes) {
+    portDISABLE_INTERRUPTS();
+    for (int byteIndex = 0; byteIndex < nbytes; ++byteIndex) {
+        uint8_t value = data[byteIndex];
+        for (int bit = 0; bit < 8; ++bit) {
+            const bool one = (value & 0x80u) != 0;
+            const uint32_t highCycles = one ? kOneHighCycles : kZeroHighCycles;
+            const uint32_t periodCycles = one ? kOnePeriodCycles : kZeroPeriodCycles;
+            const uint32_t start = cpuCycleCount();
+            GPIO.out1_w1ts.val = kLedPinMask;
+            while ((cpuCycleCount() - start) < highCycles) {
+            }
+            GPIO.out1_w1tc.val = kLedPinMask;
+            while ((cpuCycleCount() - start) < periodCycles) {
+            }
+            value = static_cast<uint8_t>(value << 1);
+        }
+    }
+    GPIO.out1_w1tc.val = kLedPinMask;
+    portENABLE_INTERRUPTS();
+}
+
+void paintSideLeds(uint32_t color) {
+    for (int pixel = 0; pixel < scorebot::player_pins::kNeoPixelCount; ++pixel) {
+        sideLeds.setPixelColor(pixel, color);
+    }
+    pinMode(scorebot::player_pins::kNeoPixel, OUTPUT);
+    digitalWrite(scorebot::player_pins::kNeoPixel, LOW);
+    ets_delay_us(80);
+    showSideLeds(sideLeds.getPixels(), sideLeds.numPixels() * 3);
+}
 }  // namespace
 
 void IRAM_ATTR rotaryEncoderISR(void* arg) {
     auto* self = static_cast<RotaryEncoder*>(arg);
     if (self->directInputs) {
-        self->encoderState = static_cast<uint8_t>(
-            (self->encoderState << 2) | encoderBitsFromLevel(GPIO.in));
-        const int8_t movement = kQuadrature[self->encoderState & 0x0f];
-        if (movement != 0) {
-            portENTER_CRITICAL_ISR(&encoderMux);
-            int8_t quarters = static_cast<int8_t>(self->quarterCount + movement);
-            int32_t detents = self->detentCount;
-            while (quarters >= 4) {
-                ++detents;
-                quarters = static_cast<int8_t>(quarters - 4);
-            }
-            while (quarters <= -4) {
-                --detents;
-                quarters = static_cast<int8_t>(quarters + 4);
-            }
-            self->quarterCount = quarters;
-            self->detentCount = detents;
-            portEXIT_CRITICAL_ISR(&encoderMux);
+        const uint8_t previous = static_cast<uint8_t>(self->encoderState & 0x03);
+        const uint8_t next = encoderBitsFromLevel(GPIO.in);
+        self->encoderState = static_cast<uint8_t>((self->encoderState << 2) | next);
+        int8_t movement = kQuadrature[self->encoderState & 0x0f];
+        // A missed intermediate edge changes both contacts at once. Keep the
+        // current direction instead of dropping that part of the detent.
+        if (movement == 0 && next != previous && self->lastDirection != 0) {
+            movement = static_cast<int8_t>(self->lastDirection * 2);
         }
+        const int64_t now = esp_timer_get_time();
+        portENTER_CRITICAL_ISR(&encoderMux);
+        if (movement != 0) {
+            const int8_t direction = movement > 0 ? 1 : -1;
+            // Contact bounce is a fast reversal. Ignore it, but keep a real
+            // click that simply has uneven edges.
+            if (!(direction == -self->lastDirection &&
+                  (now - self->lastTransitionUs) < 500)) {
+                self->quarterCount =
+                    static_cast<int8_t>(self->quarterCount + movement);
+                self->lastDirection = direction;
+            }
+            self->lastTransitionUs = now;
+        }
+        if (previous == 0x03 && next != 0x03) {
+            self->leftRestUs = now;
+        }
+        // The PEC11R rests with both contacts open. Count one tick per click
+        // once it returns there, even if one of the four edges was missed.
+        if (next == 0x03 && previous != 0x03 && self->quarterCount != 0) {
+            const int8_t quarters = self->quarterCount;
+            const bool realClick = (now - self->leftRestUs) >= 1200 ||
+                                   quarters >= 2 || quarters <= -2;
+            if (realClick) {
+                self->detentCount += quarters > 0 ? 1 : -1;
+            }
+            self->quarterCount = 0;
+        }
+        portEXIT_CRITICAL_ISR(&encoderMux);
     }
     self->coordinator->enqueueInputFromISR(ButtonName::RotaryEncoder);
 }
@@ -85,9 +153,9 @@ void RotaryEncoder::setup() {
         encoderState = encoderBits();
         quarterCount = 0;
         detentCount = 0;
+        lastDirection = 0;
         sideLeds.begin();
-        sideLeds.clear();
-        sideLeds.show();
+        paintSideLeds(0);
         attachInterruptArg(
             digitalPinToInterrupt(scorebot::player_pins::kEncoderA),
             rotaryEncoderISR, this, CHANGE);
@@ -185,10 +253,7 @@ bool RotaryEncoder::interruptAsserted() const {
 
 void RotaryEncoder::setColor(uint32_t color) {
     if (directInputs || scorebot::usesPlayerBoardHardware()) {
-        for (int pixel = 0; pixel < scorebot::player_pins::kNeoPixelCount; ++pixel) {
-            sideLeds.setPixelColor(pixel, color);
-        }
-        sideLeds.show();
+        paintSideLeds(color);
         return;
     }
     I2cBus::Guard guard;

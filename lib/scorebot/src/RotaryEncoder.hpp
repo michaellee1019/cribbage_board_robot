@@ -20,7 +20,10 @@ private:
     bool directInputs{false};
     volatile int32_t detentCount{0};
     volatile int8_t quarterCount{0};
+    volatile int8_t lastDirection{0};
     volatile uint8_t encoderState{0};
+    volatile int64_t leftRestUs{0};
+    volatile int64_t lastTransitionUs{0};
 public:
 
     explicit RotaryEncoder(Coordinator* coordinator);
