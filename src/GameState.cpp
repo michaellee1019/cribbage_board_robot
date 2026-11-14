@@ -1110,6 +1110,13 @@ void GameState::syncLeaderboardSelection(Coordinator* coordinator) {
     selectAuthoritativeTurn(*this, coordinator);
 }
 
+scorebot::LeaderboardBroadcast GameState::leaderboardBroadcast() const {
+    if (!gameStarted) {
+        return {};
+    }
+    return {scores, rosterMask, toRulePlayer(whosTurn)};
+}
+
 bool GameState::hasPendingLocalScore() const {
     if (myScore != 0) {
         return true;

@@ -4,6 +4,10 @@
 
 namespace scorebot {
 
+constexpr uint8_t bluetoothMacOffset(unsigned universalMacAddresses) {
+    return universalMacAddresses == 2 ? 1 : 2;
+}
+
 // ESP.getEfuseMac() stores the six MAC bytes in little-endian order. The
 // original painlessMesh IDs in BoardRole.cpp are the final four displayed MAC
 // bytes (for example, 98:3d:ae:ea:17:bc -> 0xaeea17bc).

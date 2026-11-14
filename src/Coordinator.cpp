@@ -267,12 +267,17 @@ void Coordinator::loop() {
         delay(1);
         return;
     }
+    const bool isLeaderboard = myRole() == BoardRole::Leader;
+    scorebot::LeaderboardBroadcast leaderboard{};
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     if (otaUiActive.load() && !ble.otaActive()) {
         finishOtaUi();
     }
     if (!otaUiActive.load()) {
         this->state.heartbeat(this);
+    }
+    if (isLeaderboard) {
+        leaderboard = state.leaderboardBroadcast();
     }
     updateDisplayBrightness();
     const bool shouldSleep = sleepDue();
@@ -285,6 +290,9 @@ void Coordinator::loop() {
     if (restartRequested.load()) {
         delay(1);
         return;
+    }
+    if (isLeaderboard && !shouldSleep) {
+        ble.publishLeaderboard(leaderboard);
     }
     if (shouldSleep) {
         // USB can be connected just as the idle timeout expires. Give the

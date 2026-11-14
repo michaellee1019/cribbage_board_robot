@@ -3,6 +3,7 @@
 
 #include <Event.hpp>
 #include <BoardRole.hpp>
+#include <LeaderboardBroadcast.hpp>
 #include <MaintenanceRules.hpp>
 #include <array>
 #include <atomic>
@@ -22,6 +23,7 @@ public:
   void refreshDisplays(class Coordinator* coordinator) const;
   void syncLeaderboardSelection(class Coordinator* coordinator);
   bool hasPendingLocalScore() const;
+  scorebot::LeaderboardBroadcast leaderboardBroadcast() const;
 
   int myScore;
   BoardRole whosTurn;

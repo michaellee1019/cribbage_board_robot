@@ -4,6 +4,7 @@
 #include <BlePowerRules.hpp>
 #include <NimBLEDevice.h>
 #include <Event.hpp>
+#include <LeaderboardBroadcast.hpp>
 #include <OtaUpdate.hpp>
 #include <Protocol.hpp>
 
@@ -39,6 +40,7 @@ public:
 
     void setup();
     void loop();
+    void publishLeaderboard(const scorebot::LeaderboardBroadcast& leaderboard);
     uint32_t getMyPeerId() const;
     bool hasLeader() const;
     void confirmLeader(uint16_t connectionHandle);
@@ -128,6 +130,8 @@ private:
     std::atomic<int8_t> connectionPowerDbm;
     uint32_t lastScanStartedMs;
     uint32_t lastAdvertisingCheckMs;
+    uint32_t lastLeaderboardPublishMs{0};
+    scorebot::LeaderboardPacket advertisedLeaderboard{};
 
     void receive(uint32_t from, const uint8_t* data, size_t length, uint16_t connectionHandle);
     void addPeer(NimBLEClient* client);
@@ -153,6 +157,7 @@ private:
     void enterOtaTransportMode();
     void maintainOtaTransportMode();
     void exitOtaTransportMode();
+    void configureAdvertising(bool otaOnly);
     void updateAdvertising(bool otaOnly);
     size_t peerCount() const;
     void beginScan();
