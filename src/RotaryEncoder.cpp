@@ -7,14 +7,9 @@
 
 #include <Adafruit_NeoPixel.h>
 
-#include <cstring>
-#include <driver/spi_master.h>
 #include <esp_log.h>
-#include <esp_rom_gpio.h>
 #include <esp_timer.h>
 #include <soc/gpio_struct.h>
-#include <soc/io_mux_reg.h>
-#include <soc/spi_periph.h>
 
 namespace {
 portMUX_TYPE encoderMux = portMUX_INITIALIZER_UNLOCKED;
@@ -42,102 +37,83 @@ uint8_t encoderBits() {
     return encoderBitsFromLevel(GPIO.in);
 }
 
-// The ESP32-S3 RMT channel holds 48 bits, which is only two SK6812 pixels, and
-// a CPU bit-bang is stretched by Bluetooth until the color is garbage. SPI
-// shifts the whole frame on a hardware clock: 3.2 MHz, four SPI bits per LED
-// bit. 1000 is a 0 (312 ns high) and 1100 is a 1 (625 ns high).
-constexpr int kLedBitSpiBits = 4;
-constexpr int kLedPixelBytes = scorebot::player_pins::kNeoPixelCount * 3;
-constexpr int kLedEncodedBytes = kLedPixelBytes * kLedBitSpiBits;
-constexpr int kLedLeadBytes = 16;
-constexpr int kLedResetBytes = 64;
-constexpr int kLedWireBytes = kLedLeadBytes + kLedEncodedBytes + kLedResetBytes;
-constexpr spi_host_device_t kLedSpiHost = SPI2_HOST;
-// Not bonded out of the XIAO module. The LEDs only see MOSI on GPIO48.
-constexpr int kLedSpiClockPin = 14;
+// GPIO48 is outside GPIO.out. The S3 RMT block holds 48 bits, which latches
+// after two SK6812s, so the frame is shifted from IRAM with the cycle counter.
+// Timings are the WS2812 values the strip already accepted: 400/850 and 800/450.
+constexpr uint32_t kLedPinMask = 1u << (scorebot::player_pins::kNeoPixel - 32);
+constexpr int kLedFrameBytes = scorebot::player_pins::kNeoPixelCount * 3;
 
-spi_device_handle_t ledSpi = nullptr;
-alignas(4) uint8_t ledWire[kLedWireBytes];
-
-void attachLedDataPin() {
-    static_assert(scorebot::player_pins::kNeoPixel == 48, "side LED data pin");
-    const gpio_num_t pin = GPIO_NUM_48;
-    // GPIO48 boots as the differential SPI clock. Select the GPIO function,
-    // then route SPI MOSI onto it. Boost enable calls pinMode() and undoes this.
-    gpio_set_direction(pin, GPIO_MODE_OUTPUT);
-    gpio_set_drive_capability(pin, GPIO_DRIVE_CAP_3);
-    esp_rom_gpio_connect_out_signal(
-        pin, spi_periph_signal[kLedSpiHost].spid_out, false, false);
-    PIN_FUNC_SELECT(IO_MUX_GPIO48_REG, PIN_FUNC_GPIO);
-}
-
-bool ensureLedSpi() {
-    if (ledSpi != nullptr) {
-        return true;
+void IRAM_ATTR writeLedFrame(const uint8_t* data, int nbytes,
+                             uint32_t zeroHigh, uint32_t oneHigh, uint32_t period) {
+    portDISABLE_INTERRUPTS();
+    for (int byteIndex = 0; byteIndex < nbytes; ++byteIndex) {
+        uint8_t value = data[byteIndex];
+        for (int bit = 0; bit < 8; ++bit) {
+            const uint32_t high = (value & 0x80u) != 0 ? oneHigh : zeroHigh;
+            GPIO.out1_w1ts.val = kLedPinMask;
+            uint32_t start;
+            asm volatile("rsr %0, ccount" : "=a"(start));
+            uint32_t now;
+            do {
+                asm volatile("rsr %0, ccount" : "=a"(now));
+            } while ((now - start) < high);
+            GPIO.out1_w1tc.val = kLedPinMask;
+            do {
+                asm volatile("rsr %0, ccount" : "=a"(now));
+            } while ((now - start) < period);
+            value = static_cast<uint8_t>(value << 1);
+        }
     }
-    spi_bus_config_t bus = {};
-    bus.mosi_io_num = scorebot::player_pins::kNeoPixel;
-    bus.miso_io_num = -1;
-    bus.sclk_io_num = kLedSpiClockPin;
-    bus.quadwp_io_num = -1;
-    bus.quadhd_io_num = -1;
-    bus.max_transfer_sz = kLedWireBytes;
-    const esp_err_t busError = spi_bus_initialize(kLedSpiHost, &bus, SPI_DMA_CH_AUTO);
-    if (busError != ESP_OK) {
-        ESP_LOGE("leds", "SPI bus init failed: %s", esp_err_to_name(busError));
-        return false;
-    }
-    spi_device_interface_config_t device = {};
-    device.clock_speed_hz = 3200000;
-    device.mode = 0;
-    device.spics_io_num = -1;
-    device.queue_size = 1;
-    const esp_err_t deviceError = spi_bus_add_device(kLedSpiHost, &device, &ledSpi);
-    if (deviceError != ESP_OK) {
-        ESP_LOGE("leds", "SPI device init failed: %s", esp_err_to_name(deviceError));
-        ledSpi = nullptr;
-        return false;
-    }
-    return true;
-}
-
-void encodeLedByte(uint8_t value, uint8_t* dest) {
-    uint32_t packed = 0;
-    for (int bit = 7; bit >= 0; --bit) {
-        const uint32_t nibble = (value & (1u << bit)) != 0 ? 0xCu : 0x8u;
-        packed = (packed << 4) | nibble;
-    }
-    dest[0] = static_cast<uint8_t>(packed >> 24);
-    dest[1] = static_cast<uint8_t>(packed >> 16);
-    dest[2] = static_cast<uint8_t>(packed >> 8);
-    dest[3] = static_cast<uint8_t>(packed);
+    GPIO.out1_w1tc.val = kLedPinMask;
+    portENABLE_INTERRUPTS();
 }
 
 void paintSideLeds(uint32_t color) {
-    if (!ensureLedSpi()) {
-        return;
-    }
     for (int pixel = 0; pixel < scorebot::player_pins::kNeoPixelCount; ++pixel) {
         sideLeds.setPixelColor(pixel, color);
     }
+    uint8_t frame[kLedFrameBytes];
     const uint8_t* pixels = sideLeds.getPixels();
     const int pixelBytes = sideLeds.numPixels() * 3;
-    memset(ledWire, 0, kLedWireBytes);
-    uint8_t* dest = ledWire + kLedLeadBytes;
-    for (int byteIndex = 0; byteIndex < pixelBytes && byteIndex < kLedPixelBytes; ++byteIndex) {
-        encodeLedByte(pixels[byteIndex], dest);
-        dest += kLedBitSpiBits;
+    const int frameBytes = pixelBytes < kLedFrameBytes ? pixelBytes : kLedFrameBytes;
+    for (int i = 0; i < frameBytes; ++i) {
+        frame[i] = pixels[i];
     }
-    // Boost enable takes the data pin back as a plain GPIO. Put SPI on it
-    // again before shifting, or the frame never leaves the chip.
-    attachLedDataPin();
-    spi_transaction_t transaction = {};
-    transaction.length = kLedWireBytes * 8;
-    transaction.tx_buffer = ledWire;
-    const esp_err_t error = spi_device_polling_transmit(ledSpi, &transaction);
-    if (error != ESP_OK) {
-        ESP_LOGE("leds", "SPI transmit failed: %s", esp_err_to_name(error));
+    for (int i = frameBytes; i < kLedFrameBytes; ++i) {
+        frame[i] = 0;
     }
+
+    uint32_t mhz = getCpuFrequencyMhz();
+    if (mhz < 80) {
+        mhz = 240;
+    }
+    // Count cycles from the rising edge. The falling write costs a few cycles,
+    // so the high waits are shortened to land on 400 ns and 800 ns.
+    uint32_t zeroHigh = mhz * 400 / 1000;
+    uint32_t oneHigh = mhz * 800 / 1000;
+    if (zeroHigh > 16) {
+        zeroHigh -= 16;
+    }
+    if (oneHigh > 16) {
+        oneHigh -= 16;
+    }
+    const uint32_t period = mhz * 1250 / 1000;
+    static bool logged = false;
+    if (!logged && color != 0) {
+        logged = true;
+        ESP_LOGI("leds", "8 pixels at %u MHz, color %06x, wire %02x %02x %02x",
+                 static_cast<unsigned>(mhz), static_cast<unsigned>(color),
+                 frame[0], frame[1], frame[2]);
+    }
+
+    pinMode(scorebot::player_pins::kNeoPixel, OUTPUT);
+    gpio_set_drive_capability(
+        static_cast<gpio_num_t>(scorebot::player_pins::kNeoPixel), GPIO_DRIVE_CAP_3);
+    digitalWrite(scorebot::player_pins::kNeoPixel, LOW);
+    // SK6812 will not take a new frame until the data line has been low for
+    // at least 80 us. A shorter gap leaves the previous color on the strip.
+    delayMicroseconds(300);
+    writeLedFrame(frame, kLedFrameBytes, zeroHigh, oneHigh, period);
 }
 }  // namespace
 
