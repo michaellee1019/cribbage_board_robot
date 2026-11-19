@@ -489,27 +489,16 @@ void addDelta(int32_t& pending, int32_t delta) {
 }
 
 void sendLeaderboardOperation(
-    GameState* state, Coordinator* coordinator, bool passesTurn) {
-    const size_t index = roleIndex(state->selectedLeaderboardRole);
-    if (!state->gameStarted || index >= std::size(kPlayers)) {
-        state->refreshDisplays(coordinator);
-        return;
-    }
-    if (!passesTurn && state->leaderboardDeltas[index] == 0) {
-        return;
-    }
+    GameState* state, Coordinator* coordinator, scorebot::LeaderboardAction action) {
     scorebot::Snapshot rules = toRules(*state);
-    const scorebot::ApplyResult result = scorebot::applyLocal(
-        rules,
-        {toRulePlayer(state->selectedLeaderboardRole),
-         state->leaderboardDeltas[index], passesTurn});
-    if (result == scorebot::ApplyResult::Accepted ||
-        result == scorebot::ApplyResult::AcceptedWithoutTurnChange) {
-        state->leaderboardDeltas[index] = 0;
+    const scorebot::LeaderboardActionResult result = scorebot::applyLeaderboardAction(
+        rules, state->leaderboardDeltas,
+        toRulePlayer(state->selectedLeaderboardRole), action);
+    if (result == scorebot::LeaderboardActionResult::Accepted) {
         coordinator->rotaryEncoder.reset();
         fromRules(*state, rules);
         commit(*state, coordinator);
-    } else {
+    } else if (result == scorebot::LeaderboardActionResult::Rejected) {
         state->refreshDisplays(coordinator);
     }
 }
@@ -634,15 +623,20 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
             return;
         }
 
+        if (action == scorebot::ButtonAction::Add ||
+            action == scorebot::ButtonAction::Ok) {
+            sendLeaderboardOperation(
+                state, coordinator,
+                action == scorebot::ButtonAction::Add
+                    ? scorebot::LeaderboardAction::Add
+                    : scorebot::LeaderboardAction::Ok);
+            return;
+        }
         const size_t index = roleIndex(state->selectedLeaderboardRole);
         if (index >= std::size(kPlayers) ||
             !scorebot::isLocallyControllable(
                 toRules(*state), toRulePlayer(state->selectedLeaderboardRole))) {
             state->refreshDisplays(coordinator);
-            return;
-        }
-        if (action == scorebot::ButtonAction::Add) {
-            sendLeaderboardOperation(state, coordinator, false);
             return;
         }
         if (action == scorebot::ButtonAction::NegativeOne) {
@@ -651,9 +645,6 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
             addDelta(state->leaderboardDeltas[index], 1);
         } else if (action == scorebot::ButtonAction::PlusFive) {
             addDelta(state->leaderboardDeltas[index], 5);
-        } else if (action == scorebot::ButtonAction::Ok) {
-            sendLeaderboardOperation(state, coordinator, true);
-            return;
         }
         state->refreshDisplays(coordinator);
         return;
