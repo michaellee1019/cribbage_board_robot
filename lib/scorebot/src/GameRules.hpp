@@ -248,6 +248,36 @@ inline bool disconnect(Snapshot& snapshot, Player player) {
     return true;
 }
 
+// Presence hints are ephemeral and do not create a replicated revision. A
+// later disconnect is the versioned transition; intentional sleep keeps the
+// player eligible for the frozen turn order.
+inline bool markSleeping(Snapshot& snapshot, Player player) {
+    const uint8_t bit = playerBit(player);
+    if (!isConnected(snapshot, player) || (snapshot.sleepingMask & bit) != 0) {
+        return false;
+    }
+    snapshot.sleepingMask = static_cast<uint8_t>(snapshot.sleepingMask | bit);
+    return true;
+}
+
+inline bool clearSleeping(Snapshot& snapshot, Player player) {
+    const uint8_t bit = playerBit(player);
+    const bool changed = (snapshot.sleepingMask & bit) != 0;
+    snapshot.sleepingMask = static_cast<uint8_t>(snapshot.sleepingMask & ~bit);
+    return changed;
+}
+
+// Authority startup never restores live links. Explicit lobby choices and the
+// frozen roster survive. Scheduling and durable storage belong to the caller.
+inline void resumeAuthority(Snapshot& snapshot, uint32_t& term) {
+    snapshot.connectedMask = 0;
+    if (!snapshot.started) {
+        snapshot.lobbyEnabledMask &= snapshot.lobbyExplicitMask;
+        snapshot.localControlMask &= snapshot.lobbyExplicitMask;
+    }
+    ++term;
+}
+
 inline ApplyResult apply(Snapshot& snapshot, const ScoreAction& action) {
     if (!snapshot.started) {
         return ApplyResult::GameNotStarted;

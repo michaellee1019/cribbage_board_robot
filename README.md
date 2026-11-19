@@ -139,6 +139,12 @@ On macOS, allow the terminal application running `just` to use Bluetooth if macO
 
 ## Wire protocol
 
+The portable game rules also have a versioned C ABI, Linux/Pi/macOS shared-library
+build, and standard-library Python adapter. See [native core and Pi authority
+configuration](native/README.md). This supports a Pi leaderboard controlling
+LOCAL players and existing physical player boards without an ESP32 bridge for
+an all-LOCAL game.
+
 The BLE service and every game message carry a wire-protocol version. A leaderboard refuses to add a player board with a different version; snapshots and score requests with a mismatched or absent version are ignored. Update all boards with `just flash-all` before expecting them to participate in the same game.
 
 ## TODO Features

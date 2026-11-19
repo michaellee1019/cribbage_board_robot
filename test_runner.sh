@@ -51,6 +51,7 @@ run_logic_tests() {
         "$binary"
     done
     python3 test/test_usb_port.py
+    python3 test/test_leader_identity_config.py
 }
 
 case "${1:-embedded}" in

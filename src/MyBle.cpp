@@ -6,6 +6,7 @@
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
 #include <Messages.hpp>
+#include <MessageAuthorityRules.hpp>
 #include <PeerAdmissionRules.hpp>
 #include <Protocol.hpp>
 #include <utils.hpp>
@@ -71,11 +72,8 @@ public:
     void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override {
         const NimBLEAttValue value = characteristic->getValue();
         const NimBLEAddress address = connection.getAddress();
-        const uint32_t sender = address.isPublic()
-                                    ? getRoleConfigForBluetoothMac(
-                                          static_cast<uint64_t>(address),
-                                          kBluetoothMacOffset).nodeId
-                                    : 0;
+        const uint32_t sender = scorebot::trustedLeaderForBluetoothAddress(
+            address.isPublic(), static_cast<uint64_t>(address), kBluetoothMacOffset);
         owner.receive(sender, value.data(), value.length(), connection.getConnHandle());
     }
 

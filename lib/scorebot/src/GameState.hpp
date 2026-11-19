@@ -16,6 +16,7 @@ public:
 
   void handleEvent(const Event& e, class Coordinator* coordinator);
   void restore();
+  void resumeAuthority(uint32_t identity);
   bool persist() const;
   static bool persistEncoded(const char* encoded);
   uint32_t nextOperationId();

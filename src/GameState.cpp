@@ -926,8 +926,9 @@ void onPlayerSleepMessage(
         !scorebot::isConnected(toRules(*state), player)) {
         return;
     }
-    state->sleepingMask |= static_cast<uint8_t>(
-        1u << scorebot::playerIndex(player));
+    scorebot::Snapshot rules = toRules(*state);
+    scorebot::markSleeping(rules, player);
+    fromRules(*state, rules);
     DEBUG_PRINTF("Player sleeping: from=%08lx\n",
                  static_cast<unsigned long>(sender));
     state->refreshDisplays(coordinator);
@@ -942,8 +943,7 @@ void onLeaderResetMessage(
     }
     const LeaderResetMessage message =
         LeaderResetMessage::fromJson(event.messageReceived.message);
-    if (message.leaderId != sender ||
-        sender != getNodeIdForRole(BoardRole::Leader)) {
+    if (!scorebot::mayAcceptLeaderMessage(coordinator->myRole(), sender, message.leaderId)) {
         return;
     }
     const scorebot::RevisionOrder order = scorebot::compareRevision(
@@ -993,12 +993,9 @@ void onNewPeer(GameState* state, const Event& event, Coordinator* coordinator) {
     }
     const scorebot::Player player =
         toRulePlayer(getRoleConfig(event.newPeer.peerId).role);
-    if (scorebot::isPlayer(player)) {
-        const size_t index = scorebot::playerIndex(player);
-        state->sleepingMask &= static_cast<uint8_t>(
-            ~(1u << index));
-    }
     scorebot::Snapshot rules = toRules(*state);
+    scorebot::clearSleeping(rules, player);
+    fromRules(*state, rules);
     if (scorebot::connect(rules, player)) {
         fromRules(*state, rules);
         commit(*state, coordinator);
@@ -1056,6 +1053,14 @@ GameState::GameState()
       maintenanceAction(scorebot::MaintenanceAction::None),
       maintenanceStartedMs(0),
       rotaryPressStartedMs(0) {}
+
+void GameState::resumeAuthority(uint32_t identity) {
+    scorebot::Snapshot rules = toRules(*this);
+    scorebot::resumeAuthority(rules, term);
+    fromRules(*this, rules);
+    leaderId = identity;
+    leaderless = false;
+}
 
 void GameState::restore() {
     Preferences preferences;

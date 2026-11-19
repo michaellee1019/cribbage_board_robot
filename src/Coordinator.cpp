@@ -195,21 +195,7 @@ void Coordinator::setup() {
                  static_cast<unsigned>(state.rosterMask),
                  static_cast<unsigned>(state.whosTurn));
     if (myRole() == BoardRole::Leader) {
-        // Connections are live transport state, not something that survives a
-        // reboot. Frozen roster membership is persisted separately.
-        state.connectedMask = 0;
-        if (!state.gameStarted) {
-            // Availability-driven defaults are live transport state. After a
-            // reboot, untouched colors remain OFF until their boards rejoin;
-            // explicitly selected LOCAL/PAIR/OFF modes remain as chosen.
-            state.lobbyEnabledMask = static_cast<uint8_t>(
-                state.lobbyEnabledMask & state.lobbyExplicitMask);
-            state.localControlMask = static_cast<uint8_t>(
-                state.localControlMask & state.lobbyExplicitMask);
-        }
-        state.leaderId = ble.getMyPeerId();
-        state.leaderless = false;
-        ++state.term;
+        state.resumeAuthority(ble.getMyPeerId());
         if (state.gameStarted) {
             ble.freezeRoster(state.rosterMask);
         }
