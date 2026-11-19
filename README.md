@@ -63,6 +63,19 @@ pio project metadata --json-output -e <environment>
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
+### E-paper leaderboard listener
+
+The `leaderboard_epaper` environment runs on the ESP32-S3-DevKitC-1-N16R8 with a 296×128 Waveshare 2.9-inch (B) V4 panel. Power the display from 3V3 and GND. Connect DIN to GPIO11, CLK to GPIO12, CS to GPIO10, DC to GPIO9, RST to GPIO14, and BUSY to GPIO13.
+
+```bash
+pio run -e leaderboard_epaper -t upload --upload-port <serial-port>
+pio device monitor -e leaderboard_epaper --port <serial-port>
+```
+
+On a dual USB-C board, use the UART connector for these uploads and logs. The listener shows `Waiting for host` on its own. Update the existing host leaderboard with the `controller` build from this checkout to enable score broadcasts. The player firmware uses the existing game protocol and needs no update. Start and control the game from the existing hardware. While the host is asleep or in OTA mode, the listener holds the last received scores and marks them `LAST SEEN` on the next refresh.
+
+The red title and divider are drawn during a full refresh. Scores and the inverted active-player row use the panel's black-and-white partial waveform. The listener starts a partial refresh as soon as it receives a changed frame and applies only the area containing changed pixels. A full refresh establishes the initial image and clears accumulated ghosting. After 100 partial updates, the next change triggers a full refresh. If the frame stays unchanged for 30 seconds, the listener runs the cleanup during that pause. An always-on display also gets a full refresh once a day. If scores change during a refresh, the listener renders the newest state as soon as the panel is ready. [Panel manual](https://www.waveshare.com/wiki/2.9inch_e-Paper_Module_%28B%29_Manual)
+
 ## Reliability and recovery
 
 - Every accepted score or turn action is an atomic, versioned commit on the leaderboard. Its display, controls, turn light, and player-board broadcast update immediately; an immutable copy is handed to a low-priority persistence worker so flash I/O never holds the gameplay/UI state lock. Bursts are coalesced to the latest recoverable snapshot, and sleep waits for the worker to finish.

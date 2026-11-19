@@ -27,6 +27,7 @@ constexpr uint32_t kConnectionSettleMs = 500;
 constexpr uint32_t kRejectedPeerBackoffMs = 15000;
 constexpr uint32_t kConnectionFailureBackoffMs = 2000;
 constexpr uint32_t kConnectionWatchdogMs = 10000;
+constexpr uint32_t kLeaderboardPublishIntervalMs = 250;
 constexpr uint16_t kJoinMinInterval = 12;
 constexpr uint16_t kJoinMaxInterval = 24;
 constexpr uint16_t kJoinLatency = 0;
@@ -368,8 +369,7 @@ void MyBle::enterOtaTransportMode() {
     if (advertising->isAdvertising()) {
         advertising->stop();
     }
-    (void)advertising->removeServiceUUID(kServiceUuid);
-    (void)advertising->addServiceUUID(scorebot::kOtaServiceUuid);
+    configureAdvertising(true);
 
     const int8_t maximumPower = scorebot::ble_power::kMaximumConnectionPowerDbm;
     (void)NimBLEDevice::setPower(maximumPower);
@@ -415,22 +415,67 @@ void MyBle::exitOtaTransportMode() {
     if (advertising->isAdvertising()) {
         advertising->stop();
     }
-    (void)advertising->removeServiceUUID(scorebot::kOtaServiceUuid);
-    (void)advertising->addServiceUUID(kServiceUuid);
+    configureAdvertising(false);
     (void)NimBLEDevice::setPower(connectionPowerDbm.load());
     (void)NimBLEDevice::setPower(
         connectionPowerDbm.load(), NimBLETxPowerType::Connection);
     updateAdvertising(false);
 }
 
+void MyBle::configureAdvertising(bool otaOnly) {
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    const bool leaderboardBroadcast = !otaOnly && coordinator->myRole() == BoardRole::Leader;
+    advertising->clearData();
+    advertising->enableScanResponse(!leaderboardBroadcast);
+    advertising->setConnectableMode(leaderboardBroadcast ? BLE_GAP_CONN_MODE_NON
+                                                        : BLE_GAP_CONN_MODE_UND);
+    advertising->setDiscoverableMode(leaderboardBroadcast ? BLE_GAP_DISC_MODE_NON
+                                                          : BLE_GAP_DISC_MODE_GEN);
+    if (leaderboardBroadcast) {
+        advertising->setAdvertisingInterval(1600);  // 1 second
+        NimBLEDevice::setPower(connectionPowerDbm.load(), NimBLETxPowerType::Advertise);
+        advertisedLeaderboard = {};
+        return;
+    }
+    // The service UUID is in the advertisement and the name in the scan response.
+    advertising->setAdvertisingInterval(400);
+    advertising->addServiceUUID(otaOnly ? scorebot::kOtaServiceUuid : kServiceUuid);
+    const String deviceName = String("Scorebot-") + String(peerId, HEX);
+    advertising->setName(deviceName.c_str());
+}
+
+void MyBle::publishLeaderboard(const scorebot::LeaderboardBroadcast& leaderboard) {
+    if (otaActive() || otaTransportActive || transportQuiescing.load()) {
+        return;
+    }
+    const uint32_t now = millis();
+    if (now - lastLeaderboardPublishMs < kLeaderboardPublishIntervalMs) {
+        return;
+    }
+    lastLeaderboardPublishMs = now;
+    const auto packet = scorebot::encodeLeaderboard(leaderboard);
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    const bool active = advertising->isAdvertising();
+    if (active && packet == advertisedLeaderboard) {
+        return;
+    }
+    NimBLEAdvertisementData data;
+    data.setFlags(BLE_HS_ADV_F_BREDR_UNSUP);
+    if (data.setManufacturerData(packet.data(), packet.size()) &&
+        advertising->setAdvertisementData(data) && (active || advertising->start())) {
+        advertisedLeaderboard = packet;
+    }
+    if (transportQuiescing.load()) {
+        advertising->stop();
+    }
+}
+
 void MyBle::updateAdvertising(bool otaOnly) {
-    if (server == nullptr) {
+    if (server == nullptr || (!otaOnly && coordinator->myRole() == BoardRole::Leader)) {
         return;
     }
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
-    const bool unpairedPlayer = coordinator->myRole() != BoardRole::Leader &&
-                                server->getConnectedCount() == 0;
-    const bool shouldAdvertise = otaOnly || unpairedPlayer;
+    const bool shouldAdvertise = otaOnly || server->getConnectedCount() == 0;
     if (shouldAdvertise && !advertising->isAdvertising()) {
         advertising->start();
     } else if (!shouldAdvertise && advertising->isAdvertising()) {
@@ -481,7 +526,8 @@ void MyBle::setup() {
     server = NimBLEDevice::createServer();
     CHECK_POINTER(server, ErrorCode::MEMORY_ALLOCATION_FAILED, "BLE server");
     server->setCallbacks(new BleServerCallbacks(*this), true);
-    server->advertiseOnDisconnect(true);
+    const bool isLeaderboard = coordinator->myRole() == BoardRole::Leader;
+    server->advertiseOnDisconnect(!isLeaderboard);
     NimBLEService* service = server->createService(kServiceUuid);
     CHECK_POINTER(service, ErrorCode::MEMORY_ALLOCATION_FAILED, "game BLE service");
 
@@ -504,27 +550,17 @@ void MyBle::setup() {
     downlinkCallbacks = std::make_unique<BleDownlinkCallbacks>(*this);
     downlink->setCallbacks(downlinkCallbacks.get());
     ota.setup(server);
-    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
-    // Flags + a 128-bit service UUID leave too little room for the complete
-    // device name in the 31-byte advertisement. Put it in the scan response
-    // so CoreBluetooth reports Scorebot-<id> instead of a nameless peripheral.
-    advertising->enableScanResponse(true);
-    advertising->addServiceUUID(kServiceUuid);
-    advertising->setName(deviceName.c_str());
-    // Advertise four times per second while waiting to join. Advertising ends
-    // on connection, so this discovery reliability does not become a steady
-    // battery cost during a game.
-    advertising->setAdvertisingInterval(400);
-    // Player boards must advertise so the leaderboard can discover them. The
-    // battery-powered leaderboard only advertises when OTA is explicitly
-    // armed; otherwise its radio remains receive-only while building a lobby.
-    const bool advertisingStarted = coordinator->myRole() != BoardRole::Leader
-                                        ? advertising->start()
-                                        : false;
+    // NimBLE starts GATT on first advertisement. Register it before the
+    // leaderboard can establish central links, which make GATT immutable.
+    if (!server->start()) {
+        FATAL_ERROR(ErrorCode::BLE_INIT_FAILED, "start GATT before discovery");
+    }
+    configureAdvertising(false);
+    const bool advertisingStarted = !isLeaderboard && NimBLEDevice::getAdvertising()->start();
     DEBUG_PRINTF("BLE: advertising name=%s started=%d\n",
                  deviceName.c_str(), advertisingStarted);
 
-    if (coordinator->myRole() == BoardRole::Leader) {
+    if (isLeaderboard) {
         clientCallbacks = std::make_unique<BleClientCallbacks>(*this);
         scanCallbacks = std::make_unique<BleScanCallbacks>(*this);
         beginScan();

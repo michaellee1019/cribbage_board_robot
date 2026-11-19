@@ -1,3 +1,4 @@
+#include <EpaperRefreshRules.hpp>
 #include <LeaderboardUiRules.hpp>
 
 #include <cassert>
@@ -6,7 +7,23 @@
 
 using scorebot::LeaderboardDisplayMode;
 
+void testEpaperRefresh() {
+    using namespace scorebot;
+    assert(epaperRefresh(false, false, 0, 0, 0) == EpaperRefresh::Full);
+    assert(epaperRefresh(true, true, 0, 0, 0) == EpaperRefresh::Partial);
+    assert(epaperRefresh(true, false, 0, 0, 0) == EpaperRefresh::None);
+    assert(epaperRefresh(true, false, 99, kEpaperCleanupQuietMs, 0) == EpaperRefresh::None);
+    assert(epaperRefresh(true, false, 100, kEpaperCleanupQuietMs - 1, 0) ==
+           EpaperRefresh::None);
+    assert(epaperRefresh(true, false, 100, kEpaperCleanupQuietMs, 0) ==
+           EpaperRefresh::Full);
+    assert(epaperRefresh(true, true, 99, 0, 0) == EpaperRefresh::Partial);
+    assert(epaperRefresh(true, true, 100, 0, 0) == EpaperRefresh::Full);
+    assert(epaperRefresh(true, false, 0, 0, kEpaperDailyRefreshMs) == EpaperRefresh::Full);
+}
+
 int main() {
+    testEpaperRefresh();
     assert(scorebot::leaderboardDisplayMode(false, false, false, false) ==
            LeaderboardDisplayMode::Off);
     assert(scorebot::leaderboardDisplayMode(false, true, false, false) ==
