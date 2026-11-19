@@ -3,10 +3,10 @@
 #include <BoardRole.hpp>
 #include <BoardIdentity.hpp>
 #include <BleService.hpp>
-#include <DisplayPeerRules.hpp>
 #include <Coordinator.hpp>
 #include <ErrorHandler.hpp>
 #include <Messages.hpp>
+#include <PeerAdmissionRules.hpp>
 #include <Protocol.hpp>
 #include <utils.hpp>
 
@@ -17,6 +17,7 @@ using scorebot::kDownlinkUuid;
 using scorebot::kIdentityUuid;
 using scorebot::kProtocolUuid;
 using scorebot::kUplinkUuid;
+using scorebot::roleMask;
 constexpr const char* kServiceUuid = scorebot::kGameServiceUuid;
 constexpr uint32_t kLeaderTimeoutMs = 15000;
 constexpr uint32_t kScanDurationMs = 5000;
@@ -62,18 +63,6 @@ public:
 private:
     SemaphoreHandle_t semaphore;
 };
-
-bool isPlayerRole(BoardRole role) {
-    return role == BoardRole::Player_Red || role == BoardRole::Player_Blue ||
-           role == BoardRole::Player_Green || role == BoardRole::Player_White;
-}
-
-uint8_t roleMask(BoardRole role) {
-    return isPlayerRole(role)
-               ? static_cast<uint8_t>(1u << (static_cast<uint8_t>(role) -
-                                             static_cast<uint8_t>(BoardRole::Player_Red)))
-               : 0;
-}
 
 class BleDownlinkCallbacks final : public NimBLECharacteristicCallbacks {
 public:
@@ -743,22 +732,15 @@ void MyBle::addPeer(NimBLEClient* client) {
     const uint32_t nodeId = identity->readValue<uint32_t>();
     const NimBLEAddress transportAddress = client->getPeerAddress();
     const uint64_t bluetoothMac = static_cast<uint64_t>(transportAddress);
-    const uint32_t transportNodeId = transportAddress.isPublic()
-                                         ? getRoleConfigForBluetoothMac(
-                                               bluetoothMac, kBluetoothMacOffset).nodeId
-                                         : 0;
     const uint16_t remoteProtocol = protocol->readValue<uint16_t>();
-    const BoardRole role = getRoleConfig(nodeId).role;
-    const uint8_t playerMask = roleMask(role);
-    const bool protocolOk = remoteProtocol == scorebot::kWireProtocolVersion;
-    const bool displayPeer = protocolOk && transportAddress.isPublic() &&
-                             nodeId != peerId &&
-                             scorebot::isDisplaySubscriber(nodeId, bluetoothMac, role);
-    const bool knownPlayer = protocolOk && nodeId != 0 && nodeId == transportNodeId &&
-                             nodeId != peerId && isPlayerRole(role);
-    const bool rosterRejected = knownPlayer && rosterFrozen.load() &&
-                                (rosterMask.load() & playerMask) == 0;
-    if ((!knownPlayer && !displayPeer) || rosterRejected) {
+    const auto admission = scorebot::classifyPeerAdmission(
+        nodeId, remoteProtocol, transportAddress.isPublic(), bluetoothMac,
+        kBluetoothMacOffset, peerId);
+    const bool displayPeer = admission.kind == scorebot::PeerKind::Display;
+    const bool rosterRejected = admission.kind == scorebot::PeerKind::Player &&
+                                rosterFrozen.load() &&
+                                !admission.eligibleForFrozenRoster(rosterMask.load());
+    if (admission.kind == scorebot::PeerKind::Rejected || rosterRejected) {
         DEBUG_PRINTF(
             "BLE: rejected peer identity=%08lx protocol=%u expected=%u frozen=%d roster=0x%02x\n",
             static_cast<unsigned long>(nodeId), static_cast<unsigned>(remoteProtocol),
@@ -780,7 +762,7 @@ void MyBle::addPeer(NimBLEClient* client) {
         // Re-check under the peer lock: Start may freeze the roster after
         // service discovery's earlier check but before this insertion.
         rejectedAfterFreeze = !displayPeer && rosterFrozen.load() &&
-                              (rosterMask.load() & playerMask) == 0;
+                              !admission.eligibleForFrozenRoster(rosterMask.load());
         duplicate = peers.count(nodeId) != 0;
         if (!rejectedAfterFreeze && !duplicate) {
             // A display is already announced so it never becomes a player.

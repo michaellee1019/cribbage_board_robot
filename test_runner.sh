@@ -36,12 +36,14 @@ run_logic_tests() {
         test/native/test_usb_connection_rules.cpp
         test/native/test_message_authority_rules.cpp
         test/native/test_display_peer_rules.cpp
+        test/native/test_peer_admission_rules.cpp
     )
     local source binary
     for source in "${sources[@]}"; do
         binary="$test_dir/$(basename "${source%.cpp}")"
         local extra_sources=()
-        if [[ "$source" == "test/native/test_board_identity.cpp" ]]; then
+        if [[ "$source" == "test/native/test_board_identity.cpp" ||
+              "$source" == "test/native/test_peer_admission_rules.cpp" ]]; then
             extra_sources+=(src/BoardRole.cpp)
         fi
         g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror \
