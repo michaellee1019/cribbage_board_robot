@@ -15,7 +15,8 @@ public:
   GameState();
 
   void handleEvent(const Event& e, class Coordinator* coordinator);
-  void restore();
+  void restore(uint32_t leader, uint32_t session);
+  void selectSession(uint32_t leader, uint32_t session);
   void resumeAuthority(uint32_t identity);
   bool persist() const;
   static bool persistEncoded(const char* encoded);
@@ -39,6 +40,10 @@ public:
   uint8_t rosterMask;
   bool gameStarted;
   uint32_t gameId;
+  uint32_t sessionId{0};
+  std::array<uint32_t, 4> controllerNodes{};
+  std::array<uint32_t, 4> controllerOperations{};
+  BoardRole pendingControllerRole{BoardRole::Unknown};
   uint32_t term;
   uint32_t version;
   uint32_t leaderId;

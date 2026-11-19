@@ -72,31 +72,75 @@ pio run -e leaderboard_epaper -t upload --upload-port <serial-port>
 pio device monitor -e leaderboard_epaper --port <serial-port>
 ```
 
-On a dual USB-C board, use the UART connector for these uploads and logs. The listener shows `Waiting for host` on its own. Update the existing host leaderboard with the `controller` build from this checkout to enable score broadcasts. The player firmware uses the existing game protocol and needs no update. Start and control the game from the existing hardware. While the host is asleep or in OTA mode, the listener holds the last received scores and marks them `LAST SEEN` on the next refresh.
+On a dual USB-C board, use the UART connector for these uploads and logs. The listener shows `Waiting for host` on its own. Update the existing host leaderboard with the `controller` build from this checkout to enable score broadcasts. Update player boards and display listeners together to protocol v5. The listener follows its saved session, or the sole visible session after discovery; it waits when several unsaved sessions are visible. Start and control the game from the existing hardware. While the host is asleep or in OTA mode, the listener holds the last received scores and marks them `LAST SEEN` on the next refresh.
 
 The red title and divider are drawn during a full refresh. Scores and the inverted active-player row use the panel's black-and-white partial waveform. The listener starts a partial refresh as soon as it receives a changed frame and applies only the area containing changed pixels. A full refresh establishes the initial image and clears accumulated ghosting. After 100 partial updates, the next change triggers a full refresh. If the frame stays unchanged for 30 seconds, the listener runs the cleanup during that pause. An always-on display also gets a full refresh once a day. If scores change during a refresh, the listener renders the newest state as soon as the panel is ready. [Panel manual](https://www.waveshare.com/wiki/2.9inch_e-Paper_Module_%28B%29_Manual)
+
+## Runtime roles and pairing
+
+The same controller firmware runs on every scoring board. At startup it probes
+I2C displays: one display is a player board; four displays are a leaderboard.
+Incomplete display populations stop with a hardware error. Hardware identity
+never selects authority or grants permission to submit a score.
+
+A saved color takes precedence over the optional enclosure-color suggestions in
+`src/BoardRole.cpp`. An unknown player starts at `COLR`: rotate the encoder (or
+use **-1**/**+1**) to choose Red, Blue, Green, or White, then click the encoder or
+press **OK**. While pairing, **ADD** opens the color picker even for a known board.
+
+Leaderboards listen for five seconds before starting a fresh session. They join
+an existing authority as mirrored controllers; simultaneous candidates choose
+the smallest runtime node ID. Otherwise the board becomes authority and picks
+a random pairing number **0–20**, avoiding visible collisions. Recovering games
+keep their full session identity. Independent sessions that later collide on a
+number resolve it by rerolling the larger leader ID's number; the session stays
+the same. There is no automatic promotion when an authority goes away.
+
+Player boards show `PAIR` alternating with the discovered number, such as
+`P 07`. Rotate to browse **visible sessions**, then click the encoder or press
+**OK** to confirm. Numbers are never typed. The saved session is preselected on
+a cold boot; waking from deep sleep reconnects automatically. With no visible
+session the board shows `SCAN` and waits. Pairing animations on the leaderboard
+also show its number, including unused lobby slots alternating `OFF`/`P nn`.
+
+Each game reserves one physical board per color, including sleeping boards.
+Choosing an occupied color returns to the color picker. The leader's local reset
+releases those reservations. Paired colors, full session identities, and learned
+transport addresses are stored locally, rather than compiled into firmware.
+The short number is only a selector: full leader/session identities distinguish
+nearby games. Both public and stable random Bluetooth addresses can be learned.
+
+A mirrored leaderboard displays the same scores and can use the usual lobby,
+score, and turn controls. Its commands are committed by the authority; durable
+operation marks suppress retries across restarts. Its reset chord clears only
+its own replica and pairing. The radio supports eight concurrent links: four player boards plus up to four
+mirrored controllers/passive displays. E-paper listeners use
+broadcasts and do not consume a connection.
+
+Python callers retain the existing local game APIs. Runtime pairing options,
+discovery metadata, and per-game admission are described in [native/README.md](native/README.md).
 
 ## Reliability and recovery
 
 - Every accepted score or turn action is an atomic, versioned commit on the leaderboard. Its display, controls, turn light, and player-board broadcast update immediately; an immutable copy is handed to a low-priority persistence worker so flash I/O never holds the gameplay/UI state lock. Bursts are coalesced to the latest recoverable snapshot, and sleep waits for the worker to finish.
 - Leaderboard-entered actions never wait for a player-board acknowledgment.
-- Fixed board identities are checked against each peer's factory-derived public Bluetooth address; payloads cannot self-assert another configured color or the leaderboard role.
+- Peer admission checks live pairing metadata against the chosen session and binds each admitted identity/color to its complete transport address. A payload cannot become authority or use another paired board's color.
 - The committed snapshot is persisted locally and replicated to connected player boards. Each board retains its latest snapshot in flash, so a rebooted board reconnects and resumes the game state.
 - Player requests carry a monotonic operation ID, so repeated notifications are ignored. Scoring and turn changes are separate permissions: every connected rostered player may score, while only the active player may advance the turn.
 - **OK** always commits the visible score delta. For the active player it also passes the turn; out of turn it commits the score without changing the turn. This lets accidental scoring be corrected without weakening turn control.
-- If the leaderboard is unavailable, player boards always show `PAIR` and reject new game actions. They resume automatically when the leaderboard reconnects; this prevents competing versions of the score while preserving the last committed state.
+- If the leaderboard is unavailable, player boards alternate `PAIR` with the saved pairing number and reject new game actions. They resume automatically when the leaderboard reconnects; this prevents competing versions of the score while preserving the last committed state.
 
 ### Game controls
 
-- In a clean lobby, every unavailable color defaults to `OFF`; an untouched color automatically shows its name and becomes available when that board connects, then returns to `OFF` if it disconnects. For example, Blue as the only connected board displays `[OFF, BLUE, OFF, OFF]`. Click the leaderboard encoder to advance through Red, Blue, Green, and White; the selected display blinks. Rotate the encoder in either direction to explicitly choose `LOCAL`, physical-board mode (the color name when connected, otherwise `PAIR`), or `OFF` for that color. Explicit choices survive connection changes: `PAIR` waits for that board, while `OFF` excludes even a connected board. The leaderboard's **OK** button freezes the enabled, available colors and starts the game; its other buttons have no single-button lobby action.
-- During a game, the leaderboard automatically selects the latest authoritative turn, updates the turn-color light synchronously, and pulses that display. The active leaderboard and player-board displays alternate once per second between `GO` and that player's authoritative total score, beginning with `GO`. The leaderboard can operate every color in the frozen roster whether that player's board is connected, sleeping, or showing `PAIR`; click its encoder to cycle through roster colors for corrections. Any subsequent turn change immediately returns the light, selection, and controls to the new active color. Its four buttons are **-1**, **+1**, **ADD**, and **OK**; the encoder supplies arbitrary deltas in place of a dedicated **+5** button. Physical-board and leaderboard actions share the same authoritative score and turn state.
+- In a clean lobby, every unavailable color defaults to `OFF`; an untouched color automatically shows its name and becomes available when that board connects, then returns to `OFF` if it disconnects. For example, Blue as the only connected board displays `[OFF, BLUE, OFF, OFF]`. Click the leaderboard encoder to advance through Red, Blue, Green, and White; the selected display blinks. Rotate the encoder in either direction to explicitly choose `LOCAL`, physical-board mode (the color name when connected, otherwise its pairing number), or `OFF` for that color. Explicit choices survive connection changes: physical-board mode waits for that board, while `OFF` excludes even a connected board. The leaderboard's **OK** button freezes the enabled, available colors and starts the game; its other buttons have no single-button lobby action.
+- During a game, the leaderboard automatically selects the latest authoritative turn, updates the turn-color light synchronously, and pulses that display. The active leaderboard and player-board displays alternate once per second between `GO` and that player's authoritative total score, beginning with `GO`. The leaderboard can operate every color in the frozen roster whether that player's board is connected, sleeping, or showing its pairing number; click its encoder to cycle through roster colors for corrections. Any subsequent turn change immediately returns the light, selection, and controls to the new active color. Its four buttons are **-1**, **+1**, **ADD**, and **OK**; the encoder supplies arbitrary deltas in place of a dedicated **+5** button. Physical-board and leaderboard actions share the same authoritative score and turn state.
 - A paired player in the lobby shows idle dashes. During gameplay, **-1**, **+1**, **+5**, or the rotary encoder build a visible score delta. **ADD** submits it without changing the turn. **OK** also submits it; if that player owns the turn, OK advances it and clears `GO` and the turn light immediately while the leaderboard confirms the operation.
-- During gameplay, an unexpectedly disconnected rostered board alternates `PAIR` with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
-- A temporary disconnect or deep-sleep cycle never advances the turn. A player sends three sleep notices before turning off its Bluetooth radio, so during a game the leaderboard alternates `ZZZZ` with the saved score for an intentionally sleeping board and reserves `PAIR` for an unexpected disconnect. Sleeping players retain their place in the frozen turn order; when their turn arrives, the game waits for them to rejoin.
+- During gameplay, an unexpectedly disconnected rostered board alternates the pairing number with its saved score until it rejoins. Player positions that were not in the frozen starting roster stay blank.
+- A temporary disconnect or deep-sleep cycle never advances the turn. A player sends three sleep notices before turning off its Bluetooth radio, so during a game the leaderboard alternates `ZZZZ` with the saved score for an intentionally sleeping board and shows the pairing number for an unexpected disconnect. Sleeping players retain their place in the frozen turn order; when their turn arrives, the game waits for them to rejoin.
 - Player boards enter deep sleep after five idle minutes and the leaderboard after ten; either waits twenty minutes when it contains a locally entered score that has not been submitted. The first local control action on a sleeping board is wake-only: it wakes and rejoins without also changing a score or starting/resetting a game. The leaderboard and player boards are woken independently.
 - The active player's `GO` display continuously fades in for one second, holds for one second, and fades out for one second while its dim turn light fades inversely. While the leaderboard is awake, player interaction wakes its displays and turn light; after five quiet seconds they fade to their minimum visible levels. Deep-sleeping boards are woken independently with a local control press.
 - On dual-core ESP32-S3 boards, the Bluetooth controller and NimBLE host are pinned to radio Core 0. The Arduino loop, high-priority FIFO gameplay/input dispatcher, low-priority persistence worker, OTA flash worker, I2C input/display work, and non-blocking fades run on application Core 1. BLE callbacks only copy gameplay and OTA requests into bounded queues. OTA sends one durable-consumption credit after each flash chunk, preventing the laptop from outrunning the worker. Established game links use 15–30 ms connection intervals with zero slave latency; deep sleep supplies battery savings instead of delaying interactive traffic.
-- Maintenance actions use deliberate five-second button chords on either board type. Hold **-1** and **+1** to scroll `RESET`, flash red progressively faster, and clear the current board's stored state. Hold **ADD** and **OK** to show `OTA`, flash purple progressively faster, and arm OTA. Releasing either chord early cancels it without performing the component button actions. Resetting a player clears only its local replica before it rejoins; resetting the leaderboard clears the authoritative game and controller profile while preserving a monotonic reset epoch for safe peer resynchronization. The leaderboard drains the authoritative reset snapshot and services the radio before rebooting, so connected players see the cleared epoch immediately.
+- Maintenance actions use deliberate five-second button chords on either board type. Hold **-1** and **+1** to scroll `RESET`, flash red progressively faster, and clear the current board's stored state. Hold **ADD** and **OK** to show `OTA`, flash purple progressively faster, and arm OTA. Releasing either chord early cancels it without performing the component button actions. Resetting a player clears its local replica and pairing selection; resetting the leaderboard clears the authoritative game and controller profile while preserving a monotonic reset epoch for safe peer resynchronization. The leaderboard drains the authoritative reset snapshot and services the radio before rebooting, so connected players see the cleared epoch immediately.
 
 ### Leaderboard printing
 
@@ -145,7 +189,7 @@ configuration](native/README.md). This supports a Pi leaderboard controlling
 LOCAL players and existing physical player boards without an ESP32 bridge for
 an all-LOCAL game.
 
-The BLE service and every game message carry a wire-protocol version. A leaderboard refuses to add a player board with a different version; snapshots and score requests with a mismatched or absent version are ignored. Update all boards with `just flash-all` before expecting them to participate in the same game.
+Protocol **v5** adds runtime discovery/pairing metadata, session-bound snapshots, and mirrored-controller commands. Previous firmware snapshots and v4 peers are not imported into a v5 session. The BLE service and every game message carry a wire-protocol version. A leaderboard refuses to add a player board with a different version; snapshots and score requests with a mismatched or absent version are ignored. Update all boards with `just flash-all` before expecting them to participate in the same game.
 
 ## TODO Features
 

@@ -138,11 +138,18 @@ Coordinator::Coordinator() :
 }
 
 BoardRole Coordinator::myRole() {
-    return myRoleConfig().role;
+    return ble.localRole();
 }
 
 const BoardRoleConfig& Coordinator::myRoleConfig() {
-    return getRoleConfig(ble.getMyPeerId());
+    return getRoleStyle(myRole());
+}
+
+void Coordinator::resetReplicaForPairing() {
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    state.selectSession(ble.authorityNodeId(), ble.sessionId());
+    state.refreshDisplays(this);
+    xSemaphoreGive(stateMutex);
 }
 
 void Coordinator::serviceStateHeartbeat() {
@@ -186,15 +193,33 @@ void Coordinator::setup() {
     // print i2c devices for debugging hardware
     printI2CDevices();
 
-    // BLE identity is the device's factory MAC-derived id, so it must be initialized first.
-    ble.setup();
-    state.restore();
+    uint8_t displayCount = 0;
+    for (uint8_t address = 0x70; address <= 0x73; ++address) {
+        I2cBus::Guard guard;
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0) ++displayCount;
+    }
+    if (!scorebot::validDisplayCount(displayCount)) {
+        FATAL_ERROR(ErrorCode::DISPLAY_INIT_FAILED, "expected one player display or four leaderboard displays");
+    }
+    display1.setup(0x70);
+    display1.print("SCAN");
+    if (displayCount == 4) {
+        display2.setup(0x71); display2.print("SCAN");
+        display3.setup(0x72); display3.print("SCAN");
+        display4.setup(0x73); display4.print("SCAN");
+    }
+    buttonGrid.setup();
+    rotaryEncoder.setup();
+    DEBUG_PRINTF("Hardware: detected %u displays (%s)\n", static_cast<unsigned>(displayCount), displayCount == 4 ? "leaderboard" : "player");
+    ble.setup(displayCount);
+    state.restore(ble.authorityNodeId(), ble.sessionId());
     DEBUG_PRINTF("State: started=%d connected=0x%02x roster=0x%02x turn=%u\n",
                  state.gameStarted,
                  static_cast<unsigned>(state.connectedMask),
                  static_cast<unsigned>(state.rosterMask),
                  static_cast<unsigned>(state.whosTurn));
-    if (myRole() == BoardRole::Leader) {
+    if (ble.isAuthority()) {
         state.resumeAuthority(ble.getMyPeerId());
         if (state.gameStarted) {
             ble.freezeRoster(state.rosterMask);
@@ -212,19 +237,6 @@ void Coordinator::setup() {
         printer.setup(myRole() == BoardRole::Leader) ? pdPASS : pdFAIL,
         ErrorCode::TASK_CREATE_FAILED, "leaderboard printer worker");
 
-    display1.setup(0x70);
-    display1.print("----");
-    if (myRole() == BoardRole::Leader) {
-        display2.setup(0x71);
-        display2.print("----");
-        display3.setup(0x72);
-        display3.print("----");
-        display4.setup(0x73);
-        display4.print("----");
-    }
-    
-    buttonGrid.setup();
-    rotaryEncoder.setup();
     state.syncLeaderboardSelection(this);
     state.refreshDisplays(this);
     updateDisplayBrightness();
@@ -277,7 +289,7 @@ void Coordinator::loop() {
         delay(1);
         return;
     }
-    if (isLeaderboard && !shouldSleep) {
+    if (ble.isAuthority() && !shouldSleep) {
         ble.publishLeaderboard(leaderboard);
     }
     if (shouldSleep) {
@@ -733,6 +745,10 @@ void Coordinator::updateDisplayBrightness() {
         return;
     }
     if (updatePrinterUi(now)) {
+        return;
+    }
+    if (ble.pairingUiActive() || (!ble.isAuthority() && !ble.hasLeader())) {
+        ble.renderPairingUi(now);
         return;
     }
     if (myRole() != BoardRole::Leader && playerTurnAnimationActive.load()) {

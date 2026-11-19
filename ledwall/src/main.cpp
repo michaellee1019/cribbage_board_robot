@@ -4,6 +4,8 @@
 #include <BleService.hpp>
 #include <BoardIdentity.hpp>
 #include <Protocol.hpp>
+#include <DisplayPairing.hpp>
+#include <Preferences.h>
 
 #include <cstring>
 
@@ -14,6 +16,13 @@ struct StateNote {
 };
 
 QueueHandle_t stateQueue = nullptr;
+DisplayPairing pairing;
+NimBLECharacteristic* pairingCharacteristic = nullptr;
+uint32_t localNode = 0;
+class DiscoveryCallbacks final : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* device) override { pairing.observe(device); }
+};
+DiscoveryCallbacks discoveryCallbacks;
 
 bool contains(const uint8_t* data, size_t length, const char* needle) {
     const size_t needleLength = std::strlen(needle);
@@ -52,7 +61,8 @@ void enqueueState(const uint8_t* data, size_t length) {
 
 class StateDownlink final : public NimBLECharacteristicCallbacks {
 public:
-    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
+    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override {
+        if (!pairing.accepts(connection.getAddress())) return;
         const NimBLEAttValue value = characteristic->getValue();
         enqueueState(value.data(), value.length());
     }
@@ -82,6 +92,8 @@ void setup() {
     }
 
     const uint32_t peerId = scorebot::boardIdFromEfuseMac(ESP.getEfuseMac());
+    localNode = peerId;
+    pairing.begin();
     const String deviceName = String("Scorebot-") + String(peerId, HEX);
     if (!NimBLEDevice::init(deviceName.c_str())) {
         Serial.println("STATE-WAIT ble-init-failed");
@@ -119,6 +131,11 @@ void setup() {
         Serial.println("STATE-WAIT ble-characteristic-failed");
         return;
     }
+    pairingCharacteristic = service->createCharacteristic(scorebot::kPairingUuid,
+        NIMBLE_PROPERTY::READ, scorebot::DiscoveryPacket{}.size());
+    if (!pairingCharacteristic) return;
+    const auto packet = scorebot::encodeDiscovery(pairing.metadata(peerId));
+    pairingCharacteristic->setValue(packet.data(), packet.size());
     identity->setValue(peerId);
     protocol->setValue(scorebot::kWireProtocolVersion);
     downlink->setCallbacks(&downlinkCallbacks);
@@ -126,16 +143,34 @@ void setup() {
     // NimBLE 2 starts the GATT server from advertising. Service::start() is a no-op.
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
     advertising->enableScanResponse(true);
-    advertising->addServiceUUID(scorebot::kGameServiceUuid);
+    NimBLEAdvertisementData data;
+    data.setFlags(BLE_HS_ADV_F_BREDR_UNSUP | BLE_HS_ADV_F_DISC_GEN);
+    data.setManufacturerData(packet.data(), packet.size());
+    advertising->setAdvertisementData(data);
     advertising->setName(deviceName.c_str());
     advertising->setAdvertisingInterval(400);
     const bool started = advertising->start();
+    auto* scan = NimBLEDevice::getScan();
+    scan->setScanCallbacks(&discoveryCallbacks, true);
+    scan->setActiveScan(true);
+    scan->setInterval(100);
+    scan->setWindow(100);
+    scan->setMaxResults(0);
+    scan->start(0);
     Serial.printf(
         "STATE-WAIT id=%08lx advertising=%d\n",
         static_cast<unsigned long>(peerId), started);
 }
 
 void loop() {
+    if (pairing.service()) {
+        const auto packet = scorebot::encodeDiscovery(pairing.metadata(localNode));
+        pairingCharacteristic->setValue(packet.data(), packet.size());
+        NimBLEAdvertisementData data;
+        data.setFlags(BLE_HS_ADV_F_BREDR_UNSUP | BLE_HS_ADV_F_DISC_GEN);
+        data.setManufacturerData(packet.data(), packet.size());
+        NimBLEDevice::getAdvertising()->setAdvertisementData(data);
+    }
     drainState();
     delay(10);
 }

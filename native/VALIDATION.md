@@ -1,63 +1,70 @@
-# Deliverable validation — 2026-11-19
+# Runtime pairing validation — 2026-11-19
 
-Host: macOS arm64, Apple Clang, Python 3. The native artifact inspected was
-an arm64 Mach-O dylib. All commands below passed from the repository root.
+Software checkpoint on macOS arm64 with Apple Clang, Python 3, and the pinned
+ESP32 Arduino toolchain. The branch/worktree is `codex/dynamic-board-pairing`
+at `/private/tmp/cribbage-board-robot-dynamic-pairing`.
+
+Completed software checks:
 
 ```sh
 ./test_runner.sh logic
 make -C native check
 PYTHONPATH=native/python python3 native/examples/local_game.py
-
-# SYNTHETIC identity, used only for tests; not the real Pi configuration.
-make -C native BUILD=build-pi-test \
-  SCOREBOT_LEADER_NODE_ID=0x10203040u \
-  SCOREBOT_LEADER_BLUETOOTH_MAC=0x123456789abcULL check
-
 make -C native BUILD=build-sanitize \
   CXXFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' \
   CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' \
   LDFLAGS='-fsanitize=address,undefined' build-sanitize/test_c_api
 native/build-sanitize/test_c_api
-
 pio run -e controller -e leaderboard_epaper
-pio run -e debug -e button_diag -e sleep_test
-SCOREBOT_LEADER_NODE_ID=0x10203040u \
-SCOREBOT_LEADER_BLUETOOTH_MAC=0x123456789abcULL \
-  pio run -c platformio.pi.ini -e pi_players -e pi_epaper
-
-git diff --check
+pio run -e debug
+pio run -d ledwall -e ledwall -e ledwall_xiao
+pio run -d test/hardware
 ```
 
-- The existing 21 native rule executables and three USB Python tests passed.
-  The authority configuration test compiled/ran both default hardware and
-  synthetic Pi profiles, then checked ten invalid configurations fail to build.
-- Each normal/configured shared-library check linked a C11 caller and passed
-  11 Python integration tests. Coverage includes all-LOCAL and mixed games,
-  ADD/OK, out-of-turn actions, signed score overflow, duplicate/stale operations,
-  revisions, game/term/high-water state round trips, sleep/reconnect, nulls,
-  invalid ranges/masks/booleans, wrong sizes/versions, ownership and authority.
-- The standalone C ABI test passed AddressSanitizer and UndefinedBehaviorSanitizer.
-  The Python interpreter was not run under those sanitizers.
-- All seven firmware environments above built successfully. `ledwall` and
-  `ledwall_xiao` do not consume any changed inputs (their `BleService.hpp`,
-  `BoardIdentity.hpp` and `Protocol.hpp` remain unchanged), so were not rebuilt.
-  The hardware error-handler integration test was not run.
-- `nm -gU native/build/libscorebot.dylib` showed only the 21 intended C API
-  symbols exported; `otool -L` confirmed the test uses `@rpath/libscorebot.dylib`.
+The rule suite has 23 C++ executables plus three USB discovery tests. The native
+check links the C11 ABI test and passes 14 Python tests. Coverage includes
+runtime session isolation, arbitrary identities, public/static random addresses,
+occupied colors, display/controller privileges, startup election, number bounds
+and collisions, controller replay across recovery, existing scoring/sleep/roster
+behavior, atomic invalid-input handling, and a maximum-width compact snapshot
+(454 bytes, within the 512-byte ATT limit). The C test also passes AddressSanitizer
+and UndefinedBehaviorSanitizer. Python was not run under those sanitizers.
 
-One independent agent reviewed the actual C ABI, adapter ownership/error paths,
-and production peer-authority paths. It found a stale-build risk when changing
-identity flags; the Makefile now always recompiles the tiny library. Its final
-review reported no remaining substantive findings. Its draft-clearing comment
-clarification was also applied.
+The connected leaderboard was confirmed to have displays at 0x70..0x73, and
+selected its hardware role without an identity lookup. Live startup exposed a
+controller limit missed by cross-compilation: nine connections plus scanning
+and advertising exceeds the ESP32-S3's ten BLE activities. The configured limit
+is now eight, guarded by a static assertion; the corrected hardware starts BLE
+and elects an authority with a runtime session and pairing number.
 
-No Linux/Pi compiler or runtime, actual Pi adapter address, physical BLE
-connection, e-paper reception from a Pi, or hardware game was verified. The
-synthetic Pi-profile tests on macOS and ESP32 cross-builds are **not** Pi runtime
-validation. Linux's shared-library/rpath branch is provided but has not been
-executed here. Build and run `make -C native check` on the actual Pi before
-integration. No binary is committed or claimed portable between architectures.
+The live bench probe passed against the connected leaderboard: an unrelated
+session was ignored, the previously unknown controller was admitted, Red and
+Blue were enabled locally, Red +7 was committed exactly once despite retries,
+Red's turn passed to Blue, Blue -2 was committed, and a controller impersonating
+a player was rejected without a revision change. Final scores were [7,-2,0,0],
+turn Blue, version 6. E-paper acceptance is still in progress. Bench firmware is
+in `test/hardware/pairing_probe.cpp`. It receives the target's full identity and
+session over UART at runtime, checks foreign-session rejection, then exercises
+mirrored lobby/score/turn commands, duplicate suppression, and privilege
+rejection. It refuses to overwrite an active game. Restore normal display
+firmware after using this probe. Ignored logs and saved-state backups are in
+`.pio/validation/` in the worktree.
 
-The actual Pi identity must still be supplied by the wall integration. No
-ledgrid code, BLE client, animation, UI, flashing, push, or personal
-credentials/settings changes are included.
+Consumer contract:
+
+- ABI v1 and the 84-byte state layout remain; pairing APIs are additive.
+- Wire protocol v5 requires live pairing GATT metadata and session/controller
+  fields. Legacy process-global admission queries fail closed.
+- Python applications may remain the sole authority for their persisted
+  session. The native game handle does not join another authority as a replica.
+  Hardware leaderboards can join it as mirrored controllers.
+- Discovery is primary manufacturer data (`ff ff SP 05`); the score packet is
+  scan-response **service data UUID 0xfff0**, keeping both independently visible
+  to Python BLE APIs. Active scanning is required for scores.
+- Persist pairing configuration, controller marks, and validated transport
+  bindings alongside the state record. Details and the byte layout are in
+  `README.md` in this directory.
+
+Linux/Pi execution and actual player-board physical controls are not validated
+by these host tests. Build and run the native check on the consuming Pi. No
+shared binary is committed or claimed portable between architectures.

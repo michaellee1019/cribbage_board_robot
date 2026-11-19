@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <DisplayPairing.hpp>
 #include <BoardIdentity.hpp>
 #include <BoardRole.hpp>
 #include <Adafruit_GFX.h>
@@ -19,8 +20,6 @@ constexpr int kBusy = 13;
 constexpr uint32_t kBroadcastTimeoutMs = 12000;
 constexpr uint32_t kStartupListenMs = 2500;
 constexpr uint32_t kPanelRetryMs = 30000;
-constexpr uint8_t kBluetoothMacOffset =
-    scorebot::bluetoothMacOffset(CONFIG_ESP32S3_UNIVERSAL_MAC_ADDRESSES);
 constexpr std::array<const char*, scorebot::kPlayerCount> kPlayerNames{
     "RED", "BLUE", "GREEN", "WHITE"};
 
@@ -34,22 +33,18 @@ struct Reception {
     uint32_t receivedAtMs;
 };
 
+DisplayPairing pairing;
 QueueHandle_t latestReception;
 NimBLEScan* scanner;
 uint32_t scanStartedMs;
 
 class LeaderboardScanCallbacks : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* device) override {
-        const NimBLEAddress& address = device->getAddress();
-        if (!device->haveManufacturerData() || !address.isPublic() ||
-            getRoleConfigForBluetoothMac(static_cast<uint64_t>(address), kBluetoothMacOffset).role !=
-                BoardRole::Leader) {
-            return;
-        }
-        const std::string data = device->getManufacturerData();
+        pairing.observe(device);
+        if (!pairing.accepts(device)) return;
+        const std::string data = device->getServiceData(NimBLEUUID(scorebot::kLeaderboardServiceDataUuid));
         Reception reception{};
-        if (scorebot::decodeLeaderboard(reinterpret_cast<const uint8_t*>(data.data()),
-                                        data.size(), reception.leaderboard)) {
+        if (scorebot::decodeLeaderboard(reinterpret_cast<const uint8_t*>(data.data()), data.size(), reception.leaderboard)) {
             reception.receivedAtMs = millis();
             xQueueOverwrite(latestReception, &reception);
         }
@@ -126,6 +121,7 @@ void draw(const DisplayFrame& frame) {
 
 void setup() {
     Serial.begin(115200);
+    pairing.begin();
     delay(1000);
     Serial.printf("Scorebot e-paper listener %08lx, flash %lu MiB, PSRAM heap %lu KiB\n",
                   static_cast<unsigned long>(scorebot::boardIdFromEfuseMac(ESP.getEfuseMac())),
@@ -145,7 +141,7 @@ void setup() {
         return;
     }
     scanner = NimBLEDevice::getScan();
-    scanner->setActiveScan(false);
+    scanner->setActiveScan(true);
     scanner->setInterval(100);
     scanner->setWindow(90);
     scanner->setMaxResults(0);
@@ -157,6 +153,7 @@ void setup() {
 void loop() {
     static DisplayFrame frame{};
     static DisplayFrame displayed{};
+    pairing.service();
     static bool hasBaseline = false;
     static bool panelFailed = false;
     static unsigned partials = 0;

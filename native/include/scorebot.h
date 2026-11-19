@@ -32,7 +32,7 @@ enum { SCOREBOT_RED = 0, SCOREBOT_BLUE = 1, SCOREBOT_GREEN = 2,
        SCOREBOT_WHITE = 3, SCOREBOT_NO_PLAYER = 4 };
 enum { SCOREBOT_LOCAL = 0, SCOREBOT_PHYSICAL = 1, SCOREBOT_OFF = 2 };
 enum { SCOREBOT_ADD = 0, SCOREBOT_OK_ACTION = 1 };
-enum { SCOREBOT_PEER_REJECTED = 0, SCOREBOT_PEER_PLAYER = 1, SCOREBOT_PEER_DISPLAY = 2 };
+enum { SCOREBOT_PEER_REJECTED = 0, SCOREBOT_PEER_PLAYER = 1, SCOREBOT_PEER_DISPLAY = 2, SCOREBOT_PEER_CONTROLLER = 3 };
 
 // A COPY, never a C++ layout or an on-disk/wire binary format. All fields are
 // 32-bit; array order is red/blue/green/white. Booleans are exactly 0 or 1,
@@ -94,13 +94,34 @@ SCOREBOT_API scorebot_result scorebot_v1_local_action(scorebot_game* game, uint3
 SCOREBOT_API scorebot_result scorebot_v1_player_action(scorebot_game* game, uint32_t transport_node,
     uint32_t claimed_node, uint32_t game_id, int32_t delta, uint32_t passes_turn, uint32_t operation_id);
 
-// Admission uses the complete public address, protocol and identity. Offset
-// must be 1 or 2 (ESP32 base->Bluetooth allocation); no offset applies to Pi.
-// out_player is NO_PLAYER for rejected/display peers. Rejection itself is OK.
+// Deprecated process-global queries: validated arguments return rejected/false.
+// Use the per-game runtime pairing API below. Retained for ABI-v1 compatibility.
 SCOREBOT_API scorebot_result scorebot_v1_admit_peer(uint32_t node, uint32_t protocol, uint32_t public_address,
     uint64_t bluetooth_mac, uint32_t offset, uint32_t* out_kind, uint32_t* out_player);
 SCOREBOT_API scorebot_result scorebot_v1_is_leader(uint32_t node, uint32_t protocol, uint32_t public_address,
     uint64_t bluetooth_mac, uint32_t offset, uint32_t* out_trusted);
+// Runtime authority configuration. Configure immediately after create; persist
+// these three values alongside the v1 game snapshot and reuse them on recovery.
+// Legacy process-global leader/admission queries fail closed in protocol v5.
+#define SCOREBOT_DISCOVERY_SIZE 22u
+SCOREBOT_API scorebot_result scorebot_v1_configure_pairing(scorebot_game* game,
+    uint32_t node, uint32_t session, uint32_t pairing_id);
+SCOREBOT_API scorebot_result scorebot_v1_pairing_packet(const scorebot_game* game, uint8_t* out, uint32_t size);
+// packet is the live pairing characteristic, read on this transport connection.
+// public_address is 1 for public, 0 for random; both are supported at runtime.
+// Wrong sessions, occupied colors, and incompatible packets return REJECTED kind.
+SCOREBOT_API scorebot_result scorebot_v1_pair_peer(scorebot_game* game, const uint8_t* packet, uint32_t size,
+    uint64_t bluetooth_address, uint32_t public_address, uint32_t* out_kind, uint32_t* out_player);
+
+// Mirrored-controller commands: 0=score, 1=start, 2=lobby (value is lobby mode).
+// node is the admitted transport identity. Persist marks with the game snapshot.
+SCOREBOT_API scorebot_result scorebot_v1_controller_action(scorebot_game* game, uint32_t node, uint32_t operation,
+    uint32_t command, uint32_t player, int32_t value, uint32_t passes_turn, uint32_t game_id, uint32_t term);
+// Each buffer has four uint32 entries. restore=0 reads; restore=1 restores
+// trusted local persistence, atomically after validating all eight entries.
+SCOREBOT_API scorebot_result scorebot_v1_controller_marks(scorebot_game* game, uint32_t* nodes,
+    uint32_t* operations, uint32_t restore);
+
 // Ordering result -1/0/1; operation helpers use existing non-wrapping high-water semantics.
 SCOREBOT_API int32_t scorebot_v1_compare_revision(uint32_t incoming_term, uint32_t incoming_version,
     uint32_t current_term, uint32_t current_version);

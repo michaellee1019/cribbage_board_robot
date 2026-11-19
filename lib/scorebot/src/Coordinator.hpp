@@ -60,6 +60,7 @@ public:
     BoardRole myRole();
     const BoardRoleConfig& myRoleConfig();
     void serviceStateHeartbeat();
+    void resetReplicaForPairing();
     bool enqueueEvent(const Event& event);
     uint32_t enqueueStatePersistence(const String& snapshot);
     bool waitForStatePersistence(uint32_t timeoutMs) const;

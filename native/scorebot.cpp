@@ -1,6 +1,7 @@
 #include "scorebot.h"
 
 #include <GameRules.hpp>
+#include <ControllerRules.hpp>
 #include <LeaderboardControlRules.hpp>
 #include <MessageAuthorityRules.hpp>
 #include <PeerAdmissionRules.hpp>
@@ -12,6 +13,9 @@ struct scorebot_game {
     scorebot::Snapshot rules{};
     uint32_t gameId{0};
     uint32_t term{0};
+    scorebot::Discovery pairing{};
+    scorebot::PeerDirectory peers{};
+    std::array<uint32_t, 4> controllerNodes{}, controllerOperations{};
 };
 
 namespace {
@@ -59,7 +63,7 @@ extern "C" {
 uint32_t scorebot_abi_version(void) { return SCOREBOT_ABI_VERSION; }
 uint32_t scorebot_v1_state_size(void) { return sizeof(scorebot_state_v1); }
 uint32_t scorebot_v1_protocol_version(void) { return scorebot::kWireProtocolVersion; }
-uint32_t scorebot_v1_leader_node_id(void) { return getNodeIdForRole(BoardRole::Leader); }
+uint32_t scorebot_v1_leader_node_id(void) { return 0; } // No process-global authority.
 
 scorebot_result scorebot_v1_create(uint32_t abiVersion, scorebot_game** out) {
     if (!out) return SCOREBOT_INVALID_ARGUMENT;
@@ -85,7 +89,7 @@ scorebot_result scorebot_v1_read(const scorebot_game* game, scorebot_state_v1* o
     copy.game_id = game->gameId;
     copy.term = game->term;
     copy.version = game->rules.version;
-    copy.leader_id = scorebot_v1_leader_node_id();
+    copy.leader_id = game->pairing.node;
     copy.connected_mask = game->rules.connectedMask;
     copy.local_control_mask = game->rules.localControlMask;
     copy.lobby_enabled_mask = game->rules.lobbyEnabledMask;
@@ -101,9 +105,9 @@ scorebot_result scorebot_v1_read(const scorebot_game* game, scorebot_state_v1* o
 scorebot_result scorebot_v1_restore(scorebot_game* game, const scorebot_state_v1* state, uint32_t size) {
     if (!game || !state) return SCOREBOT_INVALID_ARGUMENT;
     if (size != sizeof(*state) || state->abi_version != SCOREBOT_ABI_VERSION) return SCOREBOT_ABI_MISMATCH;
-    if (state->leader_id != scorebot_v1_leader_node_id()) return SCOREBOT_WRONG_AUTHORITY;
+    if (state->leader_id == 0 || state->leader_id != game->pairing.node) return SCOREBOT_WRONG_AUTHORITY;
     if (!validState(*state)) return SCOREBOT_INVALID_ARGUMENT;
-    scorebot_game copy{};
+    scorebot_game copy = *game;
     for (uint32_t i = 0; i < SCOREBOT_PLAYER_COUNT; ++i) {
         copy.rules.scores[i] = state->scores[i];
         copy.rules.lastOperation[i] = state->last_operation[i];
@@ -126,7 +130,7 @@ scorebot_result scorebot_v1_restore(scorebot_game* game, const scorebot_state_v1
 scorebot_result scorebot_v1_resume_authority(scorebot_game* game) {
     if (!game) return SCOREBOT_INVALID_ARGUMENT;
     // Refuse epoch exhaustion rather than advertise an older authority term.
-    if (game->term == UINT32_MAX) return SCOREBOT_REJECTED;
+    if (!game->pairing.hasSession() || game->term == UINT32_MAX) return SCOREBOT_REJECTED;
     scorebot::resumeAuthority(game->rules, game->term);
     return SCOREBOT_OK;
 }
@@ -171,8 +175,9 @@ scorebot_result scorebot_v1_local_action(scorebot_game* game, uint32_t player, i
 scorebot_result scorebot_v1_player_action(scorebot_game* game, uint32_t transportNode,
     uint32_t claimedNode, uint32_t gameId, int32_t delta, uint32_t passesTurn, uint32_t operationId) {
     if (!game || passesTurn > 1 || operationId == 0) return SCOREBOT_INVALID_ARGUMENT;
-    const auto role = getRoleConfig(transportNode).role;
-    if (transportNode != claimedNode || !scorebot::isPlayerRole(role)) return SCOREBOT_WRONG_AUTHORITY;
+    const auto* peer = game->peers.find(transportNode);
+    if (transportNode != claimedNode || !peer || peer->kind != scorebot::PeerKind::Player) return SCOREBOT_WRONG_AUTHORITY;
+    const auto role = peer->role;
     if (gameId != game->gameId) return SCOREBOT_WRONG_GAME;
     const auto player = static_cast<Player>(static_cast<uint32_t>(role) - static_cast<uint32_t>(BoardRole::Player_Red));
     return applyResult(scorebot::apply(game->rules, {player, delta, passesTurn != 0, operationId}));
@@ -181,19 +186,81 @@ scorebot_result scorebot_v1_admit_peer(uint32_t node, uint32_t protocol, uint32_
     uint64_t mac, uint32_t offset, uint32_t* outKind, uint32_t* outPlayer) {
     if (!outKind || !outPlayer || outKind == outPlayer || !validAddressArguments(protocol, publicAddress, mac, offset))
         return SCOREBOT_INVALID_ARGUMENT;
-    const auto admission = scorebot::classifyPeerAdmission(node, static_cast<uint16_t>(protocol),
-        publicAddress != 0, mac, static_cast<uint8_t>(offset), scorebot_v1_leader_node_id());
-    *outKind = static_cast<uint32_t>(admission.kind);
-    *outPlayer = admission.kind == scorebot::PeerKind::Player
-        ? static_cast<uint32_t>(getRoleConfig(node).role) - static_cast<uint32_t>(BoardRole::Player_Red)
-        : SCOREBOT_NO_PLAYER;
+    // Legacy queries have no selected session; fail closed. Use pair_peer.
+    (void)node;
+    *outKind = SCOREBOT_PEER_REJECTED;
+    *outPlayer = SCOREBOT_NO_PLAYER;
     return SCOREBOT_OK;
 }
 scorebot_result scorebot_v1_is_leader(uint32_t node, uint32_t protocol, uint32_t publicAddress,
     uint64_t mac, uint32_t offset, uint32_t* outTrusted) {
     if (!outTrusted || !validAddressArguments(protocol, publicAddress, mac, offset)) return SCOREBOT_INVALID_ARGUMENT;
-    *outTrusted = scorebot::isConfiguredLeaderPeer(node, static_cast<uint16_t>(protocol),
-        publicAddress != 0, mac, static_cast<uint8_t>(offset));
+    (void)node;
+    *outTrusted = 0;
+    return SCOREBOT_OK;
+}
+scorebot_result scorebot_v1_configure_pairing(scorebot_game* game, uint32_t node, uint32_t session, uint32_t pairing) {
+    if (!game || node == 0 || session == 0 || pairing > scorebot::kMaxPairingId) return SCOREBOT_INVALID_ARGUMENT;
+    if (game->pairing.node == node && game->pairing.session == session && game->pairing.pairing == pairing) return SCOREBOT_NO_CHANGE;
+    if (game->rules.started || game->term != 0 || game->rules.version != 0) return SCOREBOT_REJECTED;
+    game->pairing = {node, node, session, static_cast<uint8_t>(pairing), scorebot::DeviceKind::Leaderboard,
+                     BoardRole::Leader, scorebot::Authority | scorebot::Selected, 0};
+    game->peers = {};
+    return SCOREBOT_OK;
+}
+scorebot_result scorebot_v1_pairing_packet(const scorebot_game* game, uint8_t* out, uint32_t size) {
+    if (!game || !out || size != scorebot::DiscoveryPacket{}.size() || !game->pairing.hasSession())
+        return SCOREBOT_INVALID_ARGUMENT;
+    auto info = game->pairing;
+    info.occupied = game->peers.occupied();
+    const auto packet = scorebot::encodeDiscovery(info);
+    for (size_t i = 0; i < packet.size(); ++i) out[i] = packet[i];
+    return SCOREBOT_OK;
+}
+scorebot_result scorebot_v1_pair_peer(scorebot_game* game, const uint8_t* packet, uint32_t size,
+    uint64_t address, uint32_t publicAddress, uint32_t* outKind, uint32_t* outPlayer) {
+    if (!game || !packet || !outKind || !outPlayer || outKind == outPlayer || publicAddress > 1 ||
+        address == 0 || address > 0xffffffffffffULL) return SCOREBOT_INVALID_ARGUMENT;
+    scorebot::Discovery remote{};
+    scorebot::PeerAdmission admission{};
+    if (scorebot::decodeDiscovery(packet, size, remote)) {
+        const auto candidate = scorebot::classifyPeerAdmission(game->pairing, remote);
+        if (!game->rules.started || candidate.eligibleForFrozenRoster(game->rules.rosterMask))
+            admission = game->peers.admit(game->pairing, remote, address, publicAddress ? 0 : 1);
+    }
+    *outKind = static_cast<uint32_t>(admission.kind);
+    *outPlayer = admission.kind == scorebot::PeerKind::Player
+        ? static_cast<uint32_t>(remote.role) - static_cast<uint32_t>(BoardRole::Player_Red) : SCOREBOT_NO_PLAYER;
+    return SCOREBOT_OK;
+}
+scorebot_result scorebot_v1_controller_action(scorebot_game* game, uint32_t node, uint32_t operation,
+    uint32_t command, uint32_t player, int32_t value, uint32_t passesTurn, uint32_t gameId, uint32_t term) {
+    if (!game || !validPlayer(player) || operation == 0 || command > 2 || passesTurn > 1 ||
+        (command == 2 && (value < 0 || value > 2))) return SCOREBOT_INVALID_ARGUMENT;
+    const auto* peer = game->peers.find(node);
+    if (!peer || peer->kind != scorebot::PeerKind::Controller || term != game->term) return SCOREBOT_WRONG_AUTHORITY;
+    if (gameId != game->gameId) return SCOREBOT_WRONG_GAME;
+    const scorebot::ControllerAction action{node, operation, static_cast<scorebot::ControllerCommand>(command),
+        static_cast<scorebot::Player>(player), value, passesTurn != 0,
+        command == 2 ? static_cast<scorebot::LobbyMode>(value) : scorebot::LobbyMode::Off};
+    return scorebot::applyController(game->rules, game->controllerNodes, game->controllerOperations, action)
+        ? SCOREBOT_OK : SCOREBOT_DUPLICATE;
+}
+scorebot_result scorebot_v1_controller_marks(scorebot_game* game, uint32_t* nodes, uint32_t* operations, uint32_t restore) {
+    if (!game || !nodes || !operations || nodes == operations || restore > 1) return SCOREBOT_INVALID_ARGUMENT;
+    if (restore) {
+        for (size_t i = 0; i < 4; ++i) {
+            if ((nodes[i] == 0) != (operations[i] == 0)) return SCOREBOT_INVALID_ARGUMENT;
+            for (size_t j = 0; j < i; ++j) if (nodes[i] != 0 && nodes[i] == nodes[j]) return SCOREBOT_INVALID_ARGUMENT;
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            game->controllerNodes[i] = nodes[i]; game->controllerOperations[i] = operations[i];
+        }
+    } else {
+        for (size_t i = 0; i < 4; ++i) {
+            nodes[i] = game->controllerNodes[i]; operations[i] = game->controllerOperations[i];
+        }
+    }
     return SCOREBOT_OK;
 }
 int32_t scorebot_v1_compare_revision(uint32_t it, uint32_t iv, uint32_t ct, uint32_t cv) {

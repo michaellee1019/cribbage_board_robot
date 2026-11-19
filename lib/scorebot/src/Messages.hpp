@@ -151,10 +151,11 @@ struct LeaderResetMessage {
     uint32_t gameId;
     uint32_t term;
     uint32_t leaderId;
+    uint32_t sessionId;
 
     LeaderResetMessage(
-        uint32_t game = 0, uint32_t resetTerm = 0, uint32_t leader = 0)
-        : gameId(game), term(resetTerm), leaderId(leader) {}
+        uint32_t game = 0, uint32_t resetTerm = 0, uint32_t leader = 0, uint32_t session = 0)
+        : gameId(game), term(resetTerm), leaderId(leader), sessionId(session) {}
 
     String toJson() const {
         JsonDocument doc;
@@ -163,6 +164,7 @@ struct LeaderResetMessage {
         doc["game"] = gameId;
         doc["term"] = term;
         doc["leader"] = leaderId;
+        doc["session"] = sessionId;
         String output;
         serializeJson(doc, output);
         return output;
@@ -175,6 +177,7 @@ struct LeaderResetMessage {
             doc["game"].as<uint32_t>(),
             doc["term"].as<uint32_t>(),
             doc["leader"].as<uint32_t>(),
+            doc["session"].as<uint32_t>(),
         };
     }
 

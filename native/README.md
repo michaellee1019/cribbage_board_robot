@@ -1,209 +1,174 @@
-# Scorebot native core (ABI v1)
+# Scorebot native core (ABI v1, wire protocol v5)
 
-This is the Scorebot source dependency for a Pi leaderboard. Nimbus can control
-any or all roster colors through the local action API. An all-LOCAL game needs
-only this library and its caller: no hardware leaderboard, player board, or
-ESP32 bridge. Physical player boards use the existing v4 protocol against the
-same authoritative state. Run one authority process per game; this library
-does not elect leaders or coordinate competing processes.
+The portable C++ core supports Pi, Linux, and macOS authority applications, with
+a C ABI and a standard-library Python adapter. Local/virtual players still use
+`local_action`; an all-LOCAL game needs no ESP32 or BLE network. The library
+performs no radio, UI, persistence, scheduling, or leader election I/O. The host
+application supplies those services and runs one authority process per session.
 
 ## Build and use
 
-Requires a C++17 compiler, Make, and Python 3.9+ for the standard-library-only
-adapter/tests. From this repository root:
+Requires a C++17 compiler, Make, and Python 3.9+. Build on the target architecture:
 
 ```sh
-make -C native
 make -C native check
 PYTHONPATH=native/python python3 native/examples/local_game.py
 ```
 
-Linux/Pi produces `native/build/libscorebot.so`; macOS produces
-`native/build/libscorebot.dylib`. **Build on each target architecture.** A Mac
-library is not a Pi library. Cross builds can override `CXX`, `CC`, `UNAME_S`,
-`BUILD`, and compiler/linker flags; running `check` requires a runnable target.
-The small library always rebuilds so changing identity flags cannot silently
-reuse a previous authority. It compiles without C++ exceptions and exports only
-the C interface. The C11 test links against the actual shared library.
-
-Pin this repository at the deliverable commit in the consuming application's
-source dependencies (for example, a submodule). Build from that source and add
-its `native/python` directory to the application's import path; there is no
-Python package installation or sibling-checkout assumption. Load an explicit
-artifact with `Library("/absolute/path/to/libscorebot.so")` or set
-`SCOREBOT_LIBRARY`; otherwise the adapter uses this checkout's `native/build`.
+Linux produces `native/build/libscorebot.so`; macOS produces
+`native/build/libscorebot.dylib`. Cross builds may override `CXX`, `CC`, `UNAME_S`,
+`BUILD`, and compiler/linker flags. Pin this repository's source revision in the
+consuming application and add `native/python` to its import path. Load an
+explicit path with `Library(path)` or `SCOREBOT_LIBRARY`, or use the default
+artifact in this checkout. The core builds without C++ exceptions.
 
 ```python
 from scorebot import Action, Library, LobbyMode, Player, Result
 
 library = Library()
 with library.game() as game:
-    # Restore trusted saved game.read().to_dict() here, if present; check result.
+    # Fresh runtime node/session identities and a random pairing number 0..20.
     assert game.resume_authority() == Result.OK
-    # Persist the new term before accepting actions or publishing snapshots.
     for player in (Player.RED, Player.BLUE):
         assert game.set_lobby_mode(player, LobbyMode.LOCAL) == Result.OK
     assert game.start() == Result.OK
     assert game.local_action(Player.RED, 3, Action.ADD) == Result.OK
     assert game.local_action(Player.RED, 0, Action.OK) == Result.OK
-    saved = game.read().to_dict()
+    saved = {
+        "pairing": game.pairing,
+        "state": game.read().to_dict(),
+        "controllers": game.controller_marks(),
+    }
     wire = game.read().to_wire(library.protocol_version)
 ```
 
-The example deliberately starts a fresh game. A resumed game keeps its profile,
-scores, frozen roster, turn, and operation high-water marks; skip fresh lobby
-configuration when restoring an already started game.
+Persist pairing and game state together. Recovery uses
+`library.game(**saved["pairing"])`, then `restore(saved["state"])` and
+`controller_marks(saved["controllers"])`. Check results, call
+`resume_authority()`, and durably save the new term before publishing or accepting
+requests. Resume drops live connections and prunes implicit lobby availability;
+it preserves scores, the frozen roster, and operation marks. Do not configure a
+fresh lobby over a restored active game.
 
-## Interface contract
+`Library.game(node_id=..., session_id=..., pairing_id=...)` accepts runtime
+configuration. Omitted values are randomly generated; node/session must be
+nonzero uint32 values and pairing must be 0..20. Reuse the saved values for
+recovery. No adapter address or authority ID is compiled into players or the
+library. The compatibility environments `pi_players` and `pi_epaper` now build
+the same firmware as their ordinary counterparts, without identity flags.
 
-The complete C contract and result values are in `include/scorebot.h`.
-`scorebot_abi_version()` is the stable discovery entry point; all v1 calls have
-the `scorebot_v1_` prefix. Creation checks the requested ABI. Snapshot reads and
-restores require the exact v1 size (84 bytes); restore also checks its version,
-configured authority, masks, booleans, and game invariants. The Python loader
-checks ABI and struct size before creating a handle and prevents integer
-truncation during argument/dictionary conversion.
+## Pairing and transport integration
 
-| Operation | Contract |
+A Pi authority advertises `game.pairing_packet()` as primary manufacturer data,
+and exposes/uses the game service UUIDs in `BleService.hpp`. Its UI or animation
+shows `game.pairing["pairing_id"]`. A host creating a session can perform startup discovery and elect the
+smallest candidate runtime ID before creating its authority. A product that
+owns a persisted session can remain its sole authority; hardware leaderboards
+join that session as mirrors. The native game handle is authority-only: a
+replica joining another authority requires host application support. Existing authorities win over fresh candidates. Recovering
+sessions remain bound to their saved leader. Never promote a replica solely
+because the authority is asleep or disconnected.
+
+The shared policy and codec are in `PairingRules.hpp`. A legacy advertisement
+can carry the 22-byte discovery packet plus GAP flags. The manufacturer bytes
+are independent of C++ struct layout:
+
+| Byte offset | Content |
 | --- | --- |
-| `create` / `destroy` | Opaque allocation; caller destroys once. Null destroy is safe. Python supports `with`, idempotent `close()`, and finalizer cleanup. |
-| `read` / `restore` | Caller-owned copy; atomic replacement from trusted local persistence. Includes all four operation marks, game ID, term/version, masks, and turn. |
-| `resume_authority` | After create/restore, drop live links, prune implicit lobby availability and increment term. Persist before publication. Refuses exhausted `UINT32_MAX` term. |
-| `set_lobby_mode` / `start` / `reset` | Existing rules; LOCAL/PHYSICAL/OFF; start freezes roster. Ordinary reset preserves profile, game ID, term and operation marks. It is not the hardware maintenance reset. |
-| `local_action` | Same firmware ADD/OK helper. ADD(0) is a no-op; OK(0) can pass. Selected roster colors remain controllable when their boards are absent. Clear the caller's draft only on `Result.OK`, after either action. |
-| `player_action` | Requires an admitted transport node, matching payload node and game ID. Existing deduplication and out-of-turn correction rules. |
-| `set_connected` / `mark_sleeping` | Live links update version; connect clears sleep. Sleep is an unversioned hint, then disconnect separately. Sleep retains the player's turn eligibility. |
-| `admit_peer` / `is_leader` | Full public Bluetooth address, identity, and protocol checks against configured roles; passive displays cannot submit scores or act as leaders. |
-| revision/operation helpers | Existing term-first ordering, maximum operation reconciliation and acknowledgement comparison. No wrap-aware sequence rules are introduced. |
+| 0..4 | `ff ff 53 50 05` (experimental company ID, `SP`, protocol v5) |
+| 5..8 | Runtime node ID, uint32 little endian |
+| 9..12 | Selected authority ID, uint32 little endian |
+| 13..16 | Full session ID, uint32 little endian |
+| 17 | Pairing number 0..20; 255 before selection |
+| 18 | Device kind: player=1, leaderboard=2, passive display=3 |
+| 19 | BoardRole: unknown=0, leaderboard=1, red..white=2..5 |
+| 20 | Flags: authority=1, user-selected=2, recovering candidate=4 |
+| 21 | Occupied physical-color mask, bits red..white=0..3 |
 
-All integers have explicit widths. Player order is red, blue, green, white
-(0..3); no player is 4. Booleans are 0/1; masks use bits 0..3. No raw C++ object,
-borrowed buffer, file descriptor, or callback crosses the ABI. Calls do not
-perform I/O or scheduling. Serialize calls to each handle externally, including
-reads and destruction; `ctypes` may release the GIL. Null/invalid arguments and
-ABI errors do not mutate state or output buffers, except creation clears its
-output pointer on failure. Arbitrary non-null pointers and use-after-destroy
-are caller errors, as with other C APIs.
+A player UI browses discovered authorities and confirms the displayed number;
+it does not ask the user to enter it. The selected authority ID and full session
+ID identify the game. The short number can change to resolve a collision
+without changing that identity. A leaderboard candidate advertises its own
+node as leader with authority unset; an established authority sets flags 1|2.
+A mirrored controller advertises the selected leader/session with kind 2,
+role 1, and only the selected flag. Display-only devices use kind 3, role 0.
 
-Python action/restore methods return `Result`, including negative rejection
-codes. Construction, read, and peer-query failures raise `ScorebotError`;
-Python representation/range errors raise `TypeError` or `ValueError`. A policy
-rejection may intentionally mutate state: **physical score overflow consumes
-the operation and increments version**, allowing acknowledgement. Repeating it
-is a duplicate. Local overflow is rejected without mutation. Physical
-out-of-turn OK returns `ACCEPTED_WITHOUT_TURN_CHANGE`; local ADD/OK returns OK
-when committed, including an out-of-turn correction. Read the authoritative
-snapshot to observe the resulting turn. Start/lobby/connection/reset calls
-return `NO_CHANGE` when the existing rules decline the transition.
+The authority is BLE central. Scan for discovery manufacturer data, connect to
+selected peripherals, read identity, protocol, and the **live** pairing
+characteristic (`kPairingUuid`, 22 bytes), and check identity/protocol consistency.
+Use the actual address and type reported by that connection:
 
-`State.to_dict()` / `State.from_dict()` is a lossless, versioned JSON-compatible
-native persistence record. Persist this dictionary, not raw struct bytes. It
-is distinct from firmware Preferences storage; existing firmware JSON and its
-legacy recovery behavior remain unchanged. `State.to_wire(protocol)` maps a
-read snapshot to the existing firmware JSON keys and BoardRole turn values
-(0 = unknown, 2..5 = colors). It omits the local sleep hint, just as firmware
-does. Do not use wire JSON as the native persistence format. No wire service
-shape or JSON field changes are made, so protocol remains **v4**, following
-`Protocol.hpp`'s version policy. ABI versioning is independent of wire version.
-
-The portable sources remain `GameRules.hpp`, `LeaderboardControlRules.hpp`,
-and `ReplicationRules.hpp`, consumed directly by firmware and this library.
-Firmware also uses the extracted sleep/startup helpers. `GameState.cpp`,
-Arduino/FreeRTOS, radios, displays, flash storage, retry timing, UI edit buffers,
-and animation are outside this native build. Python contains marshaling and
-enum/JSON translation only.
-
-## Configure the Pi authority
-
-No real Pi identity is assumed or stored here. The wall integration must supply:
-
-1. `SCOREBOT_LEADER_NODE_ID`: a stable nonzero uint32 ID distinct from every
-   configured hardware board (including the retired hardware leader).
-2. `SCOREBOT_LEADER_BLUETOOTH_MAC`: the Pi central adapter's actual stable
-   **public** Bluetooth address as a 48-bit integer in displayed byte order:
-   remove the colons and prefix `0x`; append `ULL` for compiler definitions.
-   This is the actual radio address, not an ESP32 base MAC. A rotating/random
-   address does not satisfy the existing public-address trust contract.
-
-Supply the same two environment variables for the native build and the player
-firmware build. For example, after setting both to the actual values:
-
-```sh
-make -C native BUILD=build-pi check
-pio run -c platformio.pi.ini -e pi_players -e pi_epaper
+```python
+kind, player = game.admit_peer(pairing_bytes, transport_address, public_address=True)
 ```
 
-`platformio.pi.ini` reads both environment variables and derives its build flags
-from the normal environments. It never alters personal settings or the default
-hardware configuration. Equivalent explicit `-D` definitions can be used in
-`CPPFLAGS` or firmware build flags. Supplying only one input, zero/out-of-range
-values, or a collision with a configured hardware identity/address fails
-compilation. Use a matching pair on every participating player board and
-native build. The Pi profile **replaces**, rather than adds to, the default
-leader allowlist. Existing default builds continue to recognize the original
-hardware leader. Boards with different authority profiles are separate games;
-there is no automatic authority migration of saved games. Restore refuses a
-snapshot belonging to a different configured leader.
+`PeerKind.PLAYER`, `DISPLAY`, and `CONTROLLER` are distinct. Only admitted
+players can call `player_action`; only admitted controllers can call
+`controller_action`. Rejected/foreign sessions and occupied colors return
+`(PeerKind.REJECTED, Player.NONE)`. The per-game directory binds complete
+transport addresses (public or stable random), identities, and colors. Persist
+the host's validated transport bindings and re-admit them before opening a
+recovered session to new devices, retaining sleeping players' color reservations.
+Legacy process-global `Library.admit_peer`/`is_leader` queries fail closed;
+`leader_node_id` returns zero. Use `game.read().leader_id` instead.
 
-The Pi's downlink snapshots/reset messages must claim that configured node ID;
-the player's transport callback resolves its sender from the complete public
-address, then validates protocol and claimed authority. Unknown nodes,
-different full addresses sharing the same tail, random-address peers, mismatched
-protocols and spoofed payload identities are rejected. This preserves the
-existing address-based trust model; it does not add cryptographic pairing or
-authenticate an attacker capable of cloning the trusted radio address.
+For a player peer, update `set_connected` only after admission; its payload node
+must match the admitted transport node passed to `player_action`. Do not derive
+transport authority from incoming JSON. After start, reject players outside the
+frozen roster. Display/controller connections do not occupy player slots.
+Map validated `control` JSON to `controller_action(node, operation, command,
+player, value, passes_turn, game_id, term)`; commands are SCORE=0, START=1,
+LOBBY=2. The value is a score delta or lobby mode. Controller marks are updated
+with the same authoritative revision as their effects, including consumed
+rejections, and are included by `game.read().to_wire(...)`.
 
-## Transport responsibilities for the wall integration
+Publish compact state JSON after every mutation and periodically (firmware uses
+1.5 seconds). Resend current state for duplicates/rejections. Validate field
+types and the 512-byte wire limit before marshaling. Notifications carry player
+requests to the central; write state to each peer's downlink. Player sleep
+notices are hints: mark sleeping, then report the disconnect separately. A
+player considers its authority unavailable after 15 seconds without accepted
+state/reset traffic. Enrollment binds the selected session and transport; it
+does not introduce cryptographic Bluetooth bonding.
 
-The Pi takes the existing leaderboard **central** role. It discovers player
-peripherals using the GATT UUIDs in `BleService.hpp`, reads their little-endian
-uint32 identity and uint16 protocol, and calls `admit_peer` using the transport's
-actual full public address. Use the ESP32 Bluetooth offset appropriate to that
-player firmware (current XIAO default is 1). The configured Pi address is always
-matched exactly, with no offset. Retain the validated transport identity for
-the connection; never derive it from incoming JSON.
+The hardware authority places the 24-byte `LeaderboardBroadcast.hpp` score
+packet in **16-bit service data UUID `0xfff0`** in its scan response, keeping
+discovery manufacturer data in its primary advertisement. The full UUID is
+`0000fff0-0000-1000-8000-00805f9b34fb`. Using separate AD types prevents Python
+BLE APIs that key manufacturer data by company ID from losing discovery. A host supporting the
+e-paper listener must publish both and permit active scanning. Score data is
+accepted only from the display's selected discovery source. Unconfigured
+passive displays choose the sole visible game after discovery and wait when
+selection would be ambiguous.
 
-Announce only admitted players through `set_connected`; display peers have no
-roster slot. After start, retain only physical links in the frozen roster
-(display links remain eligible). Validate incoming v4 JSON field types and
-message size before marshaling; route player score requests to `player_action`
-with the validated transport node and claimed payload node/game/operation.
-Route sleep notices only from that admitted player with a matching payload
-identity; mark sleeping, then report the subsequent disconnect. Activity
-messages affect transport/UI liveness, not game state. Player input cannot
-restore authority state. Use local actions for Nimbus, not invented physical
-identities or operation IDs.
+## Stable game API and ownership
 
-Read state after each request: commit/persist/publish changes, including a
-consumed overflow. Resend the current snapshot to acknowledge duplicates and
-rejections. Encode wire JSON compactly (`json.dumps(wire, separators=(",", ":"))`)
-within `kMaxWireMessageSize`, write the player downlink, and subscribe to its
-uplink. Publish periodic state heartbeats as firmware does (1.5 seconds), and
-handle disconnects, roster admission, retries, persistence durability and
-liveness outside the core. Player firmware expires its leader after 15 seconds
-without an accepted state/reset. An all-LOCAL game does not need any transport.
+The C11 contract is in `include/scorebot.h`. ABI remains **v1** and the state
+struct remains **84 bytes**; the runtime pairing/controller APIs are additive.
+C callers configure pairing immediately after `create`. Game handles own their
+state; snapshot reads return caller-owned copies. `destroy(NULL)` is safe.
+Python supports `with`, idempotent `close()`, and finalizer cleanup. Serialize
+access to each handle externally, including reads and destruction (`ctypes`
+may release the GIL). No borrowed C++ objects, callbacks, or exceptions cross
+this interface.
 
-This deliverable implements none of that BLE client, wall animation, or
-controller UI. The e-paper profile only changes which leader address it trusts;
-the Pi must provide existing manufacturer-data advertisements separately if
-that passive listener is to display its game.
+`State.to_dict()` is the versioned JSON-compatible game persistence record;
+raw struct bytes and wire JSON are not persistence formats. Persist pairing,
+controller marks, and transport bindings alongside it. `State.from_dict()`
+validates integer ranges and shape. For a standalone restored State, pass its
+saved session explicitly to `to_wire(protocol, session_id=...)`; reading from a
+game supplies session and controller metadata automatically.
 
-## Validation
+Players are RED..WHITE=0..3, NONE=4; masks use bits 0..3 and booleans are 0/1.
+Local ADD(0) is a no-op; OK(0) can pass. Clear a local draft only on `Result.OK`.
+Physical requests use operation high-water marks. A physical score overflow is
+consumed and acknowledged without changing the score; a local overflow is
+rejected without mutation. Out-of-turn OK scores without passing. Ordinary
+`reset()` starts another lobby while preserving identity and operation marks;
+it is separate from the hardware maintenance reset. Authority term exhaustion
+is refused. Invalid arguments do not partially mutate state or output buffers.
 
-Run the original native rule suite plus authority configuration checks:
-
-```sh
-./test_runner.sh logic
-make -C native check
-PYTHONPATH=native/python python3 native/examples/local_game.py
-```
-
-The C11 ABI smoke/invalid-input test and 11 Python integration tests cover
-all-LOCAL/mixed games, ADD/OK, out-of-turn correction, overflow consumption,
-duplicates, sleep/rejoin, revisions, state round trips, ABI errors, ownership,
-invalid inputs, and display privilege rejection. `test_leader_identity_config.py`
-compiles production authority checks under default and synthetic Pi profiles,
-then verifies invalid/colliding configurations fail compilation.
-
-See `VALIDATION.md` for the exact deliverable checks, independent review and
-what has not been verified on a Pi or physical BLE network.
+Protocol **v5** is intentionally incompatible with v4 peers and firmware
+snapshots. Update participating devices together. No separate Pi-specific
+firmware compilation is required. See `VALIDATION.md` for checks and hardware
+validation still required.

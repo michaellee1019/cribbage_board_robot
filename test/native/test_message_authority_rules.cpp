@@ -1,14 +1,10 @@
 #include <MessageAuthorityRules.hpp>
-
 #include <cassert>
-
 int main() {
-    using scorebot::mayAcceptSnapshot;
-
-    assert(mayAcceptSnapshot(BoardRole::Player_Red, BoardRole::Leader));
-    assert(mayAcceptSnapshot(BoardRole::Player_Blue, BoardRole::Leader));
-    assert(!mayAcceptSnapshot(BoardRole::Leader, BoardRole::Player_Red));
-    assert(!mayAcceptSnapshot(BoardRole::Leader, BoardRole::Leader));
-    assert(!mayAcceptSnapshot(BoardRole::Player_Red, BoardRole::Player_Blue));
-    assert(!mayAcceptSnapshot(BoardRole::Unknown, BoardRole::Leader));
+    using scorebot::mayAcceptLeaderMessage;
+    assert(mayAcceptLeaderMessage(false, 42, 42, 42));
+    assert(!mayAcceptLeaderMessage(true, 42, 42, 42));
+    assert(!mayAcceptLeaderMessage(false, 42, 41, 42));
+    assert(!mayAcceptLeaderMessage(false, 42, 42, 41));
+    assert(!mayAcceptLeaderMessage(false, 0, 0, 0));
 }

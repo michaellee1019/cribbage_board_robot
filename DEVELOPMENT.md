@@ -26,7 +26,7 @@ just build
 ## Development Environment
 
 ### PlatformIO Environments
-- `controller` - Production firmware; hardware identity selects leaderboard/player role
+- `controller` - Production firmware; display population selects leaderboard/player role
 - `debug` - Production behavior with application diagnostics enabled
 - `sleep_test` - Hardware validation build with a 15-second sleep timeout
 - `test_embedded` - Unity integration tests on ESP32 hardware
@@ -153,7 +153,7 @@ clang-format -i ./**/*.{hpp,cpp}
 - Display values and coordinates
 
 ### Common Pitfalls
-- Check stable chip-ID/role assignments when provisioning new boards
+- Check I2C display detection and the runtime color/session picker when provisioning new boards
 - Verify display coordinate types match library expectations
 - Use explicit casts when necessary and document why
 
@@ -175,5 +175,6 @@ serial devices and accepts a board ID when multiple Scorebot boards are connecte
 ## Files to Check
 - `platformio.ini` - Build configuration and environments
 - `src/main.cpp` - Entry point (minimal, delegates to Coordinator)
-- `src/BoardRole.cpp` - Stable device-ID-to-role assignments
+- `src/BoardRole.cpp` - Color styles and optional enclosure-color suggestions
+- `src/Pairing.cpp` / `lib/scorebot/src/PairingRules.hpp` - Runtime discovery, enrollment, and startup election
 - `lib/scorebot/src/` - Header files with class definitions

@@ -17,9 +17,12 @@ struct LeaderboardBroadcast {
 
 // Experimental manufacturer ID, Scorebot leaderboard tag, format version.
 // This independent, read-only packet fits in one legacy BLE advertisement.
+// Scores occupy service data in the scan response; discovery retains the
+// manufacturer-data slot, including for Python APIs keyed by company ID.
+constexpr uint16_t kLeaderboardServiceDataUuid = 0xfff0;
 constexpr std::array<uint8_t, 6> kLeaderboardHeader{0xff, 0xff, 'S', 'B', 'L', 1};
 using LeaderboardPacket = std::array<uint8_t, kLeaderboardHeader.size() + 2 + 4 * kPlayerCount>;
-static_assert(LeaderboardPacket{}.size() + 2 <= 31);
+static_assert(LeaderboardPacket{}.size() + 4 <= 31);
 
 inline LeaderboardPacket encodeLeaderboard(const LeaderboardBroadcast& state) {
     LeaderboardPacket packet{};

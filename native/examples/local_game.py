@@ -12,7 +12,7 @@ with library.game() as game:
     assert game.local_action(Player.RED, 3, Action.ADD) == Result.OK
     assert game.local_action(Player.RED, 0, Action.OK) == Result.OK
     saved = json.dumps(game.read().to_dict())  # Caller owns durable I/O.
-    with library.game() as restored:
+    with library.game(**game.pairing) as restored:
         assert restored.restore(json.loads(saved)) == Result.OK
         assert restored.read().to_dict() == game.read().to_dict()
     print(json.dumps(game.read().to_wire(library.protocol_version), indent=2))

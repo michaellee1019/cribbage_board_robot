@@ -3,6 +3,7 @@
 import ctypes as C
 from enum import IntEnum
 import os
+import secrets
 from pathlib import Path
 import sys
 import weakref
@@ -38,8 +39,12 @@ class Action(IntEnum):
     ADD, OK = range(2)
 
 
+class ControllerCommand(IntEnum):
+    SCORE, START, LOBBY = range(3)
+
+
 class PeerKind(IntEnum):
-    REJECTED, PLAYER, DISPLAY = range(3)
+    REJECTED, PLAYER, DISPLAY, CONTROLLER = range(4)
 
 
 class ScorebotError(RuntimeError):
@@ -98,14 +103,21 @@ class State(C.Structure):
                 setattr(state, name, _int(value))
         return state
 
-    def to_wire(self, protocol):
-        """Existing v4 state JSON fields; enum translation only, no rules.
+    def to_wire(self, protocol, session_id=None):
+        """Protocol-v5 state JSON, with this handle's session and controller marks.
 
         sleeping_mask is a local presence hint and is not part of the wire
         snapshot. Use to_dict() for lossless native persistence instead.
         """
+        if session_id is None:
+            session_id = getattr(self, "_session_id", None)
+        if session_id is None:
+            raise ValueError("session_id is required for a standalone State")
         return {"type": "state", "protocol": _int(protocol),
-                "game": self.game_id, "term": self.term, "version": self.version,
+                "game": self.game_id, "session": _int(session_id if session_id is not None else self._session_id),
+                "controllers": getattr(self, "_controllers", [0] * 4),
+                "controlOps": getattr(self, "_control_ops", [0] * 4),
+                "term": self.term, "version": self.version,
                 "leader": self.leader_id, "started": bool(self.started),
                 "turn": 0 if self.turn == Player.NONE else self.turn + 2,
                 "scores": list(self.scores), "operations": list(self.last_operation),
@@ -136,6 +148,11 @@ class Library:
             "player_action": (i, [p, u, u, u, i, u, u]),
             "admit_peer": (i, [u, u, u, C.c_uint64, u, up, up]),
             "is_leader": (i, [u, u, u, C.c_uint64, u, up]),
+            "controller_action": (i, [p, u, u, u, u, i, u, u, u]),
+            "controller_marks": (i, [p, up, up, u]),
+            "configure_pairing": (i, [p, u, u, u]),
+            "pairing_packet": (i, [p, C.POINTER(C.c_uint8), u]),
+            "pair_peer": (i, [p, C.POINTER(C.c_uint8), u, C.c_uint64, u, up, up]),
             "compare_revision": (i, [u, u, u, u]),
             "reconcile_operation": (u, [u, u]), "operation_acknowledged": (u, [u, u]),
         }
@@ -148,8 +165,8 @@ class Library:
         self.protocol_version = self._protocol_version()
         self.leader_node_id = self._leader_node_id()
 
-    def game(self):
-        return Game(self)
+    def game(self, *, node_id=None, session_id=None, pairing_id=None):
+        return Game(self, node_id=node_id, session_id=session_id, pairing_id=pairing_id)
 
     def admit_peer(self, node, protocol, public_address, bluetooth_mac, offset=1):
         kind, player = C.c_uint32(), C.c_uint32()
@@ -176,11 +193,19 @@ class Library:
 class Game:
     """One authority handle. Serialize access externally, including close()."""
 
-    def __init__(self, library):
+    def __init__(self, library, *, node_id=None, session_id=None, pairing_id=None):
         self.library = library
         self._pointer = C.c_void_p()
         _require(library._create(ABI_VERSION, C.byref(self._pointer)))
         self._finalizer = weakref.finalize(self, library._destroy, self._pointer)
+        self._pairing = dict(node_id=secrets.randbelow(0xFFFFFFFF) + 1 if node_id is None else _int(node_id),
+                            session_id=secrets.randbelow(0xFFFFFFFF) + 1 if session_id is None else _int(session_id),
+                            pairing_id=secrets.randbelow(21) if pairing_id is None else _int(pairing_id))
+        try:
+            _require(self._call("configure_pairing", *self.pairing.values()))
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         self._finalizer()
@@ -203,12 +228,50 @@ class Game:
     def read(self):
         state = State()
         _require(self._call("read", C.byref(state), C.sizeof(state)))
+        state._session_id = self.pairing["session_id"]
+        state._controllers, state._control_ops = self.controller_marks()
         return state
 
     def restore(self, state):
         if not isinstance(state, State):
             state = State.from_dict(state)
         return self._call("restore", C.byref(state), C.sizeof(state))
+
+    @property
+    def pairing(self):
+        """Persist with the game snapshot and pass back to Library.game(**pairing)."""
+        return dict(self._pairing)
+
+    def pairing_packet(self):
+        """Advertise these manufacturer bytes; use them for the pairing GATT value."""
+        packet = (C.c_uint8 * 22)()
+        _require(self._call("pairing_packet", packet, len(packet)))
+        return bytes(packet)
+
+    def admit_peer(self, packet, bluetooth_mac, public_address=True):
+        """Bind metadata read on this BLE connection to its transport address."""
+        if not isinstance(packet, bytes):
+            raise TypeError("pairing packet must be bytes")
+        data = (C.c_uint8 * len(packet)).from_buffer_copy(packet)
+        kind, player = C.c_uint32(), C.c_uint32()
+        _require(self._call("pair_peer", data, len(data), _int(bluetooth_mac, 64),
+                            _int(public_address), C.byref(kind), C.byref(player)))
+        return PeerKind(kind.value), Player(player.value)
+
+    def controller_action(self, node, operation, command, player, value, passes_turn, game_id, term):
+        return self._call("controller_action", _int(node), _int(operation), _int(command), _int(player),
+                          _int(value, signed=True), _int(passes_turn), _int(game_id), _int(term))
+
+    def controller_marks(self, restore=None):
+        """Persist/restore this pair of four-element arrays alongside the snapshot."""
+        nodes, operations = (C.c_uint32 * 4)(), (C.c_uint32 * 4)()
+        if restore is not None:
+            if len(restore) != 2 or any(len(values) != 4 for values in restore):
+                raise ValueError("controller marks require two four-element arrays")
+            nodes[:] = [_int(value) for value in restore[0]]
+            operations[:] = [_int(value) for value in restore[1]]
+        _require(self._call("controller_marks", nodes, operations, int(restore is not None)))
+        return list(nodes), list(operations)
 
     def resume_authority(self):
         return self._call("resume_authority")

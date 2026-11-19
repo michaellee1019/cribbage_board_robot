@@ -29,8 +29,18 @@ int main(void) {
     assert(scorebot_v1_local_action(NULL, 0, 0, 0) == SCOREBOT_INVALID_ARGUMENT);
     assert(scorebot_v1_player_action(NULL, 0, 0, 0, 0, 0, 0) == SCOREBOT_INVALID_ARGUMENT);
     assert(scorebot_v1_create(1, &game) == SCOREBOT_OK && game);
+    assert(scorebot_v1_leader_node_id() == 0);
+    assert(scorebot_v1_configure_pairing(game, 0, 2, 0) == SCOREBOT_INVALID_ARGUMENT);
+    assert(scorebot_v1_configure_pairing(game, 1, 0, 0) == SCOREBOT_INVALID_ARGUMENT);
+    assert(scorebot_v1_configure_pairing(game, 1, 2, 21) == SCOREBOT_INVALID_ARGUMENT);
+    assert(scorebot_v1_configure_pairing(game, 0x10203040, 0x50607080, 0) == SCOREBOT_OK);
+    assert(scorebot_v1_configure_pairing(game, 0x10203040, 0x50607080, 0) == SCOREBOT_NO_CHANGE);
+    uint8_t packet[SCOREBOT_DISCOVERY_SIZE];
+    assert(scorebot_v1_pairing_packet(game, packet, sizeof(packet)) == SCOREBOT_OK);
+    assert(packet[5] == 0x40 && packet[8] == 0x10 && packet[17] == 0);
+    assert(scorebot_v1_pairing_packet(game, packet, sizeof(packet) - 1) == SCOREBOT_INVALID_ARGUMENT);
     scorebot_state_v1 state = read_state(game);
-    assert(state.turn == SCOREBOT_NO_PLAYER && state.leader_id == scorebot_v1_leader_node_id());
+    assert(state.turn == SCOREBOT_NO_PLAYER && state.leader_id == 0x10203040);
     const scorebot_state_v1 initial = state;
     assert(scorebot_v1_read(NULL, &state, sizeof(state)) == SCOREBOT_INVALID_ARGUMENT);
     assert(scorebot_v1_read(game, NULL, sizeof(state)) == SCOREBOT_INVALID_ARGUMENT);
@@ -72,6 +82,7 @@ int main(void) {
     assert(scorebot_v1_admit_peer(0, 4, 1, 0, 1, NULL, &player) == SCOREBOT_INVALID_ARGUMENT);
     assert(scorebot_v1_admit_peer(0, 4, 1, 0, 1, &kind, NULL) == SCOREBOT_INVALID_ARGUMENT);
     scorebot_v1_destroy(game);
+    assert(scorebot_v1_configure_pairing(NULL, 1, 2, 3) == SCOREBOT_INVALID_ARGUMENT);
     puts("C ABI ownership and validation tests passed");
     return 0;
 }

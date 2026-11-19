@@ -37,6 +37,8 @@ run_logic_tests() {
         test/native/test_message_authority_rules.cpp
         test/native/test_display_peer_rules.cpp
         test/native/test_peer_admission_rules.cpp
+        test/native/test_pairing_rules.cpp
+        test/native/test_controller_rules.cpp
     )
     local source binary
     for source in "${sources[@]}"; do
@@ -51,7 +53,6 @@ run_logic_tests() {
         "$binary"
     done
     python3 test/test_usb_port.py
-    python3 test/test_leader_identity_config.py
 }
 
 case "${1:-embedded}" in

@@ -7,6 +7,7 @@
 #include <LeaderboardBroadcast.hpp>
 #include <OtaUpdate.hpp>
 #include <Protocol.hpp>
+#include <PairingRules.hpp>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -23,8 +24,8 @@ class BleDownlinkCallbacks;
 class BleScanCallbacks;
 class BleClientCallbacks;
 
-// Battery-first BLE transport.  The fixed leaderboard is the central and every
-// player is a peripheral; no Wi-Fi AP or mesh routing remains active.
+// The elected authority is central. Players and mirrored leaderboards are
+// peripherals; roles and membership are established through runtime discovery.
 class MyBle {
 public:
     enum class TransmissionCompletion : uint8_t {
@@ -38,7 +39,21 @@ public:
     MyBle(const MyBle&) = delete;
     MyBle& operator=(const MyBle&) = delete;
 
-    void setup();
+    void setup(uint8_t displayCount);
+    BoardRole localRole() const { return configuredRole.load(); }
+    bool isAuthority() const { return localIsAuthority.load(); }
+    uint32_t authorityNodeId() const { return selectedAuthority.load(); }
+    uint32_t sessionId() const;
+    uint8_t pairingId() const;
+    BoardRole peerRole(uint32_t node) const;
+    bool isControllerPeer(uint32_t node) const;
+    bool acceptsLeader(uint32_t node) const;
+    bool pairingUiActive() const { return pairingPrompt.load(); }
+    void rotatePairing(int32_t delta);
+    void confirmPairing();
+    void chooseColor();
+    void clearPairing();
+    void renderPairingUi(uint32_t now);
     void loop();
     void publishLeaderboard(const scorebot::LeaderboardBroadcast& leaderboard);
     uint32_t getMyPeerId() const;
@@ -73,6 +88,8 @@ private:
         NimBLERemoteCharacteristic* downlink;
         bool announced;
         bool display;
+        bool controller;
+        BoardRole role;
     };
 
     struct TxRequest {
@@ -93,6 +110,41 @@ private:
     NimBLEServer* server;
     NimBLECharacteristic* uplink;
     NimBLECharacteristic* downlink;
+    NimBLECharacteristic* pairingCharacteristic{nullptr};
+    struct SeenBoard {
+        scorebot::Discovery info{};
+        NimBLEAddress address{};
+        uint32_t seenAtMs{0};
+    };
+    scorebot::Discovery localDiscovery{};
+    scorebot::PeerDirectory directory{};
+    std::array<SeenBoard, 16> seenBoards{};
+    QueueHandle_t discoveryQueue{nullptr};
+    std::atomic<BoardRole> configuredRole{BoardRole::Unknown};
+    std::atomic<bool> localIsAuthority{false};
+    std::atomic<uint32_t> selectedAuthority{0};
+    std::atomic<bool> pairingPrompt{true};
+    std::atomic<int32_t> pairingRotation{0};
+    std::atomic<bool> pairingConfirmed{false};
+    std::atomic<bool> colorRequested{false};
+    NimBLEAddress selectedLeaderAddress{};
+    bool leaderAddressKnown{false};
+    bool choosingColor{false};
+    bool startupDiscovery{true};
+    bool savedSelection{false};
+    BoardRole suggestedColor{BoardRole::Player_Red};
+    size_t selectedSessionIndex{0};
+    uint32_t lastPairingFrame{0xffffffff};
+    scorebot::DiscoveryPacket advertisedDiscovery{};
+    scorebot::Discovery discovery() const;
+    void observe(const NimBLEAdvertisedDevice* device);
+    void processDiscoveries();
+    void finishStartupDiscovery();
+    void servicePairing();
+    void savePairing();
+    void initializePairing();
+    void updatePairingAdvertisement();
+    uint32_t senderForConnection(const NimBLEConnInfo& connection) const;
     std::unique_ptr<BleDownlinkCallbacks> downlinkCallbacks;
     std::unique_ptr<BleScanCallbacks> scanCallbacks;
     std::unique_ptr<BleClientCallbacks> clientCallbacks;
@@ -161,7 +213,6 @@ private:
     void configureAdvertising(bool otaOnly);
     void updateAdvertising(bool otaOnly);
     size_t peerCount() const;
-    bool hasDisplayPeer() const;
     void beginScan();
     void startPendingConnection();
     void recoverStalledConnection();
