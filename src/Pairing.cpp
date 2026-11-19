@@ -89,7 +89,21 @@ void MyBle::initializePairing() {
             localDiscovery.session = randomIdentity();
             localDiscovery.pairing = static_cast<uint8_t>(esp_random() % 21);
         }
-        localDiscovery.flags = savedSelection ? scorebot::Recovering : 0;
+        bool recoveringGame = false;
+        if (savedSelection) {
+            Preferences statePreferences;
+            if (statePreferences.begin("scorebot", true)) {
+                const String snapshot = statePreferences.getString("state", "");
+                statePreferences.end();
+                JsonDocument state;
+                recoveringGame = deserializeJson(state, snapshot) == DeserializationError::Ok &&
+                    state["protocol"].as<uint16_t>() == scorebot::kWireProtocolVersion &&
+                    state["leader"].as<uint32_t>() == peerId &&
+                    state["session"].as<uint32_t>() == localDiscovery.session &&
+                    state["started"].is<bool>() && state["started"].as<bool>();
+            }
+        }
+        localDiscovery.flags = recoveringGame ? scorebot::Recovering : 0;
     }
     if (leaderboard && savedSelection && localDiscovery.leader == peerId && !savedPeers.isEmpty()) {
         JsonDocument document;
@@ -238,14 +252,16 @@ void MyBle::finishStartupDiscovery() {
             if (item.info.authority()) occupied |= 1u << item.info.pairing;
             // A follower recovering its saved game never creates a competing
             // authority just because its leader happens to be asleep.
-            if (savedSelection &&
-                (item.info.node != localDiscovery.leader || item.info.session != localDiscovery.session)) continue;
+            const bool pinned = (localDiscovery.flags & scorebot::Recovering) != 0 ||
+                                (savedSelection && localDiscovery.leader != peerId);
+            if (pinned && (item.info.node != localDiscovery.leader || item.info.session != localDiscovery.session)) continue;
             if (scorebot::preferredStartupLeader(item.info, preferred)) { preferred = item.info; selected = &item; }
         }
         if (savedSelection && localDiscovery.leader != peerId && !selected) {
             localIsAuthority.store(false);
             localDiscovery.flags = scorebot::Selected;
         } else if (selected) {
+            if (localDiscovery.leader != preferred.node || localDiscovery.session != preferred.session) directory = {};
             localDiscovery.leader = preferred.node;
             localDiscovery.session = preferred.session;
             localDiscovery.pairing = preferred.pairing;

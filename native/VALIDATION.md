@@ -1,6 +1,6 @@
 # Runtime pairing validation — 2026-11-19
 
-Software checkpoint on macOS arm64 with Apple Clang, Python 3, and the pinned
+Validated on macOS arm64 with Apple Clang, Python 3, and the pinned
 ESP32 Arduino toolchain. The branch/worktree is `codex/dynamic-board-pairing`
 at `/private/tmp/cribbage-board-robot-dynamic-pairing`.
 
@@ -42,13 +42,37 @@ session was ignored, the previously unknown controller was admitted, Red and
 Blue were enabled locally, Red +7 was committed exactly once despite retries,
 Red's turn passed to Blue, Blue -2 was committed, and a controller impersonating
 a player was rejected without a revision change. Final scores were [7,-2,0,0],
-turn Blue, version 6. E-paper acceptance is still in progress. Bench firmware is
-in `test/hardware/pairing_probe.cpp`. It receives the target's full identity and
-session over UART at runtime, checks foreign-session rejection, then exercises
+turn Blue, version 6.
+
+The e-paper listener then received that live game and completed a full refresh
+in 16.45 seconds and a score partial refresh in 1.65 seconds. A separate Python
+Bleak scan on macOS observed discovery manufacturer data and score service data
+together, with the expected roster, turn, and all four scores. Installing the
+production controller image and restarting the boards preserved the same full
+session, pairing number 19, scores, and turn; the e-paper rejoined automatically.
+
+The pre-test NVS backups were restored to remove the synthetic game/controller
+reservation. Both boards retain the new production firmware. Final radio and
+panel checks confirm a fresh lobby with zero scores and no roster, **pairing
+number 0**, and matching leader/session selection. The final idle-startup
+adjustment was built and installed: active games stay pinned, while an idle
+hardware authority can discover and join an existing authority at startup.
+
+Bench firmware is in `test/hardware/pairing_probe.cpp`. It receives the target's
+full identity and session over UART at runtime, checks foreign-session rejection, then exercises
 mirrored lobby/score/turn commands, duplicate suppression, and privilege
-rejection. It refuses to overwrite an active game. Restore normal display
-firmware after using this probe. Ignored logs and saved-state backups are in
-`.pio/validation/` in the worktree.
+rejection. It requires a fresh, empty lobby before sending controls. Restore
+normal display firmware after using this probe. That restoration is complete on the connected
+e-paper board. Ignored evidence and saved-state backups are in `.pio/validation/`
+in the worktree:
+
+- `pairing-probe.log`: foreign-session, duplicate, score/turn and privilege checks.
+- `leaderboard-live-test.log`: live GATT admission and authoritative commits.
+- `epaper-live-scores.log` / `epaper-recovery.log`: score reception and panel refreshes.
+- `epaper-final-lobby.log`: final pairing number 0, empty roster, zero scores, successful refresh.
+- `mac-ble-scores.json` / `mac-ble-final.json`: independent Python BLE observations.
+- `leaderboard-nvs-before.bin` / `epaper-nvs-before.bin`: saved-state backups;
+  these are local ignored artifacts, not source files.
 
 Consumer contract:
 
@@ -65,6 +89,8 @@ Consumer contract:
   bindings alongside the state record. Details and the byte layout are in
   `README.md` in this directory.
 
-Linux/Pi execution and actual player-board physical controls are not validated
-by these host tests. Build and run the native check on the consuming Pi. No
+Linux/Pi execution, multiple physical leaderboards, and actual player-board
+color/pairing controls have not been exercised on hardware here. Portable
+policy tests passed on macOS; the connected bench contained one leaderboard and one
+e-paper ESP32-S3. Build and run the native check on the consuming Pi. No
 shared binary is committed or claimed portable between architectures.

@@ -91,9 +91,11 @@ press **OK**. While pairing, **ADD** opens the color picker even for a known boa
 Leaderboards listen for five seconds before starting a fresh session. They join
 an existing authority as mirrored controllers; simultaneous candidates choose
 the smallest runtime node ID. Otherwise the board becomes authority and picks
-a random pairing number **0–20**, avoiding visible collisions. Recovering games
-keep their full session identity. Independent sessions that later collide on a
-number resolve it by rerolling the larger leader ID's number; the session stays
+a random pairing number **0–20**, avoiding visible collisions. Recovering active
+games keep their full session identity. A saved leaderboard in an idle lobby can join
+an existing authority on its next startup; resetting an active leaderboard
+returns it to that discovery behavior. Independent sessions that later collide
+on a number resolve it by rerolling the larger leader ID's number; the session stays
 the same. There is no automatic promotion when an authority goes away.
 
 Player boards show `PAIR` alternating with the discovered number, such as

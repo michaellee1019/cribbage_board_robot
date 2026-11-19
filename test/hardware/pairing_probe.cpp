@@ -107,7 +107,11 @@ void onState(const JsonDocument& doc) {
     const int32_t blue = doc["scores"][1].as<int32_t>();
     const unsigned turn = doc["turn"].as<unsigned>();
     if (stage == 1) {
-        if (doc["started"].as<bool>() || red != 0 || blue != 0) { fail("requires a fresh lobby"); return; }
+        if (doc["started"].as<bool>() || red != 0 || blue != 0 ||
+            doc["scores"][2].as<int32_t>() != 0 || doc["scores"][3].as<int32_t>() != 0 ||
+            doc["connected"].as<unsigned>() != 0 || doc["local"].as<unsigned>() != 0 ||
+            doc["enabled"].as<unsigned>() != 0 || doc["explicit"].as<unsigned>() != 0 ||
+            doc["roster"].as<unsigned>() != 0) { fail("requires a fresh lobby"); return; }
         stage = 2; sendControl(1, 2, 0, 0); // Red LOCAL.
     } else if (stage == 2 && acknowledged >= 1) {
         stage = 3; sendControl(2, 2, 1, 0); // Blue LOCAL.

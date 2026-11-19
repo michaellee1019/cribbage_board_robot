@@ -65,9 +65,11 @@ shows `game.pairing["pairing_id"]`. A host creating a session can perform startu
 smallest candidate runtime ID before creating its authority. A product that
 owns a persisted session can remain its sole authority; hardware leaderboards
 join that session as mirrors. The native game handle is authority-only: a
-replica joining another authority requires host application support. Existing authorities win over fresh candidates. Recovering
-sessions remain bound to their saved leader. Never promote a replica solely
-because the authority is asleep or disconnected.
+replica joining another authority requires host application support. Existing
+authorities win over fresh candidates. Recovering active games and explicitly
+selected replicas remain bound to their saved leader. An idle hardware authority
+can join another authority on startup. Never promote a replica solely because
+the authority is asleep or disconnected.
 
 The shared policy and codec are in `PairingRules.hpp`. A legacy advertisement
 can carry the 22-byte discovery packet plus GAP flags. The manufacturer bytes
