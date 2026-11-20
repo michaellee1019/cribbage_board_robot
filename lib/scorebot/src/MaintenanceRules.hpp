@@ -16,8 +16,8 @@ inline constexpr uint32_t kPrintMaintenanceColor = 0x00ffff;
 
 inline constexpr uint16_t kPlayerAddButtonMask = 1u << 0;
 inline constexpr uint16_t kPlayerNegativeOneButtonMask = 1u << 1;
-inline constexpr uint16_t kPlayerPlusFiveButtonMask = 1u << 2;
-inline constexpr uint16_t kPlayerPlusOneButtonMask = 1u << 3;
+inline constexpr uint16_t kPlayerPlusFiveButtonMask = 1u << 3;
+inline constexpr uint16_t kPlayerPlusOneButtonMask = 1u << 2;
 inline constexpr uint16_t kPlayerOkButtonMask = 1u << 4;
 inline constexpr uint16_t kLeaderboardAddButtonMask = 1u << 1;
 inline constexpr uint16_t kLeaderboardNegativeOneButtonMask = 1u << 3;

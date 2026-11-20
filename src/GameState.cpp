@@ -45,11 +45,11 @@ static_assert(
     scorebot::kLeaderboardAddButtonMask == (1u << ButtonGrid::negone));
 static_assert(
     scorebot::kLeaderboardNegativeOneButtonMask ==
-    (1u << ButtonGrid::plusone));
+    (1u << ButtonGrid::plusfive));
 static_assert(
     scorebot::kLeaderboardPlusOneButtonMask == (1u << ButtonGrid::add));
 static_assert(
-    scorebot::kLeaderboardOkButtonMask == (1u << ButtonGrid::plusfive));
+    scorebot::kLeaderboardOkButtonMask == (1u << ButtonGrid::plusone));
 
 constexpr BoardRole kPlayers[] = {
     BoardRole::Player_Red,

@@ -13,8 +13,8 @@ int main() {
     assert(!scorebot::buttonCapturedPressed(16, 0));
     assert(scorebot::buttonActionForPin(false, 0) == ButtonAction::Add);
     assert(scorebot::buttonActionForPin(false, 1) == ButtonAction::NegativeOne);
-    assert(scorebot::buttonActionForPin(false, 2) == ButtonAction::PlusFive);
-    assert(scorebot::buttonActionForPin(false, 3) == ButtonAction::PlusOne);
+    assert(scorebot::buttonActionForPin(false, 2) == ButtonAction::PlusOne);
+    assert(scorebot::buttonActionForPin(false, 3) == ButtonAction::PlusFive);
     assert(scorebot::buttonActionForPin(false, 4) == ButtonAction::Ok);
     assert(scorebot::buttonActionForPin(true, 0) == ButtonAction::PlusOne);
     assert(scorebot::buttonActionForPin(true, 1) == ButtonAction::Add);

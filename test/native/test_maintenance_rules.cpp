@@ -14,6 +14,12 @@ std::string frame(MaintenanceAction action, uint32_t elapsedMs) {
 }
 
 int main() {
+    // The physical -1/+1 player switches are MCP pins 1 and 2. Holding
+    // -1/+5 (pins 1 and 3) must never reset the board.
+    assert(scorebot::maintenanceActionForButtons(0x06, false) ==
+           MaintenanceAction::Reset);
+    assert(scorebot::maintenanceActionForButtons(0x0a, false) ==
+           MaintenanceAction::None);
     assert(scorebot::maintenanceActionForButtons(
                scorebot::kPlayerResetChordMask, false) ==
            MaintenanceAction::Reset);

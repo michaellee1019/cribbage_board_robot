@@ -13,9 +13,9 @@ enum class ButtonAction : uint8_t {
     Ok,
 };
 
-// Player boards expose five switches on MCP pins 0..4. The four-button
-// leaderboard is physically wired left-to-right on pins 1, 3, 0, 2, so pin 2
-// is its OK button and it has no +5 switch.
+// Player switches use MCP pins 0..4 for ADD, -1, +1, +5, OK. The
+// four-button leaderboard is wired left-to-right on pins 1, 3, 0, 2, so
+// pin 2 is its OK button and it has no +5 switch.
 constexpr ButtonAction buttonActionForPin(bool leaderboard, uint8_t pin) {
     if (leaderboard) {
         switch (pin) {
@@ -37,9 +37,9 @@ constexpr ButtonAction buttonActionForPin(bool leaderboard, uint8_t pin) {
         case 1:
             return ButtonAction::NegativeOne;
         case 2:
-            return ButtonAction::PlusFive;
-        case 3:
             return ButtonAction::PlusOne;
+        case 3:
+            return ButtonAction::PlusFive;
         case 4:
             return ButtonAction::Ok;
         default:
