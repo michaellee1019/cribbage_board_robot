@@ -34,7 +34,7 @@ ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
     const uint16_t captured = buttonGpio.getCapturedInterrupt();
     const uint16_t gpio = buttonGpio.readGPIOAB();
     constexpr uint16_t buttonMask =
-        (1u << okPin) | (1u << plusone) | (1u << plusfive) |
+        (1u << okPin) | (1u << pin2) | (1u << pin3) |
         (1u << negone) | (1u << add);
     const Interrupt result{
         pin,
@@ -48,7 +48,7 @@ ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
 uint16_t ButtonGrid::pressedMask() {
     I2cBus::Guard guard;
     constexpr uint16_t buttonMask =
-        (1u << okPin) | (1u << plusone) | (1u << plusfive) |
+        (1u << okPin) | (1u << pin2) | (1u << pin3) |
         (1u << negone) | (1u << add);
     return static_cast<uint16_t>(~buttonGpio.readGPIOAB()) & buttonMask;
 }

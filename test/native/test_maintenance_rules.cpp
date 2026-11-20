@@ -147,5 +147,14 @@ int main() {
     assert(frame(MaintenanceAction::Print, 600) == "INT ");
     assert(frame(MaintenanceAction::None, 0) == "    ");
     assert(scorebot::kPrintMaintenanceColor == 0x00ffff);
+    // RESET remains labelled -1/+1 on each measured physical board.
+    assert(scorebot::resetChordMask(false, 860931256u) == 0x0a);
+    assert(scorebot::maintenanceActionForButtons(0x0a, false, 860931256u) == scorebot::MaintenanceAction::Reset);
+    assert(scorebot::maintenanceActionForButtons(0x06, false, 860931256u) == scorebot::MaintenanceAction::None);
+    assert(scorebot::maintenanceChordHeld(scorebot::MaintenanceAction::Reset, 0x0a, false, 860931256u));
+    assert(!scorebot::maintenanceChordHeld(scorebot::MaintenanceAction::Reset, 0x06, false, 860931256u));
+    assert(scorebot::resetChordMask(false, 2934574912u) == 0x06);
+    assert(scorebot::resetChordMask(false, 2934416992u) == 0x06);
+    assert(scorebot::resetChordMask(true, 860931256u) == scorebot::kLeaderboardResetChordMask);
     std::cout << "Maintenance-rule tests passed\n";
 }

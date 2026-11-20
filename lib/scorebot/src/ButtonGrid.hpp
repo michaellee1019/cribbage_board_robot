@@ -13,8 +13,8 @@ public:
     };
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
-    static constexpr u32_t plusone = 2;
-    static constexpr u32_t plusfive = 3;
+    static constexpr u32_t pin2 = 2;
+    static constexpr u32_t pin3 = 3;
     static constexpr u32_t negone = 1;
     static constexpr u32_t add = 0;
 
@@ -23,7 +23,7 @@ private:
     static constexpr u32_t interruptPin = 8;
 
 
-    static constexpr auto pins = {okPin, plusone, plusfive, negone, add};
+    static constexpr auto pins = {okPin, pin2, pin3, negone, add};
 
     friend void buttonISR(void*);
 

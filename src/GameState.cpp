@@ -37,19 +37,19 @@ static_assert(scorebot::kPlayerAddButtonMask == (1u << ButtonGrid::add));
 static_assert(
     scorebot::kPlayerNegativeOneButtonMask == (1u << ButtonGrid::negone));
 static_assert(
-    scorebot::kPlayerPlusFiveButtonMask == (1u << ButtonGrid::plusfive));
+    scorebot::kPlayerPlusFiveButtonMask == (1u << ButtonGrid::pin3));
 static_assert(
-    scorebot::kPlayerPlusOneButtonMask == (1u << ButtonGrid::plusone));
+    scorebot::kPlayerPlusOneButtonMask == (1u << ButtonGrid::pin2));
 static_assert(scorebot::kPlayerOkButtonMask == (1u << ButtonGrid::okPin));
 static_assert(
     scorebot::kLeaderboardAddButtonMask == (1u << ButtonGrid::negone));
 static_assert(
     scorebot::kLeaderboardNegativeOneButtonMask ==
-    (1u << ButtonGrid::plusfive));
+    (1u << ButtonGrid::pin3));
 static_assert(
     scorebot::kLeaderboardPlusOneButtonMask == (1u << ButtonGrid::add));
 static_assert(
-    scorebot::kLeaderboardOkButtonMask == (1u << ButtonGrid::plusone));
+    scorebot::kLeaderboardOkButtonMask == (1u << ButtonGrid::pin2));
 
 constexpr BoardRole kPlayers[] = {
     BoardRole::Player_Red,
@@ -639,7 +639,7 @@ void startMaintenance(
     state->maintenanceStartedMs = millis();
     const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
     state->suppressedButtonMask |=
-        scorebot::maintenanceChordMask(action, leaderboard);
+        scorebot::maintenanceChordMask(action, leaderboard, coordinator->ble.getMyPeerId());
     state->heldButtonMask = pressedMask;
     coordinator->noteInteraction();
     coordinator->startMaintenanceUi(action, state->maintenanceStartedMs);
@@ -648,7 +648,7 @@ void startMaintenance(
 void cancelMaintenance(GameState* state, Coordinator* coordinator, uint16_t pressedMask) {
     const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
     const uint16_t chordMask = scorebot::maintenanceChordMask(
-        state->maintenanceAction, leaderboard);
+        state->maintenanceAction, leaderboard, coordinator->ble.getMyPeerId());
     state->suppressedButtonMask = static_cast<uint16_t>(pressedMask & chordMask);
     state->heldButtonMask = pressedMask;
     state->maintenanceAction = scorebot::MaintenanceAction::None;
@@ -659,7 +659,7 @@ void cancelMaintenance(GameState* state, Coordinator* coordinator, uint16_t pres
 void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) {
     const BoardRole role = coordinator->myRole();
     const scorebot::ButtonAction action = scorebot::buttonActionForPin(
-        role == BoardRole::Leader, pin);
+        role == BoardRole::Leader, pin, coordinator->ble.getMyPeerId());
     if (action == scorebot::ButtonAction::None) {
         return;
     }
@@ -783,14 +783,14 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator) {
         const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
         const scorebot::MaintenanceAction next =
             scorebot::maintenanceActionTransition(
-                state->maintenanceAction, current, leaderboard);
+                state->maintenanceAction, current, leaderboard, coordinator->ble.getMyPeerId());
         if (next != state->maintenanceAction) {
             // The four-button leaderboard gesture can be assembled through
             // either two-button maintenance chord. Start its safety interval
             // when the fourth button actually arrives.
             startMaintenance(state, coordinator, next, current);
         } else if (!scorebot::maintenanceChordHeld(
-                       state->maintenanceAction, current, leaderboard)) {
+                       state->maintenanceAction, current, leaderboard, coordinator->ble.getMyPeerId())) {
             cancelMaintenance(state, coordinator, current);
         } else {
             state->heldButtonMask = current;
@@ -812,7 +812,7 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator) {
     const scorebot::MaintenanceAction chord =
         scorebot::maintenanceActionTransition(
             scorebot::MaintenanceAction::None, current,
-            coordinator->myRole() == BoardRole::Leader);
+            coordinator->myRole() == BoardRole::Leader, coordinator->ble.getMyPeerId());
     if (chord != scorebot::MaintenanceAction::None) {
         startMaintenance(state, coordinator, chord, current);
         return;
@@ -836,8 +836,8 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator) {
     constexpr uint8_t deferredPins[] = {
         ButtonGrid::add,
         ButtonGrid::negone,
-        ButtonGrid::plusfive,
-        ButtonGrid::plusone,
+        ButtonGrid::pin3,
+        ButtonGrid::pin2,
         ButtonGrid::okPin,
     };
     for (const uint8_t pin : deferredPins) {
@@ -1264,7 +1264,7 @@ void GameState::heartbeat(Coordinator* coordinator) {
         const uint16_t pressed = coordinator->buttonGrid.pressedMask();
         const scorebot::MaintenanceAction next =
             scorebot::maintenanceActionTransition(
-                maintenanceAction, pressed, leaderboard);
+                maintenanceAction, pressed, leaderboard, coordinator->ble.getMyPeerId());
         if (next != maintenanceAction) {
             // The hardware level can show the fourth button before its queued
             // interrupt reaches the dispatcher. Promote here too, so a RESET
@@ -1274,9 +1274,9 @@ void GameState::heartbeat(Coordinator* coordinator) {
             return;
         }
         const uint16_t required = scorebot::maintenanceChordMask(
-            maintenanceAction, leaderboard);
+            maintenanceAction, leaderboard, coordinator->ble.getMyPeerId());
         if (!scorebot::maintenanceChordHeld(
-                maintenanceAction, pressed, leaderboard)) {
+                maintenanceAction, pressed, leaderboard, coordinator->ble.getMyPeerId())) {
             cancelMaintenance(this, coordinator, pressed);
             return;
         }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ButtonInputRules.hpp>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -35,8 +37,9 @@ inline constexpr uint16_t kLeaderboardPrintChordMask =
     kLeaderboardAddButtonMask | kLeaderboardNegativeOneButtonMask |
     kLeaderboardPlusOneButtonMask | kLeaderboardOkButtonMask;
 
-constexpr uint16_t resetChordMask(bool leaderboard) {
-    return leaderboard ? kLeaderboardResetChordMask : kPlayerResetChordMask;
+constexpr uint16_t resetChordMask(bool leaderboard, uint32_t node = 0) {
+    return leaderboard ? kLeaderboardResetChordMask :
+        kPlayerNegativeOneButtonMask | (1u << playerPlusOnePinForBoard(node));
 }
 
 constexpr uint16_t otaChordMask(bool leaderboard) {
@@ -48,12 +51,12 @@ constexpr uint16_t printChordMask(bool leaderboard) {
 }
 
 constexpr MaintenanceAction maintenanceActionForButtons(
-    uint16_t pressedMask, bool leaderboard) {
+    uint16_t pressedMask, bool leaderboard, uint32_t node = 0) {
     const uint16_t printMask = printChordMask(leaderboard);
     if (printMask != 0 && (pressedMask & printMask) == printMask) {
         return MaintenanceAction::Print;
     }
-    const uint16_t resetMask = resetChordMask(leaderboard);
+    const uint16_t resetMask = resetChordMask(leaderboard, node);
     const bool reset = (pressedMask & resetMask) == resetMask;
     const uint16_t otaMask = otaChordMask(leaderboard);
     const bool ota = (pressedMask & otaMask) == otaMask;
@@ -67,9 +70,9 @@ constexpr MaintenanceAction maintenanceActionForButtons(
 // higher-priority all-button chord promotes it to PRINT. Callers can compare
 // the returned action with `active` to restart the hold interval on promotion.
 constexpr MaintenanceAction maintenanceActionTransition(
-    MaintenanceAction active, uint16_t pressedMask, bool leaderboard) {
+    MaintenanceAction active, uint16_t pressedMask, bool leaderboard, uint32_t node = 0) {
     const MaintenanceAction detected =
-        maintenanceActionForButtons(pressedMask, leaderboard);
+        maintenanceActionForButtons(pressedMask, leaderboard, node);
     if (detected == MaintenanceAction::Print) {
         return MaintenanceAction::Print;
     }
@@ -77,9 +80,9 @@ constexpr MaintenanceAction maintenanceActionTransition(
 }
 
 constexpr uint16_t maintenanceChordMask(
-    MaintenanceAction action, bool leaderboard) {
+    MaintenanceAction action, bool leaderboard, uint32_t node = 0) {
     return action == MaintenanceAction::Reset
-               ? resetChordMask(leaderboard)
+               ? resetChordMask(leaderboard, node)
                : action == MaintenanceAction::Ota
                      ? otaChordMask(leaderboard)
                      : action == MaintenanceAction::Print
@@ -88,8 +91,8 @@ constexpr uint16_t maintenanceChordMask(
 }
 
 constexpr bool maintenanceChordHeld(
-    MaintenanceAction action, uint16_t pressedMask, bool leaderboard) {
-    const uint16_t required = maintenanceChordMask(action, leaderboard);
+    MaintenanceAction action, uint16_t pressedMask, bool leaderboard, uint32_t node = 0) {
+    const uint16_t required = maintenanceChordMask(action, leaderboard, node);
     return required != 0 && (pressedMask & required) == required;
 }
 

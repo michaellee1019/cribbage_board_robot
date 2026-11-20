@@ -21,6 +21,12 @@ int main() {
     assert(scorebot::buttonActionForPin(true, 2) == ButtonAction::Ok);
     assert(scorebot::buttonActionForPin(true, 3) == ButtonAction::NegativeOne);
     assert(scorebot::buttonActionForPin(true, 4) == ButtonAction::None);
+    // Physical Blue +1/+5 use the alternate MCP wiring regardless of color.
+    assert(scorebot::buttonActionForPin(false, 3, 860931256u) == ButtonAction::PlusOne);
+    assert(scorebot::buttonActionForPin(false, 2, 860931256u) == ButtonAction::PlusFive);
+    assert(scorebot::buttonActionForPin(false, 2, 2934574912u) == ButtonAction::PlusOne);
+    assert(scorebot::buttonActionForPin(false, 2, 2934416992u) == ButtonAction::PlusOne);
+    assert(scorebot::buttonActionForPin(true, 2, 860931256u) == ButtonAction::Ok);
     std::cout << "Button-input tests passed\n";
     return 0;
 }
