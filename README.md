@@ -65,6 +65,17 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
 ### E-paper leaderboard listener
 
+The display shows all rostered scores and the current turn, plus two recent
+observed score changes. `Watching` is elapsed time since this observer's first
+snapshot, not the game's duration. `RX` is the sampled age of the latest valid
+host snapshot, followed by its RSSI in dBm; `G` counts reception gaps of at least
+12 seconds. Telemetry updates at most every 15 seconds, with immediate live/stale
+transitions subject to panel refresh time. Arrival tracking continues during
+slow panel refreshes. History is limited to received snapshots and resets when
+the observer reboots; skipped snapshots are not reconstructed as game events.
+The existing broadcast has no game-start timestamp or player-link status, so
+the display does not infer these from scores or radio silence.
+
 The `leaderboard_epaper` environment runs on the ESP32-S3-DevKitC-1-N16R8 with a 296×128 Waveshare 2.9-inch (B) V4 panel. Power the display from 3V3 and GND. Connect DIN to GPIO11, CLK to GPIO12, CS to GPIO10, DC to GPIO9, RST to GPIO14, and BUSY to GPIO13.
 
 ```bash

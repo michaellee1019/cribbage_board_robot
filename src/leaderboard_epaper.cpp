@@ -5,6 +5,7 @@
 #include <Adafruit_GFX.h>
 #include <EpaperRefreshRules.hpp>
 #include <LeaderboardBroadcast.hpp>
+#include <ObserverHistory.hpp>
 #include <NimBLEDevice.h>
 #include <SPI.h>
 
@@ -31,6 +32,8 @@ std::array<uint8_t, LeaderboardPanel::WIDTH / 8 * LeaderboardPanel::HEIGHT> disp
 struct Reception {
     scorebot::LeaderboardBroadcast leaderboard;
     uint32_t receivedAtMs;
+    int rssi;
+    uint32_t gaps;
 };
 
 DisplayPairing pairing;
@@ -39,6 +42,7 @@ NimBLEScan* scanner;
 uint32_t scanStartedMs;
 
 class LeaderboardScanCallbacks : public NimBLEScanCallbacks {
+    scorebot::ObserverReceptionClock receptionClock;
     void onResult(const NimBLEAdvertisedDevice* device) override {
         pairing.observe(device);
         if (!pairing.accepts(device)) return;
@@ -46,6 +50,9 @@ class LeaderboardScanCallbacks : public NimBLEScanCallbacks {
         Reception reception{};
         if (scorebot::decodeLeaderboard(reinterpret_cast<const uint8_t*>(data.data()), data.size(), reception.leaderboard)) {
             reception.receivedAtMs = millis();
+            receptionClock.receive(reception.receivedAtMs);
+            reception.gaps = receptionClock.gaps;
+            reception.rssi = device->getRSSI();
             xQueueOverwrite(latestReception, &reception);
         }
     }
@@ -57,9 +64,16 @@ struct DisplayFrame {
     scorebot::LeaderboardBroadcast leaderboard{};
     bool received{false};
     bool live{false};
+    uint32_t watchingMinutes{0}, ageSeconds{0}, gaps{0};
+    int rssi{0};
+    std::array<scorebot::ObserverChange, 2> changes{};
+    unsigned changeCount{0};
 
     bool operator==(const DisplayFrame& other) const {
         return received == other.received && live == other.live &&
+               watchingMinutes == other.watchingMinutes && ageSeconds == other.ageSeconds &&
+               gaps == other.gaps && rssi == other.rssi && changeCount == other.changeCount &&
+               changes == other.changes &&
                leaderboard.rosterMask == other.leaderboard.rosterMask &&
                leaderboard.turn == other.leaderboard.turn &&
                leaderboard.scores == other.leaderboard.scores;
@@ -97,24 +111,39 @@ void draw(const DisplayFrame& frame) {
             }
             const bool active = leaderboard.turn == static_cast<scorebot::Player>(i);
             if (active) {
-                display.fillRect(8, y - 2, 280, 19, 0);
+                display.fillRect(8, y - 1, 280, 11, 0);
             }
             display.setTextColor(active ? 1 : 0);
-            display.setTextSize(2);
+            display.setTextSize(1);
             display.setCursor(12, y);
             display.print(kPlayerNames[i]);
 
             char score[12];
             snprintf(score, sizeof(score), "%ld", static_cast<long>(leaderboard.scores[i]));
-            display.setCursor(284 - 12 * strlen(score), y);
+            display.setCursor(284 - 6 * strlen(score), y);
             display.print(score);
             if (active) {
                 display.setTextSize(1);
-                display.setCursor(113, y + 4);
+                display.setCursor(113, y);
                 display.print("TURN");
             }
-            y += 20;
+            y += 12;
         }
+    }
+    display.setTextColor(0);
+    display.setTextSize(1);
+    display.setCursor(12, 96);
+    char detail[64];
+    snprintf(detail, sizeof(detail), "Watching %lum RX %lus %ddBm G%lu",
+             (unsigned long)frame.watchingMinutes, (unsigned long)frame.ageSeconds,
+             frame.rssi, (unsigned long)frame.gaps);
+    display.print(frame.received ? detail : "No host snapshot received");
+    for (unsigned i = 0; i < frame.changeCount; ++i) {
+        const auto& change = frame.changes[i];
+        display.setCursor(12, 108 + 10 * i);
+        snprintf(detail, sizeof(detail), "Seen %s %+lld -> %ld", kPlayerNames[static_cast<size_t>(change.player)],
+                 (long long)change.delta, (long)change.score);
+        display.print(detail);
     }
 }
 }  // namespace
@@ -161,6 +190,8 @@ void loop() {
     static uint32_t lastChangeMs;
     static uint32_t lastFailureMs;
     static uint32_t lastReceptionMs;
+    static scorebot::ObserverHistory history;
+    static uint32_t telemetryAt{0};
     if (scanner != nullptr && !scanner->isScanning()) {
         if (!scanner->start(0)) {
             delay(1000);
@@ -179,11 +210,21 @@ void loop() {
                           static_cast<long>(incoming.scores[2]), static_cast<long>(incoming.scores[3]));
         }
         frame.leaderboard = reception.leaderboard;
+        history.observe(reception.leaderboard, reception.receivedAtMs, reception.rssi, reception.gaps);
+        frame.changes = history.changes;
+        frame.changeCount = history.changeCount;
         frame.received = true;
         lastReceptionMs = reception.receivedAtMs;
     }
     const uint32_t now = millis();
     frame.live = frame.received && now - lastReceptionMs < kBroadcastTimeoutMs;
+    if (frame.received && (now - telemetryAt >= 15000 || !previous.received || frame.live != previous.live)) {
+        telemetryAt = now;
+        frame.watchingMinutes = (now - history.firstSeen) / 60000;
+        frame.ageSeconds = (now - lastReceptionMs) / 1000;
+        frame.rssi = history.rssi;
+        frame.gaps = history.gaps;
+    }
     if (!(frame == previous)) {
         lastChangeMs = now;
     }
