@@ -15,7 +15,7 @@ int main() {
         using namespace scorebot;
         const LeaderboardBroadcast scores{
             {std::numeric_limits<int32_t>::min(), 21, -5, std::numeric_limits<int32_t>::max()},
-            0x0f, Player::White};
+            0x0f, Player::Yellow};
         auto packet = encodeLeaderboard(scores);
         assert(packet[8] == 0 && packet[11] == 0x80 && packet[12] == 21);
 

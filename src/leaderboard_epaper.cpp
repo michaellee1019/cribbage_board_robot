@@ -21,7 +21,7 @@ constexpr uint32_t kBroadcastTimeoutMs = 12000;
 constexpr uint32_t kStartupListenMs = 2500;
 constexpr uint32_t kPanelRetryMs = 30000;
 constexpr std::array<const char*, scorebot::kPlayerCount> kPlayerNames{
-    "RED", "BLUE", "GREEN", "WHITE"};
+    "RED", "BLUE", "GREEN", "YELLOW"};
 
 LeaderboardPanel panel{kChipSelect, kDataCommand, kReset, kBusy};
 GFXcanvas1 display{LeaderboardPanel::WIDTH, LeaderboardPanel::HEIGHT};

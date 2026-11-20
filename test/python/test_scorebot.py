@@ -81,7 +81,7 @@ class ScorebotTest(unittest.TestCase):
         self.assertEqual(self.game.local_action(Player.RED, 2, Action.ADD), Result.OK)
         self.assertEqual(self.game.read().scores[0], 5)
         self.assertEqual(self.game.read().last_operation[0], 8)
-        self.assertEqual(self.game.set_connected(Player.WHITE, True), Result.NO_CHANGE)
+        self.assertEqual(self.game.set_connected(Player.YELLOW, True), Result.NO_CHANGE)
         self.assertEqual(self.game.set_lobby_mode(Player.GREEN, LobbyMode.LOCAL), Result.NO_CHANGE)
 
     def test_sleep_and_reconnect_keep_frozen_order(self):

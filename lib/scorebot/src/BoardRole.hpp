@@ -9,7 +9,8 @@ enum class BoardRole {
     Player_Red,
     Player_Blue,
     Player_Green,
-    Player_White,
+    Player_Yellow,
+    Player_White = Player_Yellow,  // Existing saved color remains role 5.
 };
 
 struct BoardRoleConfig {

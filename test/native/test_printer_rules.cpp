@@ -85,13 +85,13 @@ void testSnapshotAndPayloadFields() {
     assert(filename(snapshot) ==
            "scorebot-g4294967295-t4294967295-v4294967295.png");
 
-    assert(scoreLine(Player::Red, 121) == "RED    121");
-    assert(scoreLine(Player::Blue, 96) == "BLUE    96");
-    assert(scoreLine(Player::Green, -7) == "GREEN   -7");
-    assert(scoreLine(Player::White, std::numeric_limits<int32_t>::max()) ==
-           "WHITE2147483647");
-    assert(scoreLine(Player::White, std::numeric_limits<int32_t>::min()) ==
-           "WHITE-2147483648");
+    assert(scoreLine(Player::Red, 121) == "RED     121");
+    assert(scoreLine(Player::Blue, 96) == "BLUE     96");
+    assert(scoreLine(Player::Green, -7) == "GREEN    -7");
+    assert(scoreLine(Player::Yellow, std::numeric_limits<int32_t>::max()) ==
+           "YELLOW2147483647");
+    assert(scoreLine(Player::Yellow, std::numeric_limits<int32_t>::min()) ==
+           "YELLOW-2147483648");
 
     snapshot = exampleSnapshot();
     assert(turnLine(snapshot) == "TURN: RED");
@@ -116,8 +116,8 @@ void testExactDeterministicRequest() {
     const PrinterSnapshot snapshot = exampleSnapshot();
     const std::string expected =
         "{\"version\":1,\"filename\":\"scorebot-g7-t11-v29.png\","
-        "\"title\":\"SCOREBOT\",\"lines\":[\"RED    121\","
-        "\"BLUE    96\",\"GREEN   80\",\"WHITE   67\",\"TURN: RED\"],"
+        "\"title\":\"SCOREBOT\",\"lines\":[\"RED     121\","
+        "\"BLUE     96\",\"GREEN    80\",\"YELLOW   67\",\"TURN: RED\"],"
         "\"footer\":\"Printed {{Timestamp}}\"}";
     assert(request(snapshot) == expected);
     assert(request(snapshot) == request(snapshot));
@@ -135,7 +135,7 @@ void testExactDeterministicRequest() {
     changed.scores[2]--;
     assert(request(changed) != expected);
     changed = snapshot;
-    changed.turn = Player::White;
+    changed.turn = Player::Yellow;
     assert(request(changed) != expected);
     changed = snapshot;
     changed.started = false;

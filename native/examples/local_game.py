@@ -6,7 +6,7 @@ from scorebot import Action, Library, LobbyMode, Player, Result
 library = Library()  # Or Library("/absolute/path/to/locally-built/libscorebot.so")
 with library.game() as game:
     assert game.resume_authority() == Result.OK
-    for player in (Player.RED, Player.BLUE, Player.GREEN, Player.WHITE):
+    for player in (Player.RED, Player.BLUE, Player.GREEN, Player.YELLOW):
         assert game.set_lobby_mode(player, LobbyMode.LOCAL) == Result.OK
     assert game.start() == Result.OK
     assert game.local_action(Player.RED, 3, Action.ADD) == Result.OK

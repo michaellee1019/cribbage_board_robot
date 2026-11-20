@@ -28,7 +28,8 @@ class Result(IntEnum):
 
 
 class Player(IntEnum):
-    RED, BLUE, GREEN, WHITE, NONE = range(5)
+    RED, BLUE, GREEN, YELLOW, NONE = range(5)
+    WHITE = YELLOW  # ABI-v1 source compatibility; slot 3 is Yellow.
 
 
 class LobbyMode(IntEnum):

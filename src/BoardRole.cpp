@@ -7,7 +7,7 @@ constexpr BoardRoleConfig kStyles[] = {
     {BoardRole::Player_Red, "RED ", 1, 0xff0000},
     {BoardRole::Player_Blue, "BLUE", 2, 0x0000ff},
     {BoardRole::Player_Green, "GREN", 3, 0x00ff00},
-    {BoardRole::Player_White, "WHIT", 4, 0xffffff},
+    {BoardRole::Player_Yellow, "YELL", 4, 0xffff00},
 };
 }
 
@@ -22,7 +22,7 @@ BoardRole suggestedRole(uint32_t nodeId) {
         case 2934574912u: return BoardRole::Player_Red;
         case 860931256u: return BoardRole::Player_Blue;
         case 2934574676u: return BoardRole::Player_Green;
-        case 2934416992u: return BoardRole::Player_White;
+        case 2934416992u: return BoardRole::Player_Yellow;
         default: return BoardRole::Unknown;
     }
 }

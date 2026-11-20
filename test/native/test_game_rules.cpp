@@ -27,16 +27,16 @@ void lifecycleSelectsOnlyConnectedPlayers() {
     assert(game.turn == Player::None);
     assert(!scorebot::connect(game, Player::None));
     assert(scorebot::connect(game, Player::Blue));
-    assert(scorebot::connect(game, Player::White));
+    assert(scorebot::connect(game, Player::Yellow));
     assert(!scorebot::connect(game, Player::Blue));
     assert(game.version == 2);
     assert(scorebot::lobbyModeFor(game, Player::Blue) == LobbyMode::Physical);
-    assert(scorebot::lobbyModeFor(game, Player::White) == LobbyMode::Physical);
+    assert(scorebot::lobbyModeFor(game, Player::Yellow) == LobbyMode::Physical);
     assert(scorebot::start(game));
     assert(game.turn == Player::Blue);
     assert(!scorebot::start(game));
-    assert(scorebot::nextConnected(Player::Blue, game) == Player::White);
-    assert(scorebot::nextConnected(Player::White, game) == Player::Blue);
+    assert(scorebot::nextConnected(Player::Blue, game) == Player::Yellow);
+    assert(scorebot::nextConnected(Player::Yellow, game) == Player::Blue);
 }
 
 void scoresMayBeCorrectedOutOfTurn() {
@@ -84,7 +84,7 @@ void disconnectionPreservesTheCurrentTurn() {
 void startFreezesRosterButAllowsReconnection() {
     Snapshot game = startedThreePlayerGame();
     assert(game.rosterMask == ((1u << 0) | (1u << 1) | (1u << 2)));
-    assert(!scorebot::connect(game, Player::White));
+    assert(!scorebot::connect(game, Player::Yellow));
     assert(scorebot::disconnect(game, Player::Blue));
     assert((game.rosterMask & (1u << 1)) != 0);
     assert(scorebot::connect(game, Player::Blue));
@@ -144,7 +144,7 @@ void passWrapsAndSkipsDisconnectedRoles() {
     assert(scorebot::apply(game, {Player::Red, 0, true, 1}) == ApplyResult::Accepted);
     assert(scorebot::apply(game, {Player::Blue, 0, true, 1}) == ApplyResult::Accepted);
     assert(scorebot::apply(game, {Player::Green, 0, true, 1}) == ApplyResult::Accepted);
-    assert(game.turn == Player::Red);  // White is not connected.
+    assert(game.turn == Player::Red);  // Yellow is not connected.
 }
 
 void sleepingPlayerKeepsItsPlaceInTurnOrder() {
@@ -176,7 +176,7 @@ void operationsRequireAnActiveConnectedPlayer() {
     Snapshot game{};
     assert(scorebot::apply(game, {Player::Red, 1, false, 1}) == ApplyResult::GameNotStarted);
     game = startedThreePlayerGame();
-    assert(scorebot::apply(game, {Player::White, 1, false, 1}) == ApplyResult::NotConnected);
+    assert(scorebot::apply(game, {Player::Yellow, 1, false, 1}) == ApplyResult::NotConnected);
     assert(scorebot::apply(game, {Player::Red, 1, false, 0}) == ApplyResult::UnknownPlayer);
 }
 
@@ -311,12 +311,12 @@ void localScoresCannotOverflowOrConsumePhysicalOperations() {
 
 void localProfileCannotChangeDuringGameAndSurvivesGameReset() {
     Snapshot game{};
-    assert(scorebot::setLocalControl(game, Player::White, true));
-    assert(!scorebot::setLocalControl(game, Player::White, true));
+    assert(scorebot::setLocalControl(game, Player::Yellow, true));
+    assert(!scorebot::setLocalControl(game, Player::Yellow, true));
     assert(scorebot::start(game));
     assert(!scorebot::setLocalControl(game, Player::Red, true));
     assert(scorebot::resetGame(game));
-    assert(game.localControlMask == scorebot::playerBit(Player::White));
+    assert(game.localControlMask == scorebot::playerBit(Player::Yellow));
 }
 
 void lobbyModesControlTheFrozenRoster() {
@@ -343,7 +343,7 @@ void lobbyModesControlTheFrozenRoster() {
     // the exclusion, but it is already outside authoritative gameplay state.
     assert(scorebot::apply(game, {Player::Red, 5, false, 1}) ==
            ApplyResult::NotConnected);
-    assert(!scorebot::setLobbyMode(game, Player::White, LobbyMode::Local));
+    assert(!scorebot::setLobbyMode(game, Player::Yellow, LobbyMode::Local));
 }
 
 void availabilityDrivesUntouchedLobbyColors() {

@@ -83,9 +83,9 @@ are independent of C++ struct layout:
 | 13..16 | Full session ID, uint32 little endian |
 | 17 | Pairing number 0..20; 255 before selection |
 | 18 | Device kind: player=1, leaderboard=2, passive display=3 |
-| 19 | BoardRole: unknown=0, leaderboard=1, red..white=2..5 |
+| 19 | BoardRole: unknown=0, leaderboard=1, red..yellow=2..5 |
 | 20 | Flags: authority=1, user-selected=2, recovering candidate=4 |
-| 21 | Occupied physical-color mask, bits red..white=0..3 |
+| 21 | Occupied physical-color mask, bits red..yellow=0..3 |
 
 A player UI browses discovered authorities and confirms the displayed number;
 it does not ask the user to enter it. The selected authority ID and full session
@@ -161,7 +161,7 @@ validates integer ranges and shape. For a standalone restored State, pass its
 saved session explicitly to `to_wire(protocol, session_id=...)`; reading from a
 game supplies session and controller metadata automatically.
 
-Players are RED..WHITE=0..3, NONE=4; masks use bits 0..3 and booleans are 0/1.
+Players are RED..YELLOW=0..3, NONE=4; masks use bits 0..3 and booleans are 0/1.
 Local ADD(0) is a no-op; OK(0) can pass. Clear a local draft only on `Result.OK`.
 Physical requests use operation high-water marks. A physical score overflow is
 consumed and acknowledged without changing the score; a local overflow is

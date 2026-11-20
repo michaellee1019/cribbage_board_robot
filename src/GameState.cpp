@@ -55,7 +55,7 @@ constexpr BoardRole kPlayers[] = {
     BoardRole::Player_Red,
     BoardRole::Player_Blue,
     BoardRole::Player_Green,
-    BoardRole::Player_White,
+    BoardRole::Player_Yellow,
 };
 
 size_t roleIndex(BoardRole role) {

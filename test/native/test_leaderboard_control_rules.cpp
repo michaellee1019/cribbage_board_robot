@@ -115,7 +115,7 @@ void zeroAddDoesNothing() {
 void rejectedActionsPreserveStateAndAllDrafts() {
     for (const LeaderboardAction action : {LeaderboardAction::Add, LeaderboardAction::Ok,
                                           static_cast<LeaderboardAction>(255)}) {
-        for (const Player selected : {Player::Red, Player::White, Player::None,
+        for (const Player selected : {Player::Red, Player::Yellow, Player::None,
                                       static_cast<Player>(255)}) {
             for (const bool started : {false, true}) {
                 for (const int32_t delta : {0, -7}) {

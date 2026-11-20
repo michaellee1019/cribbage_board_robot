@@ -29,13 +29,13 @@ enum {
     SCOREBOT_WRONG_AUTHORITY = -10
 };
 enum { SCOREBOT_RED = 0, SCOREBOT_BLUE = 1, SCOREBOT_GREEN = 2,
-       SCOREBOT_WHITE = 3, SCOREBOT_NO_PLAYER = 4 };
+       SCOREBOT_YELLOW = 3, SCOREBOT_WHITE = SCOREBOT_YELLOW, SCOREBOT_NO_PLAYER = 4 };
 enum { SCOREBOT_LOCAL = 0, SCOREBOT_PHYSICAL = 1, SCOREBOT_OFF = 2 };
 enum { SCOREBOT_ADD = 0, SCOREBOT_OK_ACTION = 1 };
 enum { SCOREBOT_PEER_REJECTED = 0, SCOREBOT_PEER_PLAYER = 1, SCOREBOT_PEER_DISPLAY = 2, SCOREBOT_PEER_CONTROLLER = 3 };
 
 // A COPY, never a C++ layout or an on-disk/wire binary format. All fields are
-// 32-bit; array order is red/blue/green/white. Booleans are exactly 0 or 1,
+// 32-bit; array order is red/blue/green/yellow. Booleans are exactly 0 or 1,
 // masks use bits 0..3, turn is 0..4. No packing directives are needed.
 typedef struct scorebot_state_v1 {
     uint32_t abi_version;

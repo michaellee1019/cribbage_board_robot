@@ -75,8 +75,8 @@ constexpr const char* printerPlayerName(Player player) {
             return "BLUE";
         case Player::Green:
             return "GREEN";
-        case Player::White:
-            return "WHITE";
+        case Player::Yellow:
+            return "YELLOW";
         case Player::None:
             return "NONE";
     }
@@ -118,7 +118,7 @@ inline bool buildPrinterScoreLine(
     }
     out[0] = '\0';
     const int written = std::snprintf(
-        out, capacity, "%-5s%5" PRId32, printerPlayerName(player), score);
+        out, capacity, "%-6s%5" PRId32, printerPlayerName(player), score);
     if (!printerFormatSucceeded(written, capacity)) {
         out[0] = '\0';
         return false;

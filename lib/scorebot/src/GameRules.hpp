@@ -7,7 +7,7 @@
 
 namespace scorebot {
 
-enum class Player : uint8_t { Red = 0, Blue, Green, White, None };
+enum class Player : uint8_t { Red = 0, Blue, Green, Yellow, None, White = Yellow };
 enum class LobbyMode : uint8_t { Local = 0, Physical, Off };
 
 constexpr size_t kPlayerCount = 4;

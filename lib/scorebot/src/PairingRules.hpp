@@ -15,7 +15,7 @@ enum class DeviceKind : uint8_t { Player = 1, Leaderboard = 2, Display = 3 };
 enum DiscoveryFlag : uint8_t { Authority = 1, Selected = 2, Recovering = 4 };
 
 constexpr bool isPlayerRole(BoardRole role) {
-    return role >= BoardRole::Player_Red && role <= BoardRole::Player_White;
+    return role >= BoardRole::Player_Red && role <= BoardRole::Player_Yellow;
 }
 constexpr uint8_t roleMask(BoardRole role) {
     return isPlayerRole(role) ? static_cast<uint8_t>(1u <<
