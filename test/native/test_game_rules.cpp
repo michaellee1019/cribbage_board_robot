@@ -380,6 +380,71 @@ void lobbyModeRotationIsBidirectional() {
            LobbyMode::Off);
 }
 
+void lobbyOrderCyclesOnlyAvailablePlayers() {
+    using namespace scorebot;
+    uint8_t order = kDefaultTurnOrder;
+    std::array<bool, kTurnOrderCount> encountered{};
+    for (size_t step = 0; step < kTurnOrderCount; ++step) {
+        assert(!encountered[order]);
+        encountered[order] = true;
+        assert(encodeTurnOrder(decodeTurnOrder(order)) == order);
+        order = rotatedTurnOrder(order, 0x0f, 1);
+    }
+    assert(order == kDefaultTurnOrder);
+    assert(rotatedTurnOrder(order, 0x0f, -1) == kTurnOrderCount - 1);
+    assert(rotatedTurnOrder(order, playerBit(Player::Blue), 1) == order);
+    const uint8_t twoPlayers = playerBit(Player::Blue) | playerBit(Player::Yellow);
+    const uint8_t reversed = rotatedTurnOrder(order, twoPlayers, 17);
+    assert((decodeTurnOrder(reversed) == TurnOrder{Player::Red, Player::Yellow, Player::Green, Player::Blue}));
+    assert(rotatedTurnOrder(reversed, twoPlayers, -1) == order);
+}
+
+void customTurnOrderSurvivesResume() {
+    using namespace scorebot;
+    Snapshot game{};
+    assert(connect(game, Player::Red));
+    assert(connect(game, Player::Blue));
+    assert(connect(game, Player::Green));
+    const uint8_t order = encodeTurnOrder({Player::Blue, Player::Red, Player::Yellow, Player::Green});
+    assert(!start(game, kTurnOrderCount));
+    assert(start(game, order));
+    assert(game.turn == Player::Blue);
+    assert(!start(game, kDefaultTurnOrder));
+    assert(apply(game, {Player::Blue, 0, true, 1}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Red);
+    uint32_t term = 0;
+    resumeAuthority(game, term);
+    assert(game.turnOrder == order && term == 1);
+    assert(connect(game, Player::Red));
+    assert(connect(game, Player::Green));
+    assert(apply(game, {Player::Red, 0, true, 1}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Green);
+    assert(resetGame(game));
+    assert(game.turnOrder == kDefaultTurnOrder && game.completedTurns == TurnCompletions{});
+}
+
+void draftExpiryRequiresAnotherPlayerEndingATurnAfterTheDraftBegan() {
+    using namespace scorebot;
+    Snapshot game = startedThreePlayerGame();
+    assert(apply(game, {Player::Red, 0, true, 1}) == ApplyResult::Accepted);
+    const auto baseline = game.completedTurns;
+    assert(apply(game, {Player::Green, 15, true, 1}) == ApplyResult::AcceptedWithoutTurnChange);
+    assert(apply(game, {Player::Blue, 2, false, 1}) == ApplyResult::Accepted);
+    assert(!draftHasExpired(61001, 1000, Player::Blue, baseline, game.completedTurns));
+    assert(apply(game, {Player::Blue, 0, true, 2}) == ApplyResult::Accepted);
+    assert(!draftHasExpired(61001, 1000, Player::Blue, baseline, game.completedTurns));
+    assert(applyLocal(game, {Player::Green, 0, true}) == ApplyResult::Accepted);
+    assert(applyLocal(game, {Player::Red, 0, true}) == ApplyResult::Accepted);
+    assert(game.turn == Player::Blue); // A follower missed the entire round.
+    assert(!draftHasExpired(61000, 1000, Player::Blue, baseline, game.completedTurns));
+    assert(!draftHasExpired(61001, 1100, Player::Blue, baseline, game.completedTurns));
+    assert(draftHasExpired(61001, 1000, Player::Blue, baseline, game.completedTurns));
+    const TurnCompletions beforeCounterWrap{65535, 0, 0, 0};
+    const TurnCompletions afterCounterWrap{};
+    assert(draftHasExpired(60000, 0xffffffffu, Player::Blue, beforeCounterWrap, afterCounterWrap));
+    assert(!draftHasExpired(61001, 1000, Player::Blue, afterCounterWrap, beforeCounterWrap));
+}
+
 int main() {
     lifecycleSelectsOnlyConnectedPlayers();
     scoresMayBeCorrectedOutOfTurn();
@@ -406,6 +471,9 @@ int main() {
     lobbyModesControlTheFrozenRoster();
     availabilityDrivesUntouchedLobbyColors();
     lobbyModeRotationIsBidirectional();
+    lobbyOrderCyclesOnlyAvailablePlayers();
+    customTurnOrderSurvivesResume();
+    draftExpiryRequiresAnotherPlayerEndingATurnAfterTheDraftBegan();
     std::cout << "Game-rule tests passed\n";
 }
 

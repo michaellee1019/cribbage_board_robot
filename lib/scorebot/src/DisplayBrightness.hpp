@@ -17,6 +17,11 @@ inline uint8_t targetFor(bool active) {
     return active ? kActiveBrightness : kIdleBrightness;
 }
 
+constexpr uint8_t leaderboardScoreTargetFor(bool active, bool selected) {
+    if (selected) return active ? kActiveBrightness : 7;
+    return active ? 8 : kIdleBrightness;
+}
+
 class Transition final {
 public:
     explicit Transition(uint8_t initialBrightness = kActiveBrightness)

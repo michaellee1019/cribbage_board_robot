@@ -21,6 +21,13 @@ void interactionWindowSurvivesMillisRollover() {
     assert(!display_brightness::isInteractionActive(5050, lastInteraction));
 }
 
+void leaderboardKeepsSelectedScoreVisible() {
+    using display_brightness::leaderboardScoreTargetFor;
+    assert(leaderboardScoreTargetFor(false, true) > 0);
+    assert(leaderboardScoreTargetFor(false, true) > leaderboardScoreTargetFor(false, false));
+    assert(leaderboardScoreTargetFor(true, true) > leaderboardScoreTargetFor(true, false));
+}
+
 void brightnessEasesOneStepAtATime() {
     Transition brightness;
     brightness.setTarget(0);
@@ -56,6 +63,7 @@ void brightnessClampsAndCanRiseAgain() {
 int main() {
     interactionWindowUsesTheRequestedTimeout();
     interactionWindowSurvivesMillisRollover();
+    leaderboardKeepsSelectedScoreVisible();
     brightnessEasesOneStepAtATime();
     brightnessClampsAndCanRiseAgain();
     std::cout << "Display brightness tests passed\n";

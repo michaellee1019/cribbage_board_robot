@@ -5,9 +5,15 @@
 #include <I2cBus.hpp>
 #include <PlayerBoard.hpp>
 
+#include <esp_timer.h>
 #include <soc/gpio_struct.h>
 
 namespace {
+// Five button bits fit below the overlap flag in the same ISR capture word.
+constexpr uint32_t kDirectOverlap = 1u << 16;
+constexpr uint16_t kButtonMask = (1u << ButtonGrid::okPin) | (1u << ButtonGrid::pin2) |
+    (1u << ButtonGrid::pin3) | (1u << ButtonGrid::negone) | (1u << ButtonGrid::add);
+
 uint16_t samplePlayerButtons() {
     uint16_t pressed = 0;
     for (uint8_t index = 0; index < scorebot::player_pins::kButtonCount; ++index) {
@@ -21,6 +27,12 @@ uint16_t samplePlayerButtons() {
 
 void IRAM_ATTR buttonISR(void* arg) {
     auto* self = static_cast<ButtonGrid*>(arg);
+    // Keep the first edge if several arrive during one dispatcher cycle. The
+    // microsecond clock is callable from IRAM and needs no division here.
+    const uint32_t edgeUs = static_cast<uint32_t>(esp_timer_get_time());
+    uint32_t noEdge = 0;
+    self->firstEdgeUs.compare_exchange_strong(noEdge, edgeUs != 0 ? edgeUs : 1,
+                                              std::memory_order_relaxed);
     if (self->directInputs) {
         // GPIO.in is register-backed, so this stays valid from an IRAM ISR.
         // GPIO 0-31 cover every player button.
@@ -32,7 +44,9 @@ void IRAM_ATTR buttonISR(void* arg) {
                 pressed = static_cast<uint16_t>(pressed | (1u << index));
             }
         }
-        self->directCaptured.fetch_or(pressed & ~self->directPressed, std::memory_order_relaxed);
+        const uint32_t capture = (pressed & ~self->directPressed) |
+            ((pressed & (pressed - 1)) != 0 ? kDirectOverlap : 0);
+        self->directCaptured.fetch_or(capture, std::memory_order_relaxed);
         self->directPressed = pressed;
     }
     self->coordinator->enqueueInputFromISR(ButtonName::GPIOButtons);
@@ -69,25 +83,27 @@ void ButtonGrid::setup() {
 }
 
 ButtonGrid::Interrupt ButtonGrid::consumeInterrupt() {
+    const uint32_t edgeUs = firstEdgeUs.exchange(0, std::memory_order_relaxed);
     if (directInputs) {
-        const auto presses = static_cast<uint16_t>(directCaptured.exchange(0, std::memory_order_relaxed));
-        return Interrupt{0xff, 0xffff, samplePlayerButtons(), presses};
+        const uint32_t capture = directCaptured.exchange(0, std::memory_order_relaxed);
+        return Interrupt{0xff, 0xffff, samplePlayerButtons(), static_cast<uint16_t>(capture),
+                         (capture & kDirectOverlap) != 0, edgeUs};
     }
 
     I2cBus::Guard guard;
     const uint8_t pin = buttonGpio.getLastInterruptPin();
     const uint16_t captured = buttonGpio.getCapturedInterrupt();
     const uint16_t gpio = buttonGpio.readGPIOAB();
-    constexpr uint16_t buttonMask =
-        (1u << okPin) | (1u << pin2) | (1u << pin3) |
-        (1u << negone) | (1u << add);
-    const Interrupt result{
+    // Both register reads clear their own interrupt. Leave any edge after
+    // the GPIO read latched for the dispatcher's next pass.
+    return Interrupt{
         pin,
         captured,
-        static_cast<uint16_t>(static_cast<uint16_t>(~gpio) & buttonMask),
+        static_cast<uint16_t>(static_cast<uint16_t>(~gpio) & kButtonMask),
+        0,
+        false,
+        edgeUs,
     };
-    buttonGpio.clearInterrupts();
-    return result;
 }
 
 uint16_t ButtonGrid::pressedMask() {
@@ -96,10 +112,7 @@ uint16_t ButtonGrid::pressedMask() {
     }
 
     I2cBus::Guard guard;
-    constexpr uint16_t buttonMask =
-        (1u << okPin) | (1u << pin2) | (1u << pin3) |
-        (1u << negone) | (1u << add);
-    return static_cast<uint16_t>(~buttonGpio.readGPIOAB()) & buttonMask;
+    return static_cast<uint16_t>(~buttonGpio.readGPIOAB()) & kButtonMask;
 }
 
 void ButtonGrid::prepareForSleep() {
@@ -130,6 +143,7 @@ void ButtonGrid::resumeAfterSleepAbort() {
 }
 
 bool ButtonGrid::interruptAsserted() const {
+    if (firstEdgeUs.load(std::memory_order_relaxed) != 0) return true;
     if (directInputs) {
         return samplePlayerButtons() != 0 || directCaptured.load(std::memory_order_relaxed) != 0;
     }

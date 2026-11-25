@@ -237,7 +237,7 @@ void MyBle::finishStartupDiscovery() {
     const uint32_t started = millis();
     while (millis() - started < scorebot::kElectionListenMs) {
         processDiscoveries();
-        renderPairingUi(millis());
+        coordinator->setStatusLight(renderPairingUi(millis()));
         delay(10);
     }
     NimBLEDevice::getScan()->stop();
@@ -388,17 +388,15 @@ void MyBle::updatePairingAdvertisement() {
     auto* advertising = NimBLEDevice::getAdvertising();
     if (advertising->setAdvertisementData(data)) advertisedDiscovery = packet;
 }
-void MyBle::renderPairingUi(uint32_t now) {
-    if (coordinator->otaModeActive() || coordinator->maintenanceModeActive()) return;
-    if (!startupDiscovery && !pairingUiActive() && (isAuthority() || hasLeader())) return;
+uint32_t MyBle::renderPairingUi(uint32_t now) {
     const uint32_t frame = now / 700;
-    if (frame == lastPairingFrame) return;
+    const uint32_t pairingColor = choosingColor ? getRoleStyle(suggestedColor).color : 0x002020;
+    const uint32_t displayedColor = frame % 2 ? pairingColor : 0;
+    if (frame == lastPairingFrame) return displayedColor;
     lastPairingFrame = frame;
     String text = "SCAN";
-    uint32_t color = 0x002020;
     if (choosingColor) {
         text = frame % 2 ? getRoleStyle(suggestedColor).name : "COLR";
-        color = getRoleStyle(suggestedColor).color;
     } else {
         uint8_t pairing = localDiscovery.pairing;
         if (pairingUiActive()) {
@@ -416,10 +414,10 @@ void MyBle::renderPairingUi(uint32_t now) {
     }
     coordinator->display1.setBrightnessNow(display_brightness::kActiveBrightness);
     coordinator->display1.print(text);
-    coordinator->rotaryEncoder.setColor(frame % 2 ? color : 0);
     if (localDiscovery.kind == scorebot::DeviceKind::Leaderboard) {
         coordinator->display2.print(text);
         coordinator->display3.print(text);
         coordinator->display4.print(text);
     }
+    return displayedColor;
 }

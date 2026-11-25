@@ -69,8 +69,7 @@ struct PlayerMessage {
     }
 };
 
-// Ephemeral, throttled visual wake-up. It never changes game state and is
-// accepted only from a connected member of the current frozen roster.
+// Ephemeral human input from a connected player or mirrored controller.
 struct PlayerActivityMessage {
     uint32_t fromNodeId;
     uint32_t gameId;

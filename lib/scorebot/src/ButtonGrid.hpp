@@ -12,6 +12,8 @@ public:
         uint16_t captured;
         uint16_t pressed;
         uint16_t capturedPresses{0};
+        bool capturedOverlap{false};
+        uint32_t firstEdgeUs{0};
     };
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
@@ -29,6 +31,7 @@ private:
     bool directInputs{false};
     uint16_t directPressed{0};
     std::atomic<uint32_t> directCaptured{0};
+    std::atomic<uint32_t> firstEdgeUs{0};
 
     friend void buttonISR(void*);
 

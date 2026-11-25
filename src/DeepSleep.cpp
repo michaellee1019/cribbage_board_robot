@@ -140,7 +140,6 @@ void handleTimerWake(Coordinator& coordinator) {
 
 [[noreturn]] void enter(Coordinator& coordinator) {
     // Stop emitting light before shutting down the I2C devices that own it.
-    coordinator.setPlayerTurnAnimation(false);
     coordinator.setLeaderboardTurnColor(0);
     coordinator.rotaryEncoder.setColor(0x000000);
     coordinator.display1.sleep();

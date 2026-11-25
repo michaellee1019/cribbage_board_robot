@@ -4,14 +4,15 @@
 
 namespace scorebot {
 
-enum class PlayerDisplayMode : uint8_t { Delta, Pairing, Turn, Idle };
+enum class PlayerDisplayMode : uint8_t { Delta, Pairing, Turn, Idle, WaitingScore };
+
+inline constexpr uint32_t kPlayerScoreScrollMs = 750;
 
 constexpr bool playerTurnLocallyActive(bool authoritativeTurn, bool passPending) {
     return authoritativeTurn && !passPending;
 }
 
-// Connection and lobby state are authoritative. Score entry and GO exist only
-// during an active game with a live leaderboard.
+// Score entry and turn status require an active game with a live leaderboard.
 constexpr PlayerDisplayMode playerDisplayMode(
     int32_t scoreDelta, bool leaderUnavailable, bool gameStarted, bool isMyTurn) {
     if (leaderUnavailable) {
@@ -26,7 +27,11 @@ constexpr PlayerDisplayMode playerDisplayMode(
     if (isMyTurn) {
         return PlayerDisplayMode::Turn;
     }
-    return PlayerDisplayMode::Idle;
+    return PlayerDisplayMode::WaitingScore;
+}
+
+constexpr bool framedScoreScrolls(int32_t score) {
+    return score < -9 || score > 99;
 }
 
 constexpr bool playerTurnLightEnabled(

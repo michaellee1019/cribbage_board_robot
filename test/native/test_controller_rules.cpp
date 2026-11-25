@@ -32,4 +32,15 @@ int main() {
     assert(!applyController(state, nodes, operations, command));
     command.operation = 3; command.player = Player::None;
     assert(!applyController(state, nodes, operations, command));
+
+    Snapshot orderedLobby{};
+    assert(connect(orderedLobby, Player::Red));
+    assert(connect(orderedLobby, Player::Blue));
+    ControllerAction startCommand{123, 5, ControllerCommand::Start, Player::Red};
+    startCommand.turnOrder = kTurnOrderCount;
+    assert(!applyController(orderedLobby, nodes, operations, startCommand));
+    startCommand.turnOrder = rotatedTurnOrder(kDefaultTurnOrder, 0b0011, 1);
+    assert(applyController(orderedLobby, nodes, operations, startCommand));
+    assert(orderedLobby.turn == Player::Blue);
+    assert(!applyController(orderedLobby, nodes, operations, startCommand));
 }

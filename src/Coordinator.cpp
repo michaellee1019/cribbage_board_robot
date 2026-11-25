@@ -3,8 +3,10 @@
 #include "Event.hpp"
 #include "ErrorHandler.hpp"
 #include <MyBle.hpp>
+#include <Messages.hpp>
 #include <I2cBus.hpp>
 #include <PlayerBoard.hpp>
+#include <PairingRules.hpp>
 #include <LeaderboardUiRules.hpp>
 #include <LightColorRules.hpp>
 #include <OtaTransferRules.hpp>
@@ -52,41 +54,44 @@ static_assert(CONFIG_BT_NIMBLE_PINNED_TO_CORE == 0,
 void dispatcherTask(void* param) {
     auto* coordinator = static_cast<Coordinator*>(param);
     DEBUG_PRINTF("Tasks: dispatcher core=%d\n", xPortGetCoreID());
+    const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
+    // GATT discovery can block the Arduino loop for longer than a text frame.
+    const TickType_t wait = leaderboard ? pdMS_TO_TICKS(10) : portMAX_DELAY;
     Event e{};
     while (true) {
-        if(xQueueReceive(coordinator->eventQueue, &e, portMAX_DELAY)) {
-            uint8_t input = 0xff;
-            uint32_t inputEpoch = 0;
-            if (e.type == EventType::ButtonPressed) {
-                input = inputIndex(e.press.buttonName);
-                // Consume exactly the interrupt generation observed before
-                // the I2C read. An edge arriving during that read remains a
-                // newer generation and is retried after this dispatch.
-                inputEpoch = coordinator->inputInterruptEpoch[input].load(
-                    std::memory_order_acquire);
-            }
-            xSemaphoreTake(coordinator->stateMutex, portMAX_DELAY);
-            if (!coordinator->otaModeActive() &&
-                !coordinator->restartRequested.load(std::memory_order_acquire)) {
-                coordinator->state.handleEvent(e, coordinator);
-            } else if (e.type == EventType::ButtonPressed) {
-                // OTA owns the UI, but the level-latched I2C interrupt still
-                // has to be consumed before its GPIO line can rise again.
-                coordinator->discardInput(e.press.buttonName);
-            }
-            xSemaphoreGive(coordinator->stateMutex);
-
-            if (input != 0xff) {
-                coordinator->inputConsumedEpoch[input].store(
-                    inputEpoch, std::memory_order_release);
-                coordinator->queuedInputEvents.fetch_and(
-                    static_cast<uint8_t>(~(1u << input)),
-                    std::memory_order_release);
-            }
-            coordinator->outstandingEvents.fetch_sub(
-                1, std::memory_order_acq_rel);
-            coordinator->servicePendingInputEvents();
+        const bool received = xQueueReceive(coordinator->eventQueue, &e, wait) == pdPASS;
+        uint8_t input = 0xff;
+        uint32_t inputEpoch = 0;
+        if (received && e.type == EventType::ButtonPressed) {
+            input = inputIndex(e.press.buttonName);
+            // Consume exactly the interrupt generation observed before
+            // the I2C read. An edge arriving during that read remains a
+            // newer generation and is retried after this dispatch.
+            inputEpoch = coordinator->inputInterruptEpoch[input].load(std::memory_order_acquire);
         }
+        xSemaphoreTake(coordinator->stateMutex, portMAX_DELAY);
+        if (!coordinator->otaModeActive() &&
+            !coordinator->restartRequested.load(std::memory_order_acquire)) {
+            if (received) coordinator->state.handleEvent(e, coordinator);
+            if (leaderboard && coordinator->sleepTransition.load(std::memory_order_acquire) ==
+                                   Coordinator::SleepTransition::Awake) {
+                coordinator->state.refreshLeaderboardTurnFrame(coordinator);
+            }
+        } else if (received && e.type == EventType::ButtonPressed) {
+            // OTA owns the UI, but the level-latched I2C interrupt still
+            // has to be consumed before its GPIO line can rise again.
+            coordinator->discardInput(e.press.buttonName);
+        }
+        xSemaphoreGive(coordinator->stateMutex);
+
+        if (!received) continue;
+        if (input != 0xff) {
+            coordinator->inputConsumedEpoch[input].store(inputEpoch, std::memory_order_release);
+            coordinator->queuedInputEvents.fetch_and(
+                static_cast<uint8_t>(~(1u << input)), std::memory_order_release);
+        }
+        coordinator->outstandingEvents.fetch_sub(1, std::memory_order_acq_rel);
+        coordinator->servicePendingInputEvents();
     }
 }
 
@@ -148,12 +153,9 @@ BoardRole Coordinator::myRole() {
     return ble.localRole();
 }
 
-const BoardRoleConfig& Coordinator::myRoleConfig() {
-    return getRoleStyle(myRole());
-}
-
 void Coordinator::resetReplicaForPairing() {
     xSemaphoreTake(stateMutex, portMAX_DELAY);
+    observeSessionSleepGrant(false);
     state.selectSession(ble.authorityNodeId(), ble.sessionId());
     state.refreshDisplays(this);
     xSemaphoreGive(stateMutex);
@@ -254,6 +256,9 @@ void Coordinator::setup() {
     state.refreshDisplays(this);
     updateDisplayBrightness();
     awakeSinceMs = millis();
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
+        noteInteraction();
+    }
 
     DEBUG_PRINTF("Tasks: Arduino loop core=%d configured=%d, BLE core=%d\n",
                  xPortGetCoreID(), ARDUINO_RUNNING_CORE,
@@ -271,6 +276,19 @@ void Coordinator::setup() {
 }
 
 void Coordinator::loop() {
+#if defined(SCOREBOT_BUTTON_DIAGNOSTIC)
+    // Sampling the direct GPIOs also reveals a level change without an IRQ.
+    // Leave expander reads to the IRQ handler because they clear its latch.
+    static const bool directButtons = scorebot::usesPlayerBoardHardware();
+    static uint16_t lastButtonLevels = 0xffff;
+    if (directButtons) {
+        const uint16_t levels = buttonGrid.pressedMask();
+        if (levels != lastButtonLevels) {
+            Serial.printf("Direct button levels: 0x%02x\n", static_cast<unsigned>(levels));
+            lastButtonLevels = levels;
+        }
+    }
+#endif
 #if defined(SCOREBOT_USB_CONTROL)
     static scorebot::UsbTapParser parser;
     static uint32_t lastUsbStatus = 0;
@@ -308,6 +326,7 @@ void Coordinator::loop() {
         leaderboard = state.leaderboardBroadcast();
     }
     updateDisplayBrightness();
+    serviceSessionSleep(millis());
     const bool shouldSleep = sleepDue();
     if (shouldSleep) {
         SleepTransition expected = SleepTransition::Awake;
@@ -372,26 +391,103 @@ void Coordinator::loop() {
     delay(5);  // let the idle task run instead of continuously spinning a CPU core
 }
 
-bool Coordinator::sleepBlocked() const {
+bool Coordinator::sleepInputOrModeActive() const {
     return state.pendingOperation != 0 ||
+           state.buttonGestureInProgress() ||
            state.rotaryPressStartedMs.load() != 0 ||
            maintenanceModeActive() ||
            printer.uiActive() ||
            printer.wifiPowered() ||
            inputPending() ||
+           !ble.sleepAllowed();
+}
+
+bool Coordinator::sleepBlocked() const {
+    return sleepInputOrModeActive() ||
            outstandingEvents.load(std::memory_order_acquire) != 0 ||
            statePersistencePending() ||
            restartRequested.load(std::memory_order_acquire) ||
            ble.transmissionsPending() ||
-           usbConnection.connected() ||
-           !ble.sleepAllowed();
+           usbConnection.connected();
+}
+
+bool Coordinator::sessionIdle(uint32_t now) const {
+    const uint32_t last = lastInteractionMs.load();
+    return scorebot::sleep::elapsed(now, last == 0 ? awakeSinceMs : last,
+                                   scorebot::sleep::kSessionIdleTimeoutMs);
+}
+
+bool Coordinator::sendSessionSleepGrant(bool ready) {
+    JsonDocument message;
+    message["type"] = "idle";
+    message["protocol"] = scorebot::kWireProtocolVersion;
+    message["leader"] = state.leaderId;
+    message["session"] = state.sessionId;
+    message["game"] = state.gameId;
+    message["term"] = state.term;
+    message["ready"] = ready;
+    String encoded;
+    serializeJson(message, encoded);
+    return ble.sendBroadcast(encoded);
+}
+
+void Coordinator::serviceSessionSleep(uint32_t now) {
+    using namespace scorebot::sleep;
+    if (ble.isAuthority()) {
+        const bool quiet = sessionIdle(now) && !sleepInputOrModeActive();
+        if (!quiet) {
+            if (sessionSleepHandoff.offeredAt && sendSessionSleepGrant(false)) {
+                sessionSleepHandoff.offeredAt.reset();
+            }
+        } else if (outstandingEvents.load(std::memory_order_acquire) == 0 &&
+                   sessionSleepHandoff.grantDue(now, quiet) && sendSessionSleepGrant(true)) {
+            sessionSleepHandoff.recordGrant(now);
+        }
+        return;
+    }
+
+    if (!ble.hasLeader() || state.leaderless || ble.pairingUiActive()) {
+        sessionSleepGrant.observe(now, false);
+        return;
+    }
+    lastSessionLinkMs = now;
+    if (!localActivityPending ||
+        (lastLocalActivitySentMs && !elapsed(now, *lastLocalActivitySentMs, kActivityThrottleMs))) {
+        return;
+    }
+    if (!lastLocalInteractionMs || elapsed(now, *lastLocalInteractionMs, kSessionIdleTimeoutMs)) {
+        localActivityPending = false;
+        return;
+    }
+    const PlayerActivityMessage activity(ble.getMyPeerId(), state.gameId);
+    if (ble.sendTo(ble.authorityNodeId(), activity.toJson())) {
+        localActivityPending = false;
+        lastLocalActivitySentMs = now;
+    }
 }
 
 bool Coordinator::sleepDue() {
-    return scorebot::sleep::isDue(
-        millis(), awakeSinceMs, lastInteractionMs.load(), sleepBlocked(),
-        scorebot::sleep::idleTimeoutMs(
-            myRole() == BoardRole::Leader, state.hasPendingLocalScore()));
+    using namespace scorebot::sleep;
+    if (sleepBlocked()) return false;
+
+    const uint32_t now = millis();
+    const bool draft = state.hasPendingLocalScore();
+    if (ble.isAuthority()) {
+        const uint32_t last = lastInteractionMs.load();
+        return sessionIdle(now) && sessionSleepHandoff.allowsSleep(now) &&
+               (!draft || elapsed(now, last == 0 ? awakeSinceMs : last,
+                                  kPendingScoreIdleTimeoutMs));
+    }
+
+    if (ble.hasLeader() && !state.leaderless && !ble.pairingUiActive()) {
+        return sessionSleepGrant.allowsSleep(now) &&
+               (!lastLocalInteractionMs || elapsed(now, *lastLocalInteractionMs, kSessionIdleTimeoutMs)) &&
+               (!draft || elapsed(now, lastLocalInteraction(), kPendingScoreIdleTimeoutMs));
+    }
+
+    const bool hasSession = state.sessionId != 0 || lastSessionLinkMs.has_value();
+    return elapsed(now, lastLocalInteraction(), offlineIdleTimeoutMs(hasSession, draft)) &&
+           (!lastSessionLinkMs || elapsed(now, *lastSessionLinkMs, kSessionIdleTimeoutMs));
 }
 
 bool Coordinator::inputPending() const {
@@ -533,7 +629,25 @@ bool Coordinator::servicePendingRestart() {
 }
 
 void Coordinator::noteInteraction() {
+    const uint32_t now = millis();
+    lastLocalInteractionMs = now;
+    lastInteractionMs.store(now);
+    if (!ble.isAuthority()) {
+        localActivityPending = true;
+        sessionSleepGrant.observe(now, false);
+    }
+}
+
+void Coordinator::noteRemoteInteraction() {
     lastInteractionMs.store(millis());
+}
+
+uint32_t Coordinator::lastLocalInteraction() const {
+    return lastLocalInteractionMs.value_or(awakeSinceMs);
+}
+
+void Coordinator::observeSessionSleepGrant(bool ready) {
+    sessionSleepGrant.observe(millis(), ready);
 }
 
 void Coordinator::armOta() {
@@ -549,18 +663,30 @@ bool Coordinator::otaModeActive() const {
     return otaUiActive.load();
 }
 
-void Coordinator::setPlayerTurnAnimation(bool enabled) {
-    const bool wasEnabled = playerTurnAnimationActive.load();
-    if (enabled && !wasEnabled) {
-        playerTurnAnimationStartedMs.store(millis());
+void Coordinator::setStatusLight(uint32_t color) {
+    if (color != lastStatusLightColor) {
+        rotaryEncoder.setColor(color);
+        lastStatusLightColor = color;
     }
-    playerTurnAnimationActive.store(enabled);
+}
+
+void Coordinator::setGameplayLight(uint32_t color, uint32_t now) {
+    invalidGestureLightActive = invalidGestureLightActive &&
+        scorebot::invalidGestureLightOn(now - invalidGestureStartedMs);
+    setStatusLight(invalidGestureLightActive ? scorebot::kInvalidGestureRed : color);
+}
+
+void Coordinator::flashInvalidGesture() {
+    if (normalUiWritesAllowed()) {
+        invalidGestureStartedMs = millis();
+        invalidGestureLightActive = true;
+        setStatusLight(scorebot::kInvalidGestureRed);
+    }
 }
 
 void Coordinator::setLeaderboardTurnColor(uint32_t color) {
     leaderboardTurnColor.store(color);
-    if (myRole() != BoardRole::Leader || otaUiActive.load() ||
-        maintenanceModeActive() || printer.uiActive()) {
+    if (myRole() != BoardRole::Leader || !normalUiWritesAllowed()) {
         return;
     }
 
@@ -576,10 +702,7 @@ void Coordinator::setLeaderboardTurnColor(uint32_t color) {
                                               color,
                                               scorebot::leaderboardLightLevel(
                                                   referenceBrightness));
-    if (immediateColor != lastLeaderboardLightColor) {
-        rotaryEncoder.setColor(immediateColor);
-        lastLeaderboardLightColor = immediateColor;
-    }
+    setGameplayLight(immediateColor, millis());
 }
 
 void Coordinator::setLeaderboardSelectedDisplay(
@@ -591,19 +714,17 @@ void Coordinator::setLeaderboardSelectedDisplay(
     if (previous != index || previousLobby != lobbySelection ||
         previousPrompt != localPrompt) {
         leaderboardSelectionStartedMs.store(millis());
-        lastSelectedSegmentBrightness = 0xff;
         lastLeaderboardPromptFrame = 0xffffffff;
-        // Force the normal brightness targets to be restored on the display
-        // that has just stopped owning the selection animation.
-        displaysAreActive = !display_brightness::isInteractionActive(
-            millis(), lastInteractionMs.load());
+        const bool active = display_brightness::isInteractionActive(millis(), lastInteractionMs.load());
+        displaysAreActive = !active;
         if (allowNormalWrites && !lobbySelection && index >= 0 && index < 4) {
             const std::array<HT16Display*, 4> displays = {
                 &display1, &display2, &display3, &display4};
-            displays[static_cast<size_t>(index)]->setBrightnessNow(
-                scorebot::turnPulseAt(0).segmentBrightness);
-            lastSelectedSegmentBrightness =
-                scorebot::turnPulseAt(0).segmentBrightness;
+            const uint8_t brightness = display_brightness::leaderboardScoreTargetFor(active, true);
+            displays[static_cast<size_t>(index)]->setBrightnessNow(brightness);
+            DEBUG_PRINTF("LB brightness t=%lu slot=%d level=%u\n",
+                static_cast<unsigned long>(millis()), static_cast<int>(index),
+                static_cast<unsigned>(brightness));
         }
     }
 
@@ -626,11 +747,9 @@ void Coordinator::setLeaderboardSelectedDisplay(
 
 void Coordinator::startMaintenanceUi(
     scorebot::MaintenanceAction action, uint32_t startedMs) {
-    setPlayerTurnAnimation(false);
     maintenanceUiStartedMs.store(startedMs);
     maintenanceUiAction.store(action);
     lastMaintenanceFrame = 0xffffffff;
-    lastMaintenanceLightColor = 0xffffffff;
     display1.setBrightnessNow(display_brightness::kActiveBrightness);
     if (myRole() == BoardRole::Leader) {
         display1.setBlinkRate(0.0f);
@@ -646,8 +765,7 @@ void Coordinator::startMaintenanceUi(
 void Coordinator::cancelMaintenanceUi() {
     maintenanceUiAction.store(scorebot::MaintenanceAction::None);
     lastMaintenanceFrame = 0xffffffff;
-    lastMaintenanceLightColor = 0xffffffff;
-    rotaryEncoder.setColor(0x000000);
+    setStatusLight(0);
     state.refreshDisplays(this);
     displaysAreActive = !display_brightness::isInteractionActive(
         millis(), lastInteractionMs.load());
@@ -660,7 +778,6 @@ bool Coordinator::maintenanceModeActive() const {
 bool Coordinator::startPrint(const scorebot::PrinterSnapshot& snapshot) {
     maintenanceUiAction.store(scorebot::MaintenanceAction::None);
     lastMaintenanceFrame = 0xffffffff;
-    lastMaintenanceLightColor = 0xffffffff;
     preparePrinterUi();
     const bool queued = printer.enqueue(snapshot);
     if (!queued && !printer.uiActive()) {
@@ -738,11 +855,7 @@ void Coordinator::discardInput(ButtonName buttonName) {
 void Coordinator::updateDisplayBrightness() {
     const uint32_t now = millis();
     if (otaUiActive.load()) {
-        const uint32_t color = scorebot::otaIndicatorColor(ble.otaWriting(), now);
-        if (color != lastOtaLightColor) {
-            rotaryEncoder.setColor(color);
-            lastOtaLightColor = color;
-        }
+        setStatusLight(scorebot::otaIndicatorColor(ble.otaWriting(), now));
         return;
     }
     const scorebot::MaintenanceAction maintenance = maintenanceUiAction.load();
@@ -767,94 +880,76 @@ void Coordinator::updateDisplayBrightness() {
                 : maintenance == scorebot::MaintenanceAction::Print
                       ? scorebot::kPrintMaintenanceColor
                       : scorebot::kOtaPurple;
-        const uint32_t color = scorebot::maintenanceLightOn(elapsed) ? baseColor : 0;
-        if (color != lastMaintenanceLightColor) {
-            rotaryEncoder.setColor(color);
-            lastMaintenanceLightColor = color;
-        }
+        setStatusLight(scorebot::maintenanceLightOn(elapsed) ? baseColor : 0);
         return;
     }
     if (updatePrinterUi(now)) {
         return;
     }
     if (ble.pairingUiActive() || (!ble.isAuthority() && !ble.hasLeader())) {
-        ble.renderPairingUi(now);
+        pairingUiWasActive = true;
+        setGameplayLight(ble.renderPairingUi(now), now);
         return;
     }
-    if (myRole() != BoardRole::Leader && playerTurnAnimationActive.load()) {
-        if (!turnAnimationWasActive) {
-            lastTurnSegmentBrightness = 0xff;
-            lastTurnLightColor = 0xffffffff;
-            turnAnimationWasActive = true;
-        }
-        const scorebot::TurnPulse pulse = scorebot::turnPulseAt(
-            now - playerTurnAnimationStartedMs.load());
-        if (pulse.segmentBrightness != lastTurnSegmentBrightness) {
-            display1.setBrightnessNow(pulse.segmentBrightness);
-            lastTurnSegmentBrightness = pulse.segmentBrightness;
-        }
-        const uint32_t color = scorebot::scaleRgb(
-            myRoleConfig().color, pulse.lightLevel);
-        if (color != lastTurnLightColor) {
-            rotaryEncoder.setColor(color);
-            lastTurnLightColor = color;
-        }
-        return;
-    }
-
-    if (turnAnimationWasActive) {
-        turnAnimationWasActive = false;
-        lastTurnSegmentBrightness = 0xff;
-        lastTurnLightColor = 0xffffffff;
-        rotaryEncoder.setColor(0x000000);
-        // setBrightnessNow() keeps the pulse value as the transition target.
-        // Force the normal path to choose a fresh target after leaving GO.
-        displaysAreActive = !display_brightness::isInteractionActive(
-            now, lastInteractionMs.load());
-    }
-
     const bool active = display_brightness::isInteractionActive(
         now, lastInteractionMs.load());
+    if (pairingUiWasActive) {
+        pairingUiWasActive = false;
+        lastTurnSegmentBrightness = 0xff;
+        displaysAreActive = !active;
+    }
+    const BoardRole role = myRole();
+    if (role != BoardRole::Leader) {
+        // A draft and an unacknowledged pass affect the display. The LED
+        // follows the leaderboard's current turn until it confirms a change.
+        const bool lightOn = scorebot::playerTurnLightEnabled(
+            state.leaderless, state.gameStarted,
+            scorebot::isPlayerRole(role) && state.whosTurn == role);
+        const scorebot::TurnPulse pulse = lightOn
+            ? scorebot::turnPulseAt(now - state.turnStatusStartedMs)
+            : scorebot::TurnPulse{};
+        setGameplayLight(scorebot::scaleRgb(getRoleStyle(role).color, pulse.lightLevel), now);
+
+        if (lightOn && state.playerDisplayMode(role) == scorebot::PlayerDisplayMode::Turn) {
+            if (!turnDisplayWasPulsing || pulse.segmentBrightness != lastTurnSegmentBrightness) {
+                display1.setBrightnessNow(pulse.segmentBrightness);
+                lastTurnSegmentBrightness = pulse.segmentBrightness;
+            }
+            turnDisplayWasPulsing = true;
+            return;
+        }
+    }
+
+    if (turnDisplayWasPulsing) {
+        turnDisplayWasPulsing = false;
+        // The turn pulse changed the transition target and brightness.
+        displaysAreActive = !active;
+    }
+
+    const std::array<HT16Display*, 4> displays = {&display1, &display2, &display3, &display4};
+    const int8_t selected = leaderboardSelectedDisplay.load();
     if (active != displaysAreActive) {
-        const uint8_t targetBrightness = display_brightness::targetFor(active);
-        display1.setTargetBrightness(targetBrightness);
-        display2.setTargetBrightness(targetBrightness);
-        display3.setTargetBrightness(targetBrightness);
-        display4.setTargetBrightness(targetBrightness);
+        const bool leaderboardGame = role == BoardRole::Leader && state.gameStarted;
+        for (size_t index = 0; index < displays.size(); ++index) {
+            const uint8_t target = leaderboardGame
+                ? display_brightness::leaderboardScoreTargetFor(active, static_cast<int>(index) == selected)
+                : display_brightness::targetFor(active);
+            displays[index]->setTargetBrightness(target);
+        }
         displaysAreActive = active;
     }
 
-    display1.updateBrightness(now);
-    display2.updateBrightness(now);
-    display3.updateBrightness(now);
-    display4.updateBrightness(now);
+    for (HT16Display* display : displays) display->updateBrightness(now);
 
-    if (myRole() == BoardRole::Leader) {
-        const int8_t selected = leaderboardSelectedDisplay.load();
-        if (selected >= 0 && selected < 4) {
-            const std::array<HT16Display*, 4> displays = {
-                &display1, &display2, &display3, &display4};
-            if (leaderboardLobbySelection.load()) {
-                if (leaderboardLocalPrompt.load()) {
-                    const uint32_t elapsed =
-                        now - leaderboardSelectionStartedMs.load();
-                    const uint32_t frame =
-                        elapsed / scorebot::kLocalPromptScrollStepMs;
-                    if (frame != lastLeaderboardPromptFrame) {
-                        const auto text =
-                            scorebot::leaderboardLocalPromptFrame(elapsed);
-                        displays[static_cast<size_t>(selected)]->print(text.data());
-                        lastLeaderboardPromptFrame = frame;
-                    }
-                }
-            } else {
-                const scorebot::TurnPulse pulse = scorebot::turnPulseAt(
-                    now - leaderboardSelectionStartedMs.load());
-                if (pulse.segmentBrightness != lastSelectedSegmentBrightness) {
-                    displays[static_cast<size_t>(selected)]->setBrightnessNow(
-                        pulse.segmentBrightness);
-                    lastSelectedSegmentBrightness = pulse.segmentBrightness;
-                }
+    if (role == BoardRole::Leader) {
+        if (selected >= 0 && selected < 4 && leaderboardLobbySelection.load() &&
+            leaderboardLocalPrompt.load()) {
+            const uint32_t elapsed = now - leaderboardSelectionStartedMs.load();
+            const uint32_t frame = elapsed / scorebot::kLocalPromptScrollStepMs;
+            if (frame != lastLeaderboardPromptFrame) {
+                const auto prompt = scorebot::leaderboardLocalPromptFrame(elapsed);
+                displays[static_cast<size_t>(selected)]->print(prompt.data());
+                lastLeaderboardPromptFrame = frame;
             }
         }
         const uint32_t baseColor = leaderboardTurnColor.load();
@@ -866,10 +961,7 @@ void Coordinator::updateDisplayBrightness() {
                                          baseColor,
                                          scorebot::leaderboardLightLevel(
                                              referenceBrightness));
-        if (color != lastLeaderboardLightColor) {
-            rotaryEncoder.setColor(color);
-            lastLeaderboardLightColor = color;
-        }
+        setGameplayLight(color, now);
     }
 }
 
@@ -913,19 +1005,14 @@ bool Coordinator::updatePrinterUi(uint32_t now) {
                                : progress == scorebot::PrinterProgress::Error
                                      ? 0xff2000
                                      : scorebot::kPrintMaintenanceColor;
-    if (color != lastPrinterLightColor) {
-        rotaryEncoder.setColor(color);
-        lastPrinterLightColor = color;
-    }
+    setStatusLight(color);
     return true;
 }
 
 void Coordinator::preparePrinterUi() {
-    setPlayerTurnAnimation(false);
     lastPrinterProgress = 0xff;
     lastPrinterError = 0xff;
     lastPrinterFrame = 0xffffffff;
-    lastPrinterLightColor = 0xffffffff;
     display1.setBrightnessNow(display_brightness::kActiveBrightness);
     display1.setBlinkRate(0.0f);
     if (myRole() == BoardRole::Leader) {
@@ -942,23 +1029,13 @@ void Coordinator::finishPrinterUi() {
     lastPrinterProgress = 0xff;
     lastPrinterError = 0xff;
     lastPrinterFrame = 0xffffffff;
-    lastPrinterLightColor = 0xffffffff;
-    lastLeaderboardLightColor = 0xffffffff;
-    rotaryEncoder.setColor(0x000000);
+    setStatusLight(0);
     state.refreshDisplays(this);
 
-    const bool active = display_brightness::isInteractionActive(
-        millis(), lastInteractionMs.load());
-    const uint8_t target = display_brightness::targetFor(active);
-    display1.setTargetBrightness(target);
-    display2.setTargetBrightness(target);
-    display3.setTargetBrightness(target);
-    display4.setTargetBrightness(target);
-    displaysAreActive = active;
+    displaysAreActive = !display_brightness::isInteractionActive(millis(), lastInteractionMs.load());
 }
 
 void Coordinator::showOtaUi() {
-    setPlayerTurnAnimation(false);
     setLeaderboardTurnColor(0);
     display1.setBrightnessNow(display_brightness::kActiveBrightness);
     display1.print("OTA ");
@@ -974,26 +1051,18 @@ void Coordinator::showOtaUi() {
         display3.print("OTA ");
         display4.print("OTA ");
     }
-    rotaryEncoder.setColor(scorebot::kOtaPurple);
-    lastOtaLightColor = scorebot::kOtaPurple;
-    turnAnimationWasActive = false;
+    setStatusLight(scorebot::kOtaPurple);
+    turnDisplayWasPulsing = false;
     displaysAreActive = true;
 }
 
 void Coordinator::finishOtaUi() {
+    // The OTA dispatcher drained hardware edges without updating gameplay.
+    // Reconcile released keys before re-enabling gestures and sleep checks.
+    state.suppressHeldButtons(buttonGrid.pressedMask());
     otaUiActive.store(false);
-    lastOtaLightColor = 0xffffffff;
-    lastTurnLightColor = 0xffffffff;
-    lastLeaderboardLightColor = 0xffffffff;
-    rotaryEncoder.setColor(0x000000);
+    setStatusLight(0);
     state.refreshDisplays(this);
 
-    const bool active = display_brightness::isInteractionActive(
-        millis(), lastInteractionMs.load());
-    const uint8_t target = display_brightness::targetFor(active);
-    display1.setTargetBrightness(target);
-    display2.setTargetBrightness(target);
-    display3.setTargetBrightness(target);
-    display4.setTargetBrightness(target);
-    displaysAreActive = active;
+    displaysAreActive = !display_brightness::isInteractionActive(millis(), lastInteractionMs.load());
 }

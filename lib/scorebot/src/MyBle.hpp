@@ -53,7 +53,7 @@ public:
     void confirmPairing();
     void chooseColor();
     void clearPairing();
-    void renderPairingUi(uint32_t now);
+    uint32_t renderPairingUi(uint32_t now);
     void loop();
     void publishLeaderboard(const scorebot::LeaderboardBroadcast& leaderboard);
     uint32_t getMyPeerId() const;

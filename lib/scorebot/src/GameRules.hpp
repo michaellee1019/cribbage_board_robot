@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +12,11 @@ enum class Player : uint8_t { Red = 0, Blue, Green, Yellow, None, White = Yellow
 enum class LobbyMode : uint8_t { Local = 0, Physical, Off };
 
 constexpr size_t kPlayerCount = 4;
+inline constexpr std::array<uint8_t, kPlayerCount + 1> kPermutationCount{1, 1, 2, 6, 24};
+inline constexpr uint8_t kDefaultTurnOrder = 0;
+inline constexpr uint8_t kTurnOrderCount = kPermutationCount.back();
+using TurnOrder = std::array<Player, kPlayerCount>;
+using TurnCompletions = std::array<uint16_t, kPlayerCount>;
 
 constexpr bool isPlayer(Player player) {
     return static_cast<size_t>(player) < kPlayerCount;
@@ -32,6 +38,8 @@ struct Snapshot {
     Player turn{Player::None};
     bool started{false};
     uint32_t version{0};
+    uint8_t turnOrder{kDefaultTurnOrder};
+    TurnCompletions completedTurns{};
 };
 
 struct ScoreAction {
@@ -63,6 +71,83 @@ constexpr bool isConnected(const Snapshot& snapshot, Player player) {
 
 constexpr uint8_t playerBit(Player player) {
     return isPlayer(player) ? static_cast<uint8_t>(1u << playerIndex(player)) : 0;
+}
+
+constexpr bool isTurnOrder(int32_t code) {
+    return code >= 0 && code < kTurnOrderCount;
+}
+
+// A full color order has 24 possible ranks. Filtering that canonical order
+// keeps one compact representation even when roster availability changes.
+constexpr TurnOrder decodeTurnOrder(uint8_t code) {
+    TurnOrder remaining{Player::Red, Player::Blue, Player::Green, Player::Yellow};
+    TurnOrder order{};
+    uint8_t rank = isTurnOrder(code) ? code : kDefaultTurnOrder;
+    for (size_t position = 0; position < kPlayerCount; ++position) {
+        const size_t count = kPlayerCount - position;
+        const uint8_t blockSize = kPermutationCount[count - 1];
+        const size_t selected = rank / blockSize;
+        order[position] = remaining[selected];
+        rank %= blockSize;
+        for (size_t index = selected; index + 1 < count; ++index) {
+            remaining[index] = remaining[index + 1];
+        }
+    }
+    return order;
+}
+
+constexpr uint8_t encodeTurnOrder(const TurnOrder& order) {
+    uint8_t rank = 0;
+    for (size_t position = 0; position < kPlayerCount; ++position) {
+        for (size_t index = position + 1; index < kPlayerCount; ++index) {
+            if (order[index] < order[position]) {
+                rank += kPermutationCount[kPlayerCount - position - 1];
+            }
+        }
+    }
+    return rank;
+}
+
+inline uint8_t rotatedTurnOrder(uint8_t code, uint8_t participantMask, int32_t delta) {
+    const TurnOrder current = decodeTurnOrder(code);
+    TurnOrder next{};
+    const auto end = std::copy_if(current.begin(), current.end(), next.begin(),
+        [participantMask](Player player) { return (participantMask & playerBit(player)) != 0; });
+    const int32_t offset = delta % kPermutationCount[static_cast<size_t>(end - next.begin())];
+    if (offset == 0) {
+        return code;
+    }
+    for (int32_t step = 0; step < offset; ++step) {
+        std::next_permutation(next.begin(), end);
+    }
+    for (int32_t step = 0; step > offset; --step) {
+        std::prev_permutation(next.begin(), end);
+    }
+    TurnOrder reordered = current;
+    auto player = next.begin();
+    for (Player& slot : reordered) {
+        if ((participantMask & playerBit(slot)) != 0) {
+            slot = *player++;
+        }
+    }
+    return encodeTurnOrder(reordered);
+}
+
+constexpr bool draftHasExpired(uint32_t now, uint32_t lastLocalInteraction, Player player,
+                               const TurnCompletions& baseline, const TurnCompletions& current) {
+    constexpr uint32_t kDraftIdleMs = 60u * 1000u;
+    if (!isPlayer(player) || now - lastLocalInteraction <= kDraftIdleMs) {
+        return false;
+    }
+    for (size_t index = 0; index < kPlayerCount; ++index) {
+        // Compare modular counts to tolerate rollover without treating a small
+        // rollback after an authority power loss as a completed turn.
+        const auto advances = static_cast<uint16_t>(current[index] - baseline[index]);
+        if (index != playerIndex(player) && advances != 0 && advances < 0x8000) {
+            return true;
+        }
+    }
+    return false;
 }
 
 constexpr uint8_t lobbyParticipantMask(const Snapshot& snapshot) {
@@ -117,13 +202,21 @@ inline Player nextConnected(Player current, const Snapshot& snapshot) {
     return Player::None;
 }
 
-constexpr Player nextPlayerInMask(Player current, uint8_t mask) {
+constexpr Player nextPlayerInMask(
+    Player current, uint8_t mask, uint8_t turnOrder = kDefaultTurnOrder) {
     if (mask == 0) {
         return Player::None;
     }
-    const size_t start = isPlayer(current) ? playerIndex(current) : kPlayerCount - 1;
+    const TurnOrder order = decodeTurnOrder(turnOrder);
+    size_t start = kPlayerCount - 1;
+    for (size_t index = 0; index < kPlayerCount; ++index) {
+        if (order[index] == current) {
+            start = index;
+            break;
+        }
+    }
     for (size_t offset = 1; offset <= kPlayerCount; ++offset) {
-        const Player candidate = static_cast<Player>((start + offset) % kPlayerCount);
+        const Player candidate = order[(start + offset) % kPlayerCount];
         if ((mask & playerBit(candidate)) != 0) {
             return candidate;
         }
@@ -140,16 +233,18 @@ inline Player nextTurnParticipant(
         snapshot.rosterMask &
         (snapshot.connectedMask | snapshot.localControlMask |
          snapshot.sleepingMask | temporaryAvailableMask));
-    return nextPlayerInMask(current, eligibleMask);
+    return nextPlayerInMask(current, eligibleMask, snapshot.turnOrder);
 }
 
-inline bool start(Snapshot& snapshot) {
+inline bool start(Snapshot& snapshot, uint8_t turnOrder = kDefaultTurnOrder) {
     const uint8_t participants = lobbyParticipantMask(snapshot);
-    if (snapshot.started || participants == 0) {
+    if (snapshot.started || participants == 0 || !isTurnOrder(turnOrder)) {
         return false;
     }
     snapshot.started = true;
     snapshot.rosterMask = participants;
+    snapshot.turnOrder = turnOrder;
+    snapshot.completedTurns.fill(0);
     // OFF peers may still be linked for a few milliseconds while the BLE
     // owner drains the frozen-roster disconnect. Remove them from gameplay
     // state immediately so every replicated snapshot is internally valid.
@@ -157,7 +252,7 @@ inline bool start(Snapshot& snapshot) {
         snapshot.connectedMask & participants);
     snapshot.sleepingMask = static_cast<uint8_t>(
         snapshot.sleepingMask & participants);
-    snapshot.turn = nextPlayerInMask(Player::None, participants);
+    snapshot.turn = nextPlayerInMask(Player::None, participants, turnOrder);
     ++snapshot.version;
     return true;
 }
@@ -208,6 +303,8 @@ inline bool resetGame(Snapshot& snapshot) {
     // game cannot be applied to the next one.
     snapshot.rosterMask = 0;
     snapshot.turn = Player::None;
+    snapshot.turnOrder = kDefaultTurnOrder;
+    snapshot.completedTurns.fill(0);
     snapshot.started = false;
     ++snapshot.version;
     return true;
@@ -278,6 +375,11 @@ inline void resumeAuthority(Snapshot& snapshot, uint32_t& term) {
     ++term;
 }
 
+inline void finishTurn(Snapshot& snapshot, Player player, uint8_t temporaryAvailableMask = 0) {
+    ++snapshot.completedTurns[playerIndex(player)];
+    snapshot.turn = nextTurnParticipant(player, snapshot, temporaryAvailableMask);
+}
+
 inline ApplyResult apply(Snapshot& snapshot, const ScoreAction& action) {
     if (!snapshot.started) {
         return ApplyResult::GameNotStarted;
@@ -304,7 +406,7 @@ inline ApplyResult apply(Snapshot& snapshot, const ScoreAction& action) {
     snapshot.lastOperation[index] = action.operationId;
     const bool turnMayChange = action.passesTurn && snapshot.turn == action.player;
     if (turnMayChange) {
-        snapshot.turn = nextTurnParticipant(action.player, snapshot);
+        finishTurn(snapshot, action.player);
     }
     ++snapshot.version;
     return action.passesTurn && !turnMayChange
@@ -334,7 +436,7 @@ inline ApplyResult applyLocal(Snapshot& snapshot, const LocalScoreAction& action
     if (turnMayChange) {
         // A disconnected rescue target is temporarily available for this
         // transition so a one-player game wraps back to the same color.
-        snapshot.turn = nextTurnParticipant(action.player, snapshot, bit);
+        finishTurn(snapshot, action.player, bit);
     }
     ++snapshot.version;
     return action.passesTurn && !turnMayChange

@@ -15,7 +15,6 @@
 #include <PrinterRules.hpp>
 #include <Protocol.hpp>
 #include <ReplicationRules.hpp>
-#include <SleepRules.hpp>
 #include <VisualFeedbackRules.hpp>
 #include <utils.hpp>
 #if defined(SCOREBOT_USB_CONTROL)
@@ -115,6 +114,8 @@ scorebot::Snapshot toRules(const GameState& state) {
     rules.lobbyExplicitMask = state.lobbyExplicitMask;
     rules.sleepingMask = state.sleepingMask;
     rules.rosterMask = state.rosterMask;
+    rules.turnOrder = state.turnOrder;
+    rules.completedTurns = state.completedTurns;
     return rules;
 }
 
@@ -133,6 +134,8 @@ void fromRules(GameState& state, const scorebot::Snapshot& rules) {
     state.lobbyExplicitMask = rules.lobbyExplicitMask;
     state.sleepingMask = rules.sleepingMask;
     state.rosterMask = rules.rosterMask;
+    state.turnOrder = rules.turnOrder;
+    state.completedTurns = rules.completedTurns;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         scoreFor(state, role) = rules.scores[index];
@@ -157,19 +160,23 @@ String snapshotJson(const GameState& state) {
     document["leader"] = state.leaderId;
     document["started"] = state.gameStarted;
     document["turn"] = static_cast<uint8_t>(state.whosTurn);
+    document["order"] = state.turnOrder;
 
     JsonArray scores = document["scores"].to<JsonArray>();
     JsonArray operations = document["operations"].to<JsonArray>();
+    JsonArray turns = document["turns"].to<JsonArray>();
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         scores.add(scoreFor(state, role));
         operations.add(operationFor(state, role));
+        turns.add(state.completedTurns[index]);
     }
     document["connected"] = state.connectedMask;
     document["local"] = state.localControlMask;
     document["enabled"] = state.lobbyEnabledMask;
     document["explicit"] = state.lobbyExplicitMask;
     document["roster"] = state.rosterMask;
+    if (state.gameStarted && state.sleepingMask != 0) document["sleep"] = state.sleepingMask;
 
     String encoded;
     serializeJson(document, encoded);
@@ -216,20 +223,32 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     // Older snapshots did not distinguish a frozen roster from live links.
     // Resume those in the lobby instead of accidentally locking out a board.
     const bool gameStarted = (document["started"] | false) && rosterPresent;
+    const JsonVariantConst sleep = document["sleep"];
+    const uint8_t sleepingMask = sleep.as<uint8_t>();
     const BoardRole turn = static_cast<BoardRole>(document["turn"] | 0);
+    const JsonVariantConst order = document["order"];
+    const JsonVariantConst turns = document["turns"];
+    const bool turnHistoryKnown = !turns.isUnbound();
     if ((connectedMask & ~0x0fu) != 0 || (localControlMask & ~0x0fu) != 0 ||
         (lobbyEnabledMask & ~0x0fu) != 0 ||
         (lobbyExplicitMask & ~0x0fu) != 0 ||
         (localControlMask & ~lobbyEnabledMask) != 0 ||
         (rosterMask & ~0x0fu) != 0 ||
         ((localControlMask & ~rosterMask) != 0 && gameStarted) ||
-        (turn != BoardRole::Unknown && !isPlayer(turn))) {
+        (!sleep.isUnbound() && (!sleep.is<uint8_t>() || !gameStarted ||
+                               (sleepingMask & ~rosterMask) != 0)) ||
+        (turn != BoardRole::Unknown && !isPlayer(turn)) ||
+        (!order.isUnbound() && (!order.is<uint8_t>() || !scorebot::isTurnOrder(order.as<uint8_t>()))) ||
+        (turnHistoryKnown && (!turns.is<JsonArrayConst>() || turns.size() != std::size(kPlayers)))) {
         return SnapshotDecodeResult::Invalid;
     }
+    scorebot::TurnCompletions completedTurns{};
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
-        if (!scores[index].is<int32_t>() || !operations[index].is<uint32_t>()) {
+        if (!scores[index].is<int32_t>() || !operations[index].is<uint32_t>() ||
+            (turnHistoryKnown && !turns[index].is<uint16_t>())) {
             return SnapshotDecodeResult::Invalid;
         }
+        completedTurns[index] = turns[index].as<uint16_t>();
     }
     if (!document["controllers"].is<JsonArray>() || !document["controlOps"].is<JsonArray>() ||
         document["controllers"].size() != 4 || document["controlOps"].size() != 4) return SnapshotDecodeResult::Invalid;
@@ -266,6 +285,13 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
     state.lobbyEnabledMask = static_cast<uint8_t>(lobbyEnabledMask);
     state.lobbyExplicitMask = static_cast<uint8_t>(lobbyExplicitMask);
     state.rosterMask = static_cast<uint8_t>(rosterMask);
+    state.sleepingMask = sleepingMask;
+    state.turnOrder = order | scorebot::kDefaultTurnOrder;
+    state.completedTurns = completedTurns;
+    if (!state.turnHistoryKnown && turnHistoryKnown) {
+        state.draftTurnBaseline = completedTurns;
+    }
+    state.turnHistoryKnown = turnHistoryKnown;
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
         const BoardRole role = kPlayers[index];
         scoreFor(state, role) = scores[index].as<int32_t>();
@@ -276,55 +302,58 @@ SnapshotDecodeResult decodeSnapshot(GameState& state, const String& json) {
 }
 
 void setPlayerDisplay(const GameState& state, Coordinator* coordinator) {
-    if (coordinator->myRole() == BoardRole::Leader) {
+    const BoardRole role = coordinator->myRole();
+    if (!isPlayer(role) || !coordinator->normalUiWritesAllowed()) {
         return;
     }
-    const bool isMyTurn = scorebot::playerTurnLocallyActive(
-        state.whosTurn == coordinator->myRole(), state.pendingPass);
-    const scorebot::PlayerDisplayMode mode = scorebot::playerDisplayMode(
-        state.myScore, state.leaderless, state.gameStarted, isMyTurn);
-    coordinator->setPlayerTurnAnimation(mode == scorebot::PlayerDisplayMode::Turn);
-
-    switch (mode) {
+    switch (state.playerDisplayMode(role)) {
         case scorebot::PlayerDisplayMode::Delta:
             coordinator->display1.print(strFormat("%d", state.myScore));
             break;
         case scorebot::PlayerDisplayMode::Pairing:
             coordinator->display1.print(strFormat("P %02u", coordinator->ble.pairingId()));
             break;
-        case scorebot::PlayerDisplayMode::Turn:
-            if (scorebot::turnStatusShowsScore(
-                    millis() - state.turnStatusStartedMs)) {
-                coordinator->display1.print(strFormat(
-                    "%d", scoreFor(state, coordinator->myRole())));
-            } else {
-                coordinator->display1.print("GO  ");
-            }
+        case scorebot::PlayerDisplayMode::Turn: {
+            const auto display = scorebot::activeTurnFrame(
+                scoreFor(state, role), millis() - state.turnStatusStartedMs,
+                scorebot::ScoreDisplayStyle::Framed);
+            coordinator->display1.print(display.data());
             break;
+        }
         case scorebot::PlayerDisplayMode::Idle:
             coordinator->display1.print("----");
             break;
+        case scorebot::PlayerDisplayMode::WaitingScore: {
+            const auto display = scorebot::scoreDisplayFrame(
+                scoreFor(state, role),
+                (millis() - state.turnStatusStartedMs) / scorebot::kPlayerScoreScrollMs,
+                scorebot::ScoreDisplayStyle::Framed);
+            coordinator->display1.print(display.data());
+            break;
+        }
     }
 }
 
-void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
+void setLeaderboardDisplays(GameState& state, Coordinator* coordinator) {
     if (coordinator->myRole() != BoardRole::Leader) {
         return;
     }
     const std::array<HT16Display*, 4> displays = {
         &coordinator->display1, &coordinator->display2, &coordinator->display3, &coordinator->display4};
+    const bool editingOrder = !state.gameStarted && state.editingTurnOrder;
     const size_t selectedIndex = roleIndex(state.selectedLeaderboardRole);
     bool selectedLocalPrompt = false;
-    if (!state.gameStarted && selectedIndex < std::size(kPlayers)) {
+    if (!state.gameStarted && !editingOrder && selectedIndex < std::size(kPlayers)) {
         const uint8_t selectedBit = static_cast<uint8_t>(1u << selectedIndex);
         selectedLocalPrompt =
             (state.localControlMask & selectedBit) != 0;
     }
     coordinator->setLeaderboardSelectedDisplay(
-        selectedIndex < std::size(kPlayers) ? static_cast<int8_t>(selectedIndex) : -1,
+        !editingOrder && selectedIndex < std::size(kPlayers)
+            ? static_cast<int8_t>(selectedIndex) : -1,
         !state.gameStarted, selectedLocalPrompt);
     // Publish the authoritative turn light before writing display content. A
-    // newly rendered GO must never coexist with the previous turn's color.
+    // newly rendered turn prompt must use the current turn's color.
     if (state.gameStarted && isPlayer(state.whosTurn)) {
         coordinator->setLeaderboardTurnColor(
             getRoleStyle(state.whosTurn).color);
@@ -334,9 +363,32 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
     if (!coordinator->normalUiWritesAllowed()) {
         return;
     }
-    const bool showSavedScore = scorebot::sleep::showSavedScore(millis());
+    std::array<const char*, scorebot::kPlayerCount> orderLabels{};
+    if (editingOrder) {
+        constexpr const char* ordinals[] = {"1ST", "2ND", "3RD", "4TH"};
+        const uint8_t participants = scorebot::lobbyParticipantMask(toRules(state));
+        size_t position = 0;
+        for (const auto player : scorebot::decodeTurnOrder(state.lobbyTurnOrder)) {
+            if ((participants & scorebot::playerBit(player)) != 0) {
+                orderLabels[scorebot::playerIndex(player)] = ordinals[position++];
+            }
+        }
+    }
+    const uint32_t now = millis();
+    const uint32_t turnElapsed = now - state.turnStatusStartedMs;
+    const uint32_t frame = scorebot::turnStatusFrame(turnElapsed);
+    const bool showSavedScore = scorebot::turnStatusShowsScore(turnElapsed);
     for (size_t index = 0; index < std::size(kPlayers); ++index) {
+        if (orderLabels[index] != nullptr) {
+            displays[index]->print(orderLabels[index]);
+            continue;
+        }
         const BoardRole role = kPlayers[index];
+        const auto printScore = [&](uint32_t scoreFrame) {
+            const auto text = scorebot::scoreDisplayFrame(
+                scoreFor(state, role), scoreFrame, scorebot::ScoreDisplayStyle::Plain);
+            displays[index]->print(text.data());
+        };
         const bool connected = (state.connectedMask & (1u << index)) != 0;
         const bool locallyControlled = (state.localControlMask & (1u << index)) != 0;
         const bool lobbyEnabled = (state.lobbyEnabledMask & (1u << index)) != 0;
@@ -344,6 +396,12 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
         const bool inRoster = (state.rosterMask & (1u << index)) != 0;
         if (state.gameStarted && inRoster && state.leaderboardDeltas[index] != 0) {
             displays[index]->print(strFormat("%d", state.leaderboardDeltas[index]));
+            if (state.whosTurn == role) {
+                DEBUG_PRINTF("LB draft t=%lu slot=%u delta=%ld brightness=%u\n",
+                    static_cast<unsigned long>(millis()), static_cast<unsigned>(index),
+                    static_cast<long>(state.leaderboardDeltas[index]),
+                    static_cast<unsigned>(displays[index]->currentBrightness()));
+            }
             continue;
         }
         switch (scorebot::leaderboardDisplayMode(
@@ -351,7 +409,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
             locallyControlled, lobbyEnabled,
             state.whosTurn == role)) {
             case scorebot::LeaderboardDisplayMode::Score:
-                displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                printScore(frame);
                 break;
             case scorebot::LeaderboardDisplayMode::LobbyName:
                 displays[index]->print(getRoleStyle(role).name);
@@ -360,7 +418,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 displays[index]->print(strFormat("P %02u", coordinator->ble.pairingId()));
                 break;
             case scorebot::LeaderboardDisplayMode::LocalControl:
-                if (index == selectedIndex) {
+                if (!editingOrder && index == selectedIndex) {
                     const auto prompt = scorebot::leaderboardLocalPromptFrame(0);
                     displays[index]->print(prompt.data());
                 } else {
@@ -371,24 +429,28 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 displays[index]->print(!state.gameStarted && (millis() / 700) % 2
                     ? strFormat("P %02u", coordinator->ble.pairingId()) : String("OFF "));
                 break;
-            case scorebot::LeaderboardDisplayMode::Turn:
-                if (scorebot::turnStatusShowsScore(
-                        millis() - state.turnStatusStartedMs)) {
-                    displays[index]->print(strFormat("%d", scoreFor(state, role)));
-                } else {
-                    displays[index]->print("GO  ");
-                }
+            case scorebot::LeaderboardDisplayMode::Turn: {
+                const auto display = scorebot::activeTurnFrame(
+                    scoreFor(state, role), turnElapsed, scorebot::ScoreDisplayStyle::Plain);
+                displays[index]->print(display.data());
+                DEBUG_PRINTF("LB redraw t=%lu due=%lu frame=%lu slot=%u text=\"%s\" brightness=%u\n",
+                    static_cast<unsigned long>(millis()),
+                    static_cast<unsigned long>(state.turnStatusStartedMs +
+                                               frame * scorebot::kTurnStatusAlternateMs),
+                    static_cast<unsigned long>(frame), static_cast<unsigned>(index),
+                    display.data(), static_cast<unsigned>(displays[index]->currentBrightness()));
                 break;
+            }
             case scorebot::LeaderboardDisplayMode::Rejoining:
                 if (showSavedScore) {
-                    displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                    printScore(frame / 2);
                 } else {
                     displays[index]->print(strFormat("P %02u", coordinator->ble.pairingId()));
                 }
                 break;
             case scorebot::LeaderboardDisplayMode::Sleeping:
                 if (state.gameStarted && inRoster && showSavedScore) {
-                    displays[index]->print(strFormat("%d", scoreFor(state, role)));
+                    printScore(frame / 2);
                 } else {
                     displays[index]->print("ZZZZ");
                 }
@@ -398,6 +460,7 @@ void setLeaderboardDisplays(const GameState& state, Coordinator* coordinator) {
                 break;
         }
     }
+    if (state.gameStarted) state.lastTurnStatusFrame = frame;
 }
 
 void replicate(const GameState& state, Coordinator* coordinator) {
@@ -414,6 +477,7 @@ void selectAuthoritativeTurn(GameState& state, Coordinator* coordinator) {
         }
         return;
     }
+    state.editingTurnOrder = false;
     const scorebot::Snapshot rules = toRules(state);
     state.selectedLeaderboardRole = fromRulePlayer(scorebot::selectedTurnTarget(
         rules.turn, scorebot::leaderboardControlMask(rules)));
@@ -458,24 +522,6 @@ void rejectAndResync(const GameState& state, Coordinator* coordinator, uint32_t 
     coordinator->ble.sendTo(sender, snapshotJson(state));
 }
 
-void sendPlayerActivity(GameState* state, Coordinator* coordinator) {
-    if (!state->gameStarted || state->leaderless || !coordinator->ble.hasLeader()) {
-        return;
-    }
-    constexpr uint32_t kActivityThrottleMs = 100;
-    const uint32_t now = millis();
-    if (state->lastActivitySentMs != 0 &&
-        now - state->lastActivitySentMs < kActivityThrottleMs) {
-        return;
-    }
-    const PlayerActivityMessage message(
-        coordinator->ble.getMyPeerId(), state->gameId);
-    if (coordinator->ble.sendTo(
-            coordinator->ble.authorityNodeId(), message.toJson())) {
-        state->lastActivitySentMs = now;
-    }
-}
-
 void sendPlayerOperation(GameState* state, Coordinator* coordinator, bool passesTurn) {
     if (!state->gameStarted || !coordinator->ble.hasLeader() || state->leaderless ||
         state->pendingOperation != 0) {
@@ -509,6 +555,13 @@ void addDelta(int32_t& pending, int32_t delta) {
     pending = static_cast<int32_t>(std::clamp<int64_t>(
         next, std::numeric_limits<int32_t>::min(),
         std::numeric_limits<int32_t>::max()));
+}
+
+void editPlayerDraft(GameState& state, int32_t delta) {
+    if (state.myScore == 0) {
+        state.draftTurnBaseline = state.completedTurns;
+    }
+    addDelta(state.myScore, delta);
 }
 
 void sendControllerCommand(GameState* state, Coordinator* coordinator,
@@ -564,13 +617,22 @@ void sendLeaderboardOperation(
 
 void clearTransientInput(GameState& state) {
     state.myScore = 0;
+    state.editingTurnOrder = false;
+    state.lobbyTurnOrder = scorebot::kDefaultTurnOrder;
     state.leaderboardDeltas.fill(0);
+    state.stagedButtonScores.clear();
     state.pendingOperation = 0;
     state.pendingScore = 0;
     state.pendingPass = false;
     state.pendingMessage = "";
     state.pendingSentMs = 0;
     state.localOperation = 0;
+}
+
+void clearTurnState(GameState& state) {
+    state.turnOrder = scorebot::kDefaultTurnOrder;
+    state.completedTurns.fill(0);
+    state.turnHistoryKnown = false;
 }
 
 void clearCurrentBoardState(GameState* state, Coordinator* coordinator) {
@@ -598,6 +660,7 @@ void clearCurrentBoardState(GameState* state, Coordinator* coordinator) {
         state->lobbyExplicitMask = 0;
         state->sleepingMask = 0;
         state->rosterMask = 0;
+        clearTurnState(*state);
         state->whosTurn = BoardRole::Unknown;
         state->gameStarted = false;
         state->gameId = nextGame;
@@ -638,6 +701,8 @@ void clearCurrentBoardState(GameState* state, Coordinator* coordinator) {
 void startMaintenance(
     GameState* state, Coordinator* coordinator,
     scorebot::MaintenanceAction action, uint16_t pressedMask) {
+    state->stagedButtonScores.clear();
+    state->invalidButtonGesture = false;
     state->maintenanceAction = action;
     state->maintenanceStartedMs = millis();
     const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
@@ -649,44 +714,43 @@ void startMaintenance(
 }
 
 void cancelMaintenance(GameState* state, Coordinator* coordinator, uint16_t pressedMask) {
-    const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
-    const uint16_t chordMask = scorebot::maintenanceChordMask(
-        state->maintenanceAction, leaderboard, coordinator->ble.getMyPeerId());
-    state->suppressedButtonMask = static_cast<uint16_t>(pressedMask & chordMask);
-    state->heldButtonMask = pressedMask;
+    state->suppressHeldButtons(pressedMask);
     state->maintenanceAction = scorebot::MaintenanceAction::None;
     state->maintenanceStartedMs = 0;
     coordinator->cancelMaintenanceUi();
 }
 
-void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) {
+void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator,
+                       BoardRole scoreTarget) {
     const BoardRole role = coordinator->myRole();
     const scorebot::ButtonAction action = scorebot::buttonActionForPin(
         role == BoardRole::Leader, pin, coordinator->ble.getMyPeerId());
     if (action == scorebot::ButtonAction::None) {
         return;
     }
-    coordinator->noteInteraction();
     if (coordinator->ble.pairingUiActive()) {
         if (action == scorebot::ButtonAction::Ok) coordinator->ble.confirmPairing();
         else if (action == scorebot::ButtonAction::Add) coordinator->ble.chooseColor();
         else coordinator->ble.rotatePairing(action == scorebot::ButtonAction::NegativeOne ? -1 : 1);
         return;
     }
-    if (role != BoardRole::Leader) {
-        sendPlayerActivity(state, coordinator);
-    }
-
     if (role == BoardRole::Leader) {
         if (!coordinator->ble.isAuthority() && (!coordinator->ble.hasLeader() || state->leaderless)) return;
         if (!state->gameStarted) {
+            if (action == scorebot::ButtonAction::Add) {
+                state->editingTurnOrder = !state->editingTurnOrder &&
+                    scorebot::lobbyParticipantMask(toRules(*state)) != 0;
+                state->refreshDisplays(coordinator);
+                return;
+            }
             if (action == scorebot::ButtonAction::Ok) {
                 if (!coordinator->ble.isAuthority()) {
-                    sendControllerCommand(state, coordinator, scorebot::ControllerCommand::Start);
+                    sendControllerCommand(state, coordinator, scorebot::ControllerCommand::Start,
+                                          state->lobbyTurnOrder);
                     return;
                 }
                 scorebot::Snapshot rules = toRules(*state);
-                if (scorebot::start(rules)) {
+                if (scorebot::start(rules, state->lobbyTurnOrder)) {
                     fromRules(*state, rules);
                     state->lobbyModeDirty = false;
                     coordinator->ble.freezeRoster(state->rosterMask);
@@ -705,10 +769,10 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
                     : scorebot::LeaderboardAction::Ok);
             return;
         }
-        const size_t index = roleIndex(state->selectedLeaderboardRole);
+        const size_t index = roleIndex(scoreTarget);
         if (index >= std::size(kPlayers) ||
             !scorebot::isLocallyControllable(
-                toRules(*state), toRulePlayer(state->selectedLeaderboardRole))) {
+                toRules(*state), toRulePlayer(scoreTarget))) {
             state->refreshDisplays(coordinator);
             return;
         }
@@ -732,11 +796,11 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
             sendPlayerOperation(state, coordinator, false);
         }
     } else if (action == scorebot::ButtonAction::NegativeOne) {
-        addDelta(state->myScore, -1);
+        editPlayerDraft(*state, -1);
     } else if (action == scorebot::ButtonAction::PlusOne) {
-        addDelta(state->myScore, 1);
+        editPlayerDraft(*state, 1);
     } else if (action == scorebot::ButtonAction::PlusFive) {
-        addDelta(state->myScore, 5);
+        editPlayerDraft(*state, 5);
     } else if (action == scorebot::ButtonAction::Ok) {
         sendPlayerOperation(state, coordinator, true);
         return;
@@ -744,20 +808,59 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
     setPlayerDisplay(*state, coordinator);
 }
 
+bool canApplyButtonScore(const GameState& state, Coordinator* coordinator) {
+    return state.gameStarted &&
+           (coordinator->ble.isAuthority() ||
+            (!state.leaderless && coordinator->ble.hasLeader()));
+}
+
+void drainStagedButtonScores(GameState* state, Coordinator* coordinator, uint32_t nowUs) {
+    GameState::StagedButtonScore score{};
+    while (state->stagedButtonScores.pop(nowUs, score)) {
+        if (score.game == state->gameId && score.session == state->sessionId &&
+            score.pairing == coordinator->ble.pairingUiActive() &&
+            (score.pairing || (score.canScore && canApplyButtonScore(*state, coordinator)))) {
+            applySingleButton(state, score.pin, coordinator, score.target);
+        }
+    }
+}
+
+bool encoderCommitAllowed(GameState* state, Coordinator* coordinator) {
+    if (!coordinator->buttonGrid.interruptAsserted()) {
+        drainStagedButtonScores(state, coordinator, micros());
+    }
+    if (state->stagedButtonScores.empty()) return true;
+    state->stagedButtonScores.clear();
+    coordinator->flashInvalidGesture();
+    return false;
+}
+
 void onButtonGridEvent(GameState* state, Coordinator* coordinator,
                        const ButtonGrid::Interrupt* injected = nullptr) {
     const ButtonGrid::Interrupt interrupt = injected ? *injected : coordinator->buttonGrid.consumeInterrupt();
-    const uint16_t current = interrupt.pressed;
+    const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
+    const uint32_t node = coordinator->ble.getMyPeerId();
+    const uint16_t commitButtons = scorebot::otaChordMask(leaderboard);
+    const uint16_t scoreButtons = scorebot::resetChordMask(leaderboard, node) |
+        (leaderboard ? 0 : (1u << scorebot::playerPlusFivePinForBoard(node)));
+    const uint16_t buttons = commitButtons | scoreButtons;
+    const uint16_t current = interrupt.pressed & buttons;
     const uint16_t previous = state->heldButtonMask;
     const uint16_t previouslySuppressed = state->suppressedButtonMask;
-    const bool capturedPress =
-        scorebot::buttonCapturedPressed(interrupt.pin, interrupt.captured);
+    const uint16_t captured = interrupt.pin < 16
+        ? static_cast<uint16_t>(~interrupt.captured) & buttons : 0;
+    const scorebot::ButtonEdges edges = scorebot::buttonEdges(
+        previous, current, captured, interrupt.capturedPresses & buttons,
+        interrupt.capturedOverlap);
     DEBUG_PRINTF(
-        "Button grid: role=%u pin=%u captured=0x%04x current=0x%04x pressed=%d\n",
+        "Button grid: edge_us=%lu role=%u pin=%u captured=0x%04x held=0x%02x press=0x%02x release=0x%02x overlap=%d\n",
+        static_cast<unsigned long>(interrupt.firstEdgeUs),
         static_cast<unsigned>(coordinator->myRole()),
         static_cast<unsigned>(interrupt.pin),
         static_cast<unsigned>(interrupt.captured),
-        static_cast<unsigned>(current), capturedPress);
+        static_cast<unsigned>(current),
+        static_cast<unsigned>(edges.pressed), static_cast<unsigned>(edges.completed),
+        edges.overlap);
 
 #if defined(SCOREBOT_BUTTON_DIAGNOSTIC)
     // A passive diagnostic must report both edges without letting ADD, OK, or
@@ -766,6 +869,18 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator,
     state->suppressedButtonMask = 0;
     return;
 #endif
+
+    if (edges.pressed != 0 || edges.completed != 0 || edges.overlap) {
+        coordinator->noteInteraction();
+    }
+    const uint32_t now = millis();
+    const uint32_t observedUs = micros();
+    if (injected) {
+        // The USB harness sends explicit, complete taps and has no overlap or
+        // timing semantics. Keep its acknowledgement synchronous.
+        applySingleButton(state, interrupt.pin, coordinator, state->selectedLeaderboardRole);
+        return;
+    }
 
     if (coordinator->printerUiActive()) {
         // Keep the level model synchronized while the printer owns the local
@@ -778,23 +893,21 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator,
             return;
         }
         state->suppressedButtonMask = current;
-        coordinator->noteInteraction();
         (void)coordinator->consumePrinterUiInput();
         return;
     }
 
     if (state->maintenanceAction != scorebot::MaintenanceAction::None) {
-        const bool leaderboard = coordinator->myRole() == BoardRole::Leader;
         const scorebot::MaintenanceAction next =
             scorebot::maintenanceActionTransition(
-                state->maintenanceAction, current, leaderboard, coordinator->ble.getMyPeerId());
+                state->maintenanceAction, current, leaderboard, node);
         if (next != state->maintenanceAction) {
             // The four-button leaderboard gesture can be assembled through
             // either two-button maintenance chord. Start its safety interval
             // when the fourth button actually arrives.
             startMaintenance(state, coordinator, next, current);
         } else if (!scorebot::maintenanceChordHeld(
-                       state->maintenanceAction, current, leaderboard, coordinator->ble.getMyPeerId())) {
+                       state->maintenanceAction, current, leaderboard, node)) {
             cancelMaintenance(state, coordinator, current);
         } else {
             state->heldButtonMask = current;
@@ -815,40 +928,48 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator,
 
     const scorebot::MaintenanceAction chord =
         scorebot::maintenanceActionTransition(
-            scorebot::MaintenanceAction::None, current,
-            coordinator->myRole() == BoardRole::Leader, coordinator->ble.getMyPeerId());
+            scorebot::MaintenanceAction::None, current, leaderboard, node);
+    const uint32_t edgeUs = interrupt.firstEdgeUs != 0 ? interrupt.firstEdgeUs : observedUs;
+    state->stagedButtonScores.discardBouncedReleases(edgeUs, edges.pressed & scoreButtons);
+    drainStagedButtonScores(state, coordinator, edgeUs);
     if (chord != scorebot::MaintenanceAction::None) {
         startMaintenance(state, coordinator, chord, current);
         return;
     }
 
-    const uint16_t released = static_cast<uint16_t>(previous & ~current);
-    const uint16_t interruptBit = interrupt.pin < 16
-                                      ? static_cast<uint16_t>(1u << interrupt.pin)
-                                      : 0;
-    const uint16_t fastTap = capturedPress && (current & interruptBit) == 0 &&
-                                     (previous & interruptBit) == 0
-                                 ? interruptBit
-                                 : 0;
-    const uint16_t directTaps = static_cast<uint16_t>(interrupt.capturedPresses & ~current & ~previous);
-    const uint16_t completed = static_cast<uint16_t>(released | fastTap | directTaps);
     state->heldButtonMask = current;
-    state->suppressedButtonMask = static_cast<uint16_t>(
-        previouslySuppressed & current);
+    const bool rejected = scorebot::rejectButtonGesture(
+        edges, scoreButtons, commitButtons, !state->stagedButtonScores.empty());
+    if (rejected || state->invalidButtonGesture) {
+        if (!state->invalidButtonGesture) coordinator->flashInvalidGesture();
+        state->invalidButtonGesture = current != 0;
+        state->stagedButtonScores.clear();
+        for (uint8_t pin = 0; pin <= ButtonGrid::okPin; ++pin) {
+            if ((edges.completed & commitButtons & (1u << pin)) != 0) {
+                (void)state->buttonReleaseDebounce.accept(pin, now);
+            }
+        }
+        return;
+    }
 
-    // Resolve every single-button action on release. That gives either chord
-    // time to capture its second key without leaking a score or turn action.
-    constexpr uint8_t deferredPins[] = {
-        ButtonGrid::add,
-        ButtonGrid::negone,
-        ButtonGrid::pin3,
-        ButtonGrid::pin2,
-        ButtonGrid::okPin,
-    };
-    for (const uint8_t pin : deferredPins) {
-        const uint16_t bit = static_cast<uint16_t>(1u << pin);
-        if ((completed & bit) != 0 && (previouslySuppressed & bit) == 0) {
-            applySingleButton(state, pin, coordinator);
+    // Scores remain reversible until the guard closes. ADD/OK resolve on
+    // release only after their press has passed gesture classification.
+    for (uint8_t pin = 0; pin <= ButtonGrid::okPin; ++pin) {
+        const uint16_t bit = 1u << pin;
+        if ((edges.completed & bit) == 0) continue;
+        if ((scoreButtons & bit) == 0) {
+            if (state->buttonReleaseDebounce.accept(pin, now)) {
+                applySingleButton(state, pin, coordinator, state->selectedLeaderboardRole);
+            }
+            continue;
+        }
+        const GameState::StagedButtonScore score{
+            state->gameId, state->sessionId, state->selectedLeaderboardRole, pin,
+            coordinator->ble.pairingUiActive(), canApplyButtonScore(*state, coordinator)};
+        if (!state->stagedButtonScores.stage(observedUs, score, pin)) {
+            state->stagedButtonScores.clear();
+            coordinator->flashInvalidGesture();
+            return;
         }
     }
 }
@@ -858,9 +979,13 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
     if (event.buttonName == ButtonName::RotaryEncoder && coordinator->ble.pairingUiActive()) {
         const bool pressed = coordinator->rotaryEncoder.pressed();
         const int32_t delta = coordinator->rotaryEncoder.delta();
-        if (pressed) state->rotaryPressStartedMs.store(millis());
-        else if (state->rotaryPressStartedMs.exchange(0) != 0) coordinator->ble.confirmPairing();
-        else coordinator->ble.rotatePairing(delta);
+        if (pressed) {
+            state->rotaryPressStartedMs.store(millis());
+        } else if (state->rotaryPressStartedMs.exchange(0) != 0) {
+            if (encoderCommitAllowed(state, coordinator)) coordinator->ble.confirmPairing();
+        } else {
+            coordinator->ble.rotatePairing(delta);
+        }
         coordinator->noteInteraction();
         return;
     }
@@ -879,9 +1004,6 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
     if (event.buttonName == ButtonName::RotaryEncoder) {
         if (coordinator->rotaryEncoder.pressed()) {
             coordinator->noteInteraction();
-            if (role != BoardRole::Leader) {
-                sendPlayerActivity(state, coordinator);
-            }
             if (state->rotaryPressStartedMs.load() == 0) {
                 state->rotaryPressStartedMs.store(millis());
             }
@@ -890,8 +1012,10 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
 
         if (state->rotaryPressStartedMs.exchange(0) != 0) {
             if (role == BoardRole::Leader) {
-                cycleLeaderboardSelection(*state, coordinator);
-            } else {
+                if (!state->editingTurnOrder) {
+                    cycleLeaderboardSelection(*state, coordinator);
+                }
+            } else if (encoderCommitAllowed(state, coordinator)) {
                 sendPlayerOperation(state, coordinator, false);
             }
             return;
@@ -904,9 +1028,16 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
         coordinator->noteInteraction();
         if (role == BoardRole::Leader) {
             if (!state->gameStarted) {
+                scorebot::Snapshot rules = toRules(*state);
+                if (state->editingTurnOrder) {
+                    const uint8_t participants = scorebot::lobbyParticipantMask(rules);
+                    state->lobbyTurnOrder = scorebot::rotatedTurnOrder(
+                        state->lobbyTurnOrder, participants, delta);
+                    state->refreshDisplays(coordinator);
+                    return;
+                }
                 const scorebot::Player player =
                     toRulePlayer(state->selectedLeaderboardRole);
-                scorebot::Snapshot rules = toRules(*state);
                 const scorebot::LobbyMode next = scorebot::rotatedLobbyMode(
                     scorebot::lobbyModeFor(rules, player), delta);
                 if (!coordinator->ble.isAuthority()) {
@@ -932,8 +1063,7 @@ void onButtonPress(GameState* state, const ButtonPressEvent& event, Coordinator*
             return;
         }
         if (state->gameStarted && !state->leaderless) {
-            sendPlayerActivity(state, coordinator);
-            addDelta(state->myScore, delta);
+            editPlayerDraft(*state, delta);
         }
         setPlayerDisplay(*state, coordinator);
         return;
@@ -957,14 +1087,17 @@ void onControllerMessage(GameState* state, const Event& event, Coordinator* coor
     const uint8_t command = doc["command"].as<uint8_t>();
     const int32_t value = doc["value"].as<int32_t>();
     if (command > static_cast<uint8_t>(scorebot::ControllerCommand::Lobby) ||
-        (command == static_cast<uint8_t>(scorebot::ControllerCommand::Lobby) && (value < 0 || value > 2))) return;
+        (command == static_cast<uint8_t>(scorebot::ControllerCommand::Lobby) && (value < 0 || value > 2)) ||
+        (command == static_cast<uint8_t>(scorebot::ControllerCommand::Start) && !scorebot::isTurnOrder(value))) return;
     scorebot::ControllerAction action{node, doc["op"].as<uint32_t>(),
         static_cast<scorebot::ControllerCommand>(command), static_cast<scorebot::Player>(doc["player"].as<uint8_t>()),
         value, doc["pass"].as<bool>(), command == static_cast<uint8_t>(scorebot::ControllerCommand::Lobby)
-            ? static_cast<scorebot::LobbyMode>(value) : scorebot::LobbyMode::Off};
+            ? static_cast<scorebot::LobbyMode>(value) : scorebot::LobbyMode::Off,
+        command == static_cast<uint8_t>(scorebot::ControllerCommand::Start)
+            ? static_cast<uint8_t>(value) : scorebot::kDefaultTurnOrder};
     scorebot::Snapshot rules = toRules(*state);
-    coordinator->noteInteraction();
     if (scorebot::applyController(rules, state->controllerNodes, state->controllerOperations, action)) {
+        coordinator->noteRemoteInteraction();
         fromRules(*state, rules);
         if (state->gameStarted) coordinator->ble.freezeRoster(state->rosterMask);
         commit(*state, coordinator);
@@ -987,7 +1120,6 @@ void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordina
         rejectAndResync(*state, coordinator, sender);
         return;
     }
-    coordinator->noteInteraction();
     scorebot::Snapshot rules = toRules(*state);
     const uint32_t previousVersion = rules.version;
     const scorebot::ApplyResult result = scorebot::apply(
@@ -995,6 +1127,7 @@ void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordina
     if (result == scorebot::ApplyResult::Accepted ||
         result == scorebot::ApplyResult::AcceptedWithoutTurnChange ||
         rules.version != previousVersion) {
+        coordinator->noteRemoteInteraction();
         // Valid rejected operations are recorded as consumed so a player can
         // distinguish rejection from packet loss and stop retrying them.
         fromRules(*state, rules);
@@ -1004,29 +1137,45 @@ void onPlayerMessage(GameState* state, const Event& event, Coordinator* coordina
     }
 }
 
-void onPlayerActivityMessage(
+void onSessionActivityMessage(
     GameState* state, const Event& event, Coordinator* coordinator) {
-    if (!coordinator->ble.isAuthority() || !state->gameStarted) {
+    if (!coordinator->ble.isAuthority()) {
         return;
     }
     const PlayerActivityMessage message =
         PlayerActivityMessage::fromJson(event.messageReceived.message);
     const uint32_t sender = event.messageReceived.peerId;
-    const BoardRole senderRole = getRoleStyle(coordinator->ble.peerRole(sender)).role;
-    if (!isPlayer(senderRole) || message.fromNodeId != sender ||
-        message.gameId != state->gameId) {
+    if (message.fromNodeId != sender || message.gameId != state->gameId) {
         return;
     }
-    const scorebot::Player player = toRulePlayer(senderRole);
-    const scorebot::Snapshot rules = toRules(*state);
-    if (!scorebot::isConnected(rules, player) ||
-        (rules.rosterMask & (1u << scorebot::playerIndex(player))) == 0) {
+    const uint8_t senderBit = scorebot::playerBit(
+        toRulePlayer(coordinator->ble.peerRole(sender)));
+    const bool connectedPlayer = (state->connectedMask & senderBit) != 0 &&
+        (!state->gameStarted || (state->rosterMask & senderBit) != 0);
+    if (!connectedPlayer && !coordinator->ble.isControllerPeer(sender)) {
         return;
     }
-    DEBUG_PRINTF("Player activity: from=%08lx game=%lu\n",
+    DEBUG_PRINTF("Session activity: from=%08lx game=%lu\n",
                  static_cast<unsigned long>(sender),
                  static_cast<unsigned long>(message.gameId));
-    coordinator->noteInteraction();
+    coordinator->noteRemoteInteraction();
+}
+
+void onLeaderSleepGrant(const GameState& state, const Event& event,
+                        Coordinator* coordinator, const JsonDocument& message) {
+    const uint32_t sender = event.messageReceived.peerId;
+    if (state.leaderless || !coordinator->ble.hasLeader() ||
+        !coordinator->ble.acceptsLeader(sender) ||
+        !message["protocol"].is<uint16_t>() ||
+        message["protocol"].as<uint16_t>() != scorebot::kWireProtocolVersion ||
+        !message["leader"].is<uint32_t>() || message["leader"].as<uint32_t>() != sender ||
+        !message["session"].is<uint32_t>() || message["session"].as<uint32_t>() != state.sessionId ||
+        !message["game"].is<uint32_t>() || message["game"].as<uint32_t>() != state.gameId ||
+        !message["term"].is<uint32_t>() || message["term"].as<uint32_t>() != state.term ||
+        !message["ready"].is<bool>()) {
+        return;
+    }
+    coordinator->observeSessionSleepGrant(message["ready"].as<bool>());
 }
 
 void onPlayerSleepMessage(
@@ -1077,6 +1226,8 @@ void onLeaderResetMessage(
         return;
     }
 
+    coordinator->observeSessionSleepGrant(false);
+
     state->scores.fill(0);
     state->lastOperation.fill(0);
     state->controllerNodes.fill(0);
@@ -1087,6 +1238,7 @@ void onLeaderResetMessage(
     state->lobbyExplicitMask = 0;
     state->sleepingMask = 0;
     state->rosterMask = 0;
+    clearTurnState(*state);
     state->whosTurn = BoardRole::Unknown;
     state->gameStarted = false;
     state->gameId = message.gameId;
@@ -1158,13 +1310,12 @@ GameState::GameState()
       lastOperation{},
       localOperation(0),
       lastReplicationMs(0),
-      lastRejoinDisplayMs(0),
+      lastLobbyDisplayMs(0),
       pendingOperation(0),
       pendingScore(0),
       pendingPass(false),
       pendingMessage(),
       pendingSentMs(0),
-      lastActivitySentMs(0),
       leaderboardDeltas{},
       selectedLeaderboardRole(BoardRole::Player_Red),
       lobbyModeDirty(false),
@@ -1193,6 +1344,7 @@ void GameState::selectSession(uint32_t leader, uint32_t session) {
     controllerNodes.fill(0);
     controllerOperations.fill(0);
     connectedMask = localControlMask = lobbyEnabledMask = lobbyExplicitMask = sleepingMask = rosterMask = 0;
+    clearTurnState(*this);
     gameStarted = false;
     whosTurn = BoardRole::Unknown;
     leaderless = true;
@@ -1236,10 +1388,28 @@ uint32_t GameState::nextOperationId() {
     return ++localOperation;
 }
 
-void GameState::refreshDisplays(Coordinator* coordinator) const {
+void GameState::refreshDisplays(Coordinator* coordinator) {
     if (coordinator->ble.pairingUiActive() || (!coordinator->ble.isAuthority() && !coordinator->ble.hasLeader())) return;
     setLeaderboardDisplays(*this, coordinator);
     setPlayerDisplay(*this, coordinator);
+}
+
+void GameState::refreshLeaderboardTurnFrame(Coordinator* coordinator) {
+    if (!gameStarted || !coordinator->normalUiWritesAllowed() ||
+        coordinator->ble.pairingUiActive() || !coordinator->ble.hasLeader()) return;
+
+    const uint32_t now = millis();
+    const uint32_t frame = scorebot::turnStatusFrame(now - turnStatusStartedMs);
+    if (frame == lastTurnStatusFrame) return;
+    DEBUG_PRINTF("LB tick t=%lu frame=%lu previous=%lu\n",
+        static_cast<unsigned long>(now), static_cast<unsigned long>(frame),
+        static_cast<unsigned long>(lastTurnStatusFrame));
+    setLeaderboardDisplays(*this, coordinator);
+}
+
+scorebot::PlayerDisplayMode GameState::playerDisplayMode(BoardRole role) const {
+    const bool isMyTurn = scorebot::playerTurnLocallyActive(whosTurn == role, pendingPass);
+    return scorebot::playerDisplayMode(myScore, leaderless, gameStarted, isMyTurn);
 }
 
 void GameState::syncLeaderboardSelection(Coordinator* coordinator) {
@@ -1260,6 +1430,16 @@ bool GameState::hasPendingLocalScore() const {
     return std::any_of(
         leaderboardDeltas.begin(), leaderboardDeltas.end(),
         [](int32_t delta) { return delta != 0; });
+}
+
+bool GameState::buttonGestureInProgress() const {
+    return heldButtonMask != 0 || suppressedButtonMask != 0 || !stagedButtonScores.empty();
+}
+
+void GameState::suppressHeldButtons(uint16_t pressed) {
+    heldButtonMask = pressed;
+    suppressedButtonMask = pressed;
+    invalidButtonGesture = false;
 }
 
 void GameState::heartbeat(Coordinator* coordinator) {
@@ -1311,19 +1491,34 @@ void GameState::heartbeat(Coordinator* coordinator) {
         }
         return;
     }
+    // A queued physical edge gets priority over publishing a staged score.
+    if (!stagedButtonScores.empty() && !coordinator->buttonGrid.interruptAsserted()) {
+        drainStagedButtonScores(this, coordinator, micros());
+    }
     const BoardRole localRole = coordinator->myRole();
-    const bool turnStatusVisible =
-        gameStarted && isPlayer(whosTurn) &&
-        (localRole == BoardRole::Leader || localRole == whosTurn);
-    if (turnStatusVisible) {
-        const uint32_t frame = scorebot::turnStatusFrame(
-            now - turnStatusStartedMs);
+    if (gameStarted && myScore != 0 && turnHistoryKnown &&
+        !buttonGestureInProgress() && rotaryPressStartedMs.load() == 0 &&
+        scorebot::draftHasExpired(now, coordinator->lastLocalInteraction(),
+            toRulePlayer(localRole), draftTurnBaseline, completedTurns)) {
+        myScore = 0;
+        DEBUG_PRINTF("Player draft expired after inactivity and another completed turn\n");
+        refreshDisplays(coordinator);
+    }
+    constexpr uint32_t noAnimation = 0xffffffff;
+    uint32_t frame = noAnimation;
+    const uint32_t turnElapsed = now - turnStatusStartedMs;
+    if (isPlayer(localRole)) {
+        const auto mode = playerDisplayMode(localRole);
+        if (mode == scorebot::PlayerDisplayMode::Turn) {
+            frame = scorebot::turnStatusFrame(turnElapsed);
+        } else if (mode == scorebot::PlayerDisplayMode::WaitingScore &&
+                   scorebot::framedScoreScrolls(scoreFor(*this, localRole))) {
+            frame = turnElapsed / scorebot::kPlayerScoreScrollMs;
+        }
         if (frame != lastTurnStatusFrame) {
             lastTurnStatusFrame = frame;
-            refreshDisplays(coordinator);
+            if (frame != noAnimation) refreshDisplays(coordinator);
         }
-    } else {
-        lastTurnStatusFrame = 0xffffffff;
     }
 
     if (!coordinator->ble.isAuthority()) {
@@ -1337,20 +1532,13 @@ void GameState::heartbeat(Coordinator* coordinator) {
         }
         return;
     }
-    if (!gameStarted && now - lastRejoinDisplayMs >= 700) {
+    if (!gameStarted && now - lastLobbyDisplayMs >= 700) {
         setLeaderboardDisplays(*this, coordinator);
-        lastRejoinDisplayMs = now;
+        lastLobbyDisplayMs = now;
     }
     if (!gameStarted && lobbyModeDirty &&
         now - lobbyModeChangedMs >= kLobbyModeSettleMs) {
         commit(*this, coordinator);
-    }
-    const uint8_t directlyAvailable = static_cast<uint8_t>(
-        connectedMask | localControlMask);
-    if (gameStarted && (directlyAvailable & rosterMask) != rosterMask &&
-        now - lastRejoinDisplayMs >= scorebot::sleep::kRejoinAlternateMs) {
-        setLeaderboardDisplays(*this, coordinator);
-        lastRejoinDisplayMs = now;
     }
     if (now - lastReplicationMs >= kReplicationPeriodMs) {
         leaderId = coordinator->ble.getMyPeerId();
@@ -1369,7 +1557,7 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
         }
         // A synthetic complete tap uses the ordinary release/action path. Never
         // merge it with a held physical key or a maintenance chord.
-        const bool idle = heldButtonMask == 0 && suppressedButtonMask == 0 &&
+        const bool idle = !buttonGestureInProgress() &&
             !coordinator->buttonGrid.interruptAsserted() && !coordinator->printerUiActive() &&
             maintenanceAction == scorebot::MaintenanceAction::None;
         if (event.debugPin == scorebot::kUsbPair && idle && coordinator->myRole() != BoardRole::Leader) {
@@ -1381,7 +1569,6 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
         if (event.debugPin < 5 && idle) {
             const ButtonGrid::Interrupt tap{event.debugPin,
                 static_cast<uint16_t>(~(1u << event.debugPin)), 0};
-            coordinator->noteInteraction();
             onButtonGridEvent(this, coordinator, &tap);
             Serial.printf("USB DISPATCHED pin=%u draft=%ld game=%lu term=%lu version=%lu\n",
                 event.debugPin, static_cast<long>(myScore), static_cast<unsigned long>(gameId),
@@ -1396,6 +1583,7 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
             break;
         case EventType::BleLeaderLost:
             if (!coordinator->ble.isAuthority()) {
+                coordinator->observeSessionSleepGrant(false);
                 leaderless = true;
                 refreshDisplays(coordinator);
             }
@@ -1414,10 +1602,12 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                 coordinator->ble.chooseColor();
             } else if (envelope["type"] == "control") {
                 onControllerMessage(this, event, coordinator, envelope);
+            } else if (envelope["type"] == "idle") {
+                onLeaderSleepGrant(*this, event, coordinator, envelope);
             } else if (PlayerMessage::isPlayerMessage(json)) {
                 onPlayerMessage(this, event, coordinator);
             } else if (PlayerActivityMessage::isPlayerActivityMessage(json)) {
-                onPlayerActivityMessage(this, event, coordinator);
+                onSessionActivityMessage(this, event, coordinator);
             } else if (PlayerSleepMessage::isPlayerSleepMessage(json)) {
                 onPlayerSleepMessage(this, event, coordinator);
             } else if (LeaderResetMessage::isLeaderResetMessage(json)) {
@@ -1439,6 +1629,9 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                     break;
                 }
                 coordinator->ble.confirmLeader(event.messageReceived.connectionHandle);
+                if (gameId != previousGameId || term != previousTerm) {
+                    coordinator->observeSessionSleepGrant(false);
+                }
                 const BoardRole myRole = coordinator->myRole();
                 if (isPlayer(myRole)) {
                     const bool acknowledged = scorebot::operationAcknowledged(
@@ -1450,7 +1643,7 @@ void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
                     if (pendingDisposition == scorebot::PendingDisposition::Restore) {
                         // The authoritative epoch changed before this request
                         // was committed. Restore its delta for explicit retry.
-                        myScore += pendingScore;
+                        editPlayerDraft(*this, pendingScore);
                     }
                     localOperation = scorebot::reconcileOperationId(
                         localOperation, operationFor(*this, myRole));

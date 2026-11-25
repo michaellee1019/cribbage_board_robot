@@ -8,6 +8,7 @@
 #include <atomic>
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include <GameState.hpp>
 #include <DisplayBrightness.hpp>
@@ -20,6 +21,7 @@
 #include <UsbConnection.hpp>
 #include <Protocol.hpp>
 #include <PrinterClient.hpp>
+#include <SleepRules.hpp>
 
 struct StatePersistenceRequest {
     uint32_t generation;
@@ -48,9 +50,12 @@ public:
     void loop();
     void enqueueInputFromISR(ButtonName buttonName);
     void noteInteraction();
+    void noteRemoteInteraction();
+    uint32_t lastLocalInteraction() const;
+    void observeSessionSleepGrant(bool ready);
+    void flashInvalidGesture();
     void armOta();
     bool otaModeActive() const;
-    void setPlayerTurnAnimation(bool enabled);
     void setLeaderboardTurnColor(uint32_t color);
     void setLeaderboardSelectedDisplay(
         int8_t index, bool lobbySelection, bool localPrompt);
@@ -58,7 +63,6 @@ public:
     void cancelMaintenanceUi();
     bool maintenanceModeActive() const;
     BoardRole myRole();
-    const BoardRoleConfig& myRoleConfig();
     void serviceStateHeartbeat();
     void resetReplicaForPairing();
     bool enqueueEvent(const Event& event);
@@ -74,12 +78,17 @@ public:
 
     friend void dispatcherTask(void*);
     friend void persistenceTask(void*);
+    friend class MyBle;
 
 private:
     uint32_t awakeSinceMs{0};
     std::atomic<uint32_t> lastInteractionMs{0};
-    std::atomic<bool> playerTurnAnimationActive{false};
-    std::atomic<uint32_t> playerTurnAnimationStartedMs{0};
+    std::optional<uint32_t> lastLocalInteractionMs;
+    std::optional<uint32_t> lastSessionLinkMs;
+    std::optional<uint32_t> lastLocalActivitySentMs;
+    bool localActivityPending{false};
+    scorebot::sleep::SleepGrant sessionSleepGrant;
+    scorebot::sleep::SleepHandoff sessionSleepHandoff;
     std::atomic<uint32_t> leaderboardTurnColor{0};
     std::atomic<int8_t> leaderboardSelectedDisplay{-1};
     std::atomic<uint32_t> leaderboardSelectionStartedMs{0};
@@ -89,13 +98,13 @@ private:
         scorebot::MaintenanceAction::None};
     std::atomic<uint32_t> maintenanceUiStartedMs{0};
     uint8_t lastTurnSegmentBrightness{0xff};
-    uint32_t lastTurnLightColor{0xffffffff};
-    uint32_t lastLeaderboardLightColor{0xffffffff};
-    uint8_t lastSelectedSegmentBrightness{0xff};
+    uint32_t lastStatusLightColor{0xffffffff};
+    uint32_t invalidGestureStartedMs{0};
+    bool invalidGestureLightActive{false};
     uint32_t lastLeaderboardPromptFrame{0xffffffff};
     uint32_t lastMaintenanceFrame{0xffffffff};
-    uint32_t lastMaintenanceLightColor{0xffffffff};
-    bool turnAnimationWasActive{false};
+    bool turnDisplayWasPulsing{false};
+    bool pairingUiWasActive{false};
     // Start true so the first update applies the idle target after display setup.
     bool displaysAreActive{true};
     enum class SleepTransition : uint8_t {
@@ -110,7 +119,6 @@ private:
     std::atomic<uint8_t> queuedInputEvents{0};
     std::atomic<uint32_t> outstandingEvents{0};
     std::atomic<bool> otaUiActive{false};
-    uint32_t lastOtaLightColor{0xffffffff};
     std::atomic<uint32_t> requestedPersistenceGeneration{0};
     std::atomic<uint32_t> persistedGeneration{0};
     std::atomic<bool> restartRequested{false};
@@ -122,14 +130,19 @@ private:
     uint8_t lastPrinterProgress{0xff};
     uint8_t lastPrinterError{0xff};
     uint32_t lastPrinterFrame{0xffffffff};
-    uint32_t lastPrinterLightColor{0xffffffff};
 
+    void setStatusLight(uint32_t color);
+    void setGameplayLight(uint32_t color, uint32_t now);
     void updateDisplayBrightness();
     bool updatePrinterUi(uint32_t now);
     void preparePrinterUi();
     void finishPrinterUi();
     void showOtaUi();
     void finishOtaUi();
+    void serviceSessionSleep(uint32_t now);
+    bool sendSessionSleepGrant(bool ready);
+    bool sessionIdle(uint32_t now) const;
+    bool sleepInputOrModeActive() const;
     bool sleepBlocked() const;
     bool sleepDue();
     bool inputPending() const;

@@ -279,8 +279,15 @@ class ScorebotTest(unittest.TestCase):
         state._session_id = state.leader_id = state.game_id = state.term = state.version = 2**32 - 1
         for field in ("connected_mask", "local_control_mask", "lobby_enabled_mask", "lobby_explicit_mask", "roster_mask"):
             setattr(state, field, 15)
-        wire = json.dumps(state.to_wire(self.library.protocol_version), separators=(",", ":"))
+        packet = state.to_wire(self.library.protocol_version)
+        wire = json.dumps(packet, separators=(",", ":"))
         self.assertLessEqual(len(wire.encode()), 512)
+
+        # The ESP32 app extends v5 snapshots with an order rank, replicated
+        # turn completion counts, and the intentionally sleeping roster mask.
+        packet.update(order=23, turns=[65535] * 4, sleep=15)
+        widest_firmware_packet = json.dumps(packet, separators=(",", ":"))
+        self.assertLessEqual(len(widest_firmware_packet.encode()), 512)
 
     def test_binding_versions_ownership_and_copy(self):
         with patch("scorebot.C.CDLL") as loader:
