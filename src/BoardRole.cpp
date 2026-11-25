@@ -1,4 +1,5 @@
 #include <BoardRole.hpp>
+#include <PlayerBoard.hpp>
 
 namespace {
 constexpr BoardRoleConfig kStyles[] = {
@@ -21,6 +22,7 @@ BoardRole suggestedRole(uint32_t nodeId) {
     switch (nodeId) {
         case 2934574912u: return BoardRole::Player_Red;
         case 860931256u: return BoardRole::Player_Blue;
+        case scorebot::kPlayerBoardV9Node:
         case 2934574676u: return BoardRole::Player_Green;
         case 2934416992u: return BoardRole::Player_Yellow;
         default: return BoardRole::Unknown;

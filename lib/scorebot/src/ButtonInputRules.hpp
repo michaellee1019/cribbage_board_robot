@@ -1,5 +1,6 @@
 #pragma once
 
+#include <PlayerBoard.hpp>
 #include <cstdint>
 
 namespace scorebot {
@@ -14,13 +15,13 @@ enum class ButtonAction : uint8_t {
 };
 
 // The measured Red/Yellow layout uses MCP pins 0..4 for ADD, -1, +1,
-// +5, OK. Board 860931256 has +1/+5 on pins 3/2 instead. This follows
+// +5, OK. Blue hardware and PlayerBoardV9 use +1/+5 on pins 3/2. This follows
 // hardware identity, so choosing another player color cannot change wiring.
 constexpr uint8_t playerPlusOnePinForBoard(uint32_t node = 0) {
-    return node == 860931256u ? 3 : 2;
+    return (node == 860931256u || usesPlayerBoardV9(node)) ? 3 : 2;
 }
 constexpr uint8_t playerPlusFivePinForBoard(uint32_t node = 0) {
-    return node == 860931256u ? 2 : 3;
+    return (node == 860931256u || usesPlayerBoardV9(node)) ? 2 : 3;
 }
 
 // The four-button leaderboard is wired left-to-right on pins 1, 3, 0, 2, so

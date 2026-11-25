@@ -6,6 +6,9 @@
 #include <cstdint>
 
 enum class EventType {
+#if defined(SCOREBOT_USB_CONTROL)
+    DebugButtonTap,
+#endif
     ButtonPressed,
     BleLeaderLost,
     NewPeer,
@@ -35,6 +38,9 @@ struct MessageReceivedEvent {
 struct Event {
     EventType type;
     union {
+#if defined(SCOREBOT_USB_CONTROL)
+        uint8_t debugPin;
+#endif
         ButtonPressEvent press;
         NewPeerEvent newPeer;
         MessageReceivedEvent messageReceived;

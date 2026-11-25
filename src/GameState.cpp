@@ -18,6 +18,9 @@
 #include <SleepRules.hpp>
 #include <VisualFeedbackRules.hpp>
 #include <utils.hpp>
+#if defined(SCOREBOT_USB_CONTROL)
+#include <UsbControlRules.hpp>
+#endif
 
 #include <Preferences.h>
 
@@ -741,8 +744,9 @@ void applySingleButton(GameState* state, uint8_t pin, Coordinator* coordinator) 
     setPlayerDisplay(*state, coordinator);
 }
 
-void onButtonGridEvent(GameState* state, Coordinator* coordinator) {
-    const ButtonGrid::Interrupt interrupt = coordinator->buttonGrid.consumeInterrupt();
+void onButtonGridEvent(GameState* state, Coordinator* coordinator,
+                       const ButtonGrid::Interrupt* injected = nullptr) {
+    const ButtonGrid::Interrupt interrupt = injected ? *injected : coordinator->buttonGrid.consumeInterrupt();
     const uint16_t current = interrupt.pressed;
     const uint16_t previous = state->heldButtonMask;
     const uint16_t previouslySuppressed = state->suppressedButtonMask;
@@ -826,7 +830,8 @@ void onButtonGridEvent(GameState* state, Coordinator* coordinator) {
                                      (previous & interruptBit) == 0
                                  ? interruptBit
                                  : 0;
-    const uint16_t completed = static_cast<uint16_t>(released | fastTap);
+    const uint16_t directTaps = static_cast<uint16_t>(interrupt.capturedPresses & ~current & ~previous);
+    const uint16_t completed = static_cast<uint16_t>(released | fastTap | directTaps);
     state->heldButtonMask = current;
     state->suppressedButtonMask = static_cast<uint16_t>(
         previouslySuppressed & current);
@@ -1356,6 +1361,35 @@ void GameState::heartbeat(Coordinator* coordinator) {
 }
 
 void GameState::handleEvent(const Event& event, Coordinator* coordinator) {
+#if defined(SCOREBOT_USB_CONTROL)
+    if (event.type == EventType::DebugButtonTap) {
+        if (event.debugPin == scorebot::kUsbState) {
+            Serial.printf("USB STATE %s\n", snapshotJson(*this).c_str());
+            return;
+        }
+        // A synthetic complete tap uses the ordinary release/action path. Never
+        // merge it with a held physical key or a maintenance chord.
+        const bool idle = heldButtonMask == 0 && suppressedButtonMask == 0 &&
+            !coordinator->buttonGrid.interruptAsserted() && !coordinator->printerUiActive() &&
+            maintenanceAction == scorebot::MaintenanceAction::None;
+        if (event.debugPin == scorebot::kUsbPair && idle && coordinator->myRole() != BoardRole::Leader) {
+            coordinator->noteInteraction();
+            coordinator->ble.chooseColor();
+            Serial.println("USB PAIR OPENED");
+            return;
+        }
+        if (event.debugPin < 5 && idle) {
+            const ButtonGrid::Interrupt tap{event.debugPin,
+                static_cast<uint16_t>(~(1u << event.debugPin)), 0};
+            coordinator->noteInteraction();
+            onButtonGridEvent(this, coordinator, &tap);
+            Serial.printf("USB DISPATCHED pin=%u draft=%ld game=%lu term=%lu version=%lu\n",
+                event.debugPin, static_cast<long>(myScore), static_cast<unsigned long>(gameId),
+                static_cast<unsigned long>(term), static_cast<unsigned long>(version));
+        } else Serial.println("USB TAP REJECTED physical/maintenance input active");
+        return;
+    }
+#endif
     switch (event.type) {
         case EventType::ButtonPressed:
             onButtonPress(this, event.press, coordinator);

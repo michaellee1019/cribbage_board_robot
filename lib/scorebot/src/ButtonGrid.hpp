@@ -2,6 +2,7 @@
 #define BUTTONGRID_H
 
 #include <Adafruit_MCP23X17.h>
+#include <atomic>
 
 class ButtonGrid {
     class Coordinator* coordinator;
@@ -10,6 +11,7 @@ public:
         uint8_t pin;
         uint16_t captured;
         uint16_t pressed;
+        uint16_t capturedPresses{0};
     };
     Adafruit_MCP23X17 buttonGpio;
     static constexpr u32_t okPin = 4;
@@ -24,6 +26,9 @@ private:
 
 
     static constexpr auto pins = {okPin, pin2, pin3, negone, add};
+    bool directInputs{false};
+    uint16_t directPressed{0};
+    std::atomic<uint32_t> directCaptured{0};
 
     friend void buttonISR(void*);
 

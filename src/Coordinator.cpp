@@ -4,6 +4,7 @@
 #include "ErrorHandler.hpp"
 #include <MyBle.hpp>
 #include <I2cBus.hpp>
+#include <PlayerBoard.hpp>
 #include <LeaderboardUiRules.hpp>
 #include <LightColorRules.hpp>
 #include <OtaTransferRules.hpp>
@@ -12,6 +13,12 @@
 #include <SleepRules.hpp>
 #include <utils.hpp>
 #include <esp_sleep.h>
+#if defined(SCOREBOT_USB_CONTROL)
+#include <UsbControlRules.hpp>
+#if !defined(SCOREBOT_DEBUG)
+#error USB input control requires a debug build
+#endif
+#endif
 
 #include <array>
 #include <cstring>
@@ -187,7 +194,13 @@ void Coordinator::setup() {
         Serial.setTimeout(1);
     }
     // may need an i2c lock because Wire.h almost certainly buffers.
-    Wire.begin(5, 6);
+    if (scorebot::usesPlayerBoardHardware()) {
+        scorebot::enablePlayerBoost();
+        delay(20);
+        Wire.begin(scorebot::player_pins::kSda, scorebot::player_pins::kScl);
+    } else {
+        Wire.begin(5, 6);
+    }
     CHECK_FREERTOS_RESULT(I2cBus::initialize() ? pdPASS : pdFAIL,
                           ErrorCode::SEMAPHORE_CREATE_FAILED, "I2C mutex");
     // print i2c devices for debugging hardware
@@ -258,6 +271,23 @@ void Coordinator::setup() {
 }
 
 void Coordinator::loop() {
+#if defined(SCOREBOT_USB_CONTROL)
+    static scorebot::UsbTapParser parser;
+    static uint32_t lastUsbStatus = 0;
+    if (millis() - lastUsbStatus >= 5000) {
+        lastUsbStatus = millis();
+        Serial.printf("USB CONTROL READY rx=%d\n", Serial.available());
+    }
+    for (unsigned count = 0; count < 32 && Serial.available() > 0; ++count) {
+        const uint8_t pin = parser.feed(static_cast<char>(Serial.read()));
+        if (pin <= scorebot::kUsbPair) {
+            Event event{};
+            event.type = EventType::DebugButtonTap;
+            event.debugPin = pin;
+            Serial.printf("USB TAP %u %s\n", pin, enqueueEvent(event) ? "QUEUED" : "BUSY");
+        }
+    }
+#endif
     usbConnection.poll();
     servicePendingInputEvents();
     this->ble.loop();

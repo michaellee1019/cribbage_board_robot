@@ -2,12 +2,30 @@
 #include <LeaderboardBroadcast.hpp>
 #include <Protocol.hpp>
 #include <ObserverHistory.hpp>
+#include <UsbControlRules.hpp>
 
 #include <cassert>
 #include <iostream>
 #include <limits>
 
 int main() {
+    {
+        scorebot::UsbTapParser parser;
+        auto command = [&parser](const char* text) {
+            uint8_t result = 0xff;
+            while (*text) result = parser.feed(*text++);
+            return result;
+        };
+        assert(command("TAP 4\r\n") == 4);
+        assert(command("TAP 0\n") == 0);
+        assert(command("TAP 5\n") == 0xff);
+        assert(command("STATE\n") == scorebot::kUsbState);
+        assert(command("PAIR\r\n") == scorebot::kUsbPair);
+        assert(command("STATE x\n") == 0xff);
+        assert(command("TAP 2 extra\n") == 0xff);
+        assert(command("xxxxxxxxxxxxxxxxTAP 2\n") == 0xff);
+        assert(command("TAP 3\n") == 3);
+    }
     static_assert(scorebot::kMaxWireMessageSize >= 300);
     static_assert(sizeof(MessageReceivedEvent::message) ==
                   scorebot::kMaxWireMessageSize + 1);

@@ -63,6 +63,26 @@ pio project metadata --json-output -e <environment>
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development documentation.
 
+### USB-driven player validation
+
+Build `pio run -e usb_control` for an explicitly controlled USB test board.
+This opt-in debug image accepts `TAP 0` through `TAP 4`, each terminated by LF
+(CRLF also works). Keep the USB port open with DTR/RTS clear, wait for
+`USB CONTROL READY`, and send a blank line before the first command to discard
+any partial startup input. Port opening can restart the board. `TAP 4` confirms
+its normal pairing selector; it does not bypass session or color admission.
+`PAIR` opens the player color selector and `STATE` reads the current snapshot
+on the dispatcher. The leaderboard accepts `TAP 2` as OK and `TAP 1` as ADD.
+
+Pins 0/1/4 are ADD/-1/OK. Measured Red/Yellow use pin 2 for +1 and pin 3 for +5;
+Blue hardware node 860931256 and PlayerBoardV9 `76c3cfc0` use pin 3 for +1 and
+pin 2 for +5. These complete
+taps go through the normal release/action handler. Physical input, suppression,
+printer and maintenance activity reject debug taps. Chords are not simulated.
+`USB DISPATCHED` acknowledges local handler completion; verify committed scores
+and operation IDs at the leaderboard. Production `controller` builds omit this
+parser and debug event entirely.
+
 ### E-paper leaderboard listener
 
 The display shows all rostered scores and the current turn, plus two recent
@@ -91,7 +111,10 @@ The red title and divider are drawn during a full refresh. Scores and the invert
 
 The same controller firmware runs on every scoring board. At startup it probes
 I2C displays: one display is a player board; four displays are a leaderboard.
-Incomplete display populations stop with a hardware error. Hardware identity
+Incomplete display populations stop with a hardware error. PlayerBoardV9
+`76c3cfc0` uses the direct GPIO, display, boost and eight-LED wiring of its PCB;
+its suggested color is Green. Saved wire-v4 replicas stay in backup flash
+and the wire-v5 board obtains current state by joining a wire-v5 leaderboard. Hardware identity
 never selects authority or grants permission to submit a score.
 
 A saved color takes precedence over the optional enclosure-color suggestions in
